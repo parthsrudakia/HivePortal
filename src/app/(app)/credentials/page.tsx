@@ -197,35 +197,87 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
         </p>
       )}
 
-      {filtered.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-          <table className="w-full min-w-[1200px] text-sm">
-            <thead className="sticky top-0 z-10 bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-3 py-2 font-medium">Category</th>
-                <th className="px-3 py-2 font-medium">Service</th>
-                <th className="px-3 py-2 font-medium">Property</th>
-                <th className="px-3 py-2 font-medium">Owner</th>
-                <th className="px-3 py-2 font-medium">Username</th>
-                <th className="px-3 py-2 font-medium">Password</th>
-                <th className="px-3 py-2 font-medium">Account #</th>
-                <th className="px-3 py-2 font-medium">Link</th>
-                <th className="px-3 py-2 text-right font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c, i) => (
-                <CredentialRow
-                  key={c.id}
-                  credential={c}
-                  properties={propertyOptions}
-                  striped={i % 2 === 1}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {filtered.length > 0 && (() => {
+        // Group filtered rows by property label. Properties appear first
+        // alphabetically; "General (no property)" goes last.
+        const byProperty = new Map<string, CredentialRowData[]>();
+        for (const c of filtered) {
+          const key = c.property_label ?? "__general__";
+          if (!byProperty.has(key)) byProperty.set(key, []);
+          byProperty.get(key)!.push(c);
+        }
+        const groups = Array.from(byProperty.entries())
+          .sort(([a], [b]) => {
+            if (a === "__general__") return 1;
+            if (b === "__general__") return -1;
+            return a.localeCompare(b);
+          })
+          .map(([key, items]) => ({
+            label: key === "__general__" ? "General (no property)" : key,
+            items,
+          }));
+
+        return (
+          <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="sticky top-0 z-10 bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Category</th>
+                  <th className="px-3 py-2 font-medium">Service</th>
+                  <th className="px-3 py-2 font-medium">Owner</th>
+                  <th className="px-3 py-2 font-medium">Username</th>
+                  <th className="px-3 py-2 font-medium">Password</th>
+                  <th className="px-3 py-2 font-medium">Account #</th>
+                  <th className="px-3 py-2 font-medium">Link</th>
+                  <th className="px-3 py-2 text-right font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => (
+                  <GroupBlock
+                    key={g.label}
+                    label={g.label}
+                    items={g.items}
+                    properties={propertyOptions}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
     </div>
+  );
+}
+
+function GroupBlock({
+  label,
+  items,
+  properties,
+}: {
+  label: string;
+  items: CredentialRowData[];
+  properties: PropertyOption[];
+}) {
+  return (
+    <>
+      <tr className="border-t border-stone/40 bg-warm/40">
+        <td
+          colSpan={8}
+          className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80"
+        >
+          {label}{" "}
+          <span className="text-muted">({items.length})</span>
+        </td>
+      </tr>
+      {items.map((c, i) => (
+        <CredentialRow
+          key={c.id}
+          credential={c}
+          properties={properties}
+          striped={i % 2 === 1}
+        />
+      ))}
+    </>
   );
 }

@@ -306,12 +306,11 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[1000px] text-sm">
               <thead className="bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-3 py-2 font-medium">Category</th>
                   <th className="px-3 py-2 font-medium">Service</th>
-                  <th className="px-3 py-2 font-medium">Property</th>
                   <th className="px-3 py-2 font-medium">Owner</th>
                   <th className="px-3 py-2 font-medium">Username</th>
                   <th className="px-3 py-2 font-medium">Password</th>

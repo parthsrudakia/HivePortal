@@ -92,7 +92,7 @@ export function CredentialRow({
   if (editing) {
     return (
       <tr className="border-t border-stone/30 bg-cream/60">
-        <td colSpan={9} className="px-4 py-4">
+        <td colSpan={8} className="px-4 py-4">
           <form
             action={async (fd) => {
               const result = await editAction(fd);
@@ -143,9 +143,6 @@ export function CredentialRow({
         </span>
       </td>
       <td className="px-3 py-2 text-ink">{credential.service_name}</td>
-      <td className="px-3 py-2 text-[12px] text-muted">
-        {credential.property_label ?? "—"}
-      </td>
       <td className="px-3 py-2 text-[12px] text-muted">
         {credential.owner_label ?? "—"}
       </td>
