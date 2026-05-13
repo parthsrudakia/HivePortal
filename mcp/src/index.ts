@@ -638,11 +638,15 @@ server.registerTool(
     if (tErr) return err(tErr.message);
 
     if (tenancy.room_id) {
+      // Re-entering the vacancy queue — reset the VA workflow flag so the
+      // room shows up as a fresh "Create new ad" instead of inheriting the
+      // previous tenancy's color.
       const { error: rErr } = await supabase
         .from("rooms")
         .update({
           status: isPastOrToday ? "available" : "occupied",
           available_from: end_date,
+          listing_action: "new_ad",
         })
         .eq("id", tenancy.room_id);
       if (rErr) return err(rErr.message);
@@ -654,6 +658,7 @@ server.registerTool(
       end_date,
       tenancy_status: isPastOrToday ? "ended" : "active",
       room_status: isPastOrToday ? "available" : "occupied",
+      listing_action_reset: true,
     });
   },
 );

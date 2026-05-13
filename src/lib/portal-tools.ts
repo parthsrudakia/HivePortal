@@ -446,11 +446,15 @@ export async function endTenancy(args: {
     .eq("id", args.tenancy_id);
 
   if (tenancy.room_id) {
+    // Re-entering the vacancy queue — reset the VA workflow flag so the
+    // room shows up as a fresh "Create new ad" instead of inheriting the
+    // previous tenancy's color.
     await supabase
       .from("rooms")
       .update({
         status: isPastOrToday ? "available" : "occupied",
         available_from: args.end_date,
+        listing_action: "new_ad",
       })
       .eq("id", tenancy.room_id);
   }
@@ -459,6 +463,7 @@ export async function endTenancy(args: {
     ok: true,
     tenancy_status: isPastOrToday ? "ended" : "active",
     room_status: isPastOrToday ? "available" : "occupied",
+    listing_action_reset: true,
   };
 }
 
