@@ -597,6 +597,98 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "end_tenancy",
+  {
+    title: "End (or schedule the end of) a tenancy",
+    description:
+      "Set a tenancy's end_date. If end_date is today or earlier the " +
+      "tenancy becomes 'ended' and the room flips to 'available'. " +
+      "If end_date is in the future the tenancy stays 'active' until " +
+      "that day, the room stays 'occupied', but rooms.available_from " +
+      "is set so the room appears on the Vacancies page as " +
+      "'Available from <date>'.",
+    inputSchema: {
+      tenancy_id: z.string().describe("UUID of the tenancy to end"),
+      end_date: z
+        .string()
+        .describe('When the tenant moves out, "YYYY-MM-DD"'),
+    },
+  },
+  async ({ tenancy_id, end_date }) => {
+    const today = todayISO();
+    const isPastOrToday = end_date <= today;
+
+    const { data: tenancy, error: lookupErr } = await supabase
+      .from("tenancies")
+      .select("room_id")
+      .eq("id", tenancy_id)
+      .single();
+    if (lookupErr || !tenancy) {
+      return err(lookupErr?.message ?? "Tenancy not found.");
+    }
+
+    const { error: tErr } = await supabase
+      .from("tenancies")
+      .update({
+        end_date,
+        status: isPastOrToday ? "ended" : "active",
+      })
+      .eq("id", tenancy_id);
+    if (tErr) return err(tErr.message);
+
+    if (tenancy.room_id) {
+      const { error: rErr } = await supabase
+        .from("rooms")
+        .update({
+          status: isPastOrToday ? "available" : "occupied",
+          available_from: end_date,
+        })
+        .eq("id", tenancy.room_id);
+      if (rErr) return err(rErr.message);
+    }
+
+    return ok({
+      ok: true,
+      tenancy_id,
+      end_date,
+      tenancy_status: isPastOrToday ? "ended" : "active",
+      room_status: isPastOrToday ? "available" : "occupied",
+    });
+  },
+);
+
+server.registerTool(
+  "set_room_status",
+  {
+    title: "Set a room's status",
+    description:
+      "Manually flip a room's status. Use end_tenancy instead when there's an " +
+      "active tenancy — that handles the tenancy + room in one shot. " +
+      "Statuses: occupied, available, reserved, maintenance.",
+    inputSchema: {
+      room_id: z.string(),
+      status: z.enum(["occupied", "available", "reserved", "maintenance"]),
+      available_from: z
+        .string()
+        .optional()
+        .describe(
+          'Optional date the room becomes free, "YYYY-MM-DD". Useful for "reserved" and "maintenance" statuses.',
+        ),
+    },
+  },
+  async ({ room_id, status, available_from }) => {
+    const update: Record<string, unknown> = { status };
+    if (available_from !== undefined) update.available_from = available_from;
+    const { error } = await supabase
+      .from("rooms")
+      .update(update)
+      .eq("id", room_id);
+    if (error) return err(error.message);
+    return ok({ ok: true, room_id, status, available_from: available_from ?? null });
+  },
+);
+
 // ---------- start ----------
 
 async function main() {

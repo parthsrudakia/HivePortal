@@ -26,6 +26,8 @@ locally for clients you trust.
 | `log_cleaning` | Insert a cleaning record for a property |
 | `set_listing_action` | Update a room's VA priority flag |
 | `update_room_rent` | Change a room's base rent (and optionally bundle fee) |
+| `end_tenancy` | End a tenancy now or schedule a future move-out (handles room status) |
+| `set_room_status` | Manually flip a room to available / occupied / reserved / maintenance |
 
 ## Setup
 
