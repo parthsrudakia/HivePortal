@@ -58,6 +58,50 @@ function endOfMonth() {
     .slice(0, 10);
 }
 
+/** Days between two ISO dates, inclusive. */
+function daysInclusive(aIso: string, bIso: string) {
+  const a = new Date(aIso + "T00:00:00Z").getTime();
+  const b = new Date(bIso + "T00:00:00Z").getTime();
+  return Math.round((b - a) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+/**
+ * What's owed for a single tenancy in the given calendar month.
+ * Pro-rates if the tenancy started mid-month or ends mid-month.
+ *  • Tenancy doesn't overlap the month at all → 0
+ *  • Tenancy covers the whole month → full monthly_rent
+ *  • Partial overlap → monthly_rent × overlap_days ÷ days_in_month
+ */
+function dueForMonth(
+  startDate: string,
+  endDate: string | null,
+  monthlyRent: number,
+  monthStart: string,
+  monthEnd: string,
+): { due: number; prorated: boolean; daysActive: number; daysInMonth: number } {
+  const start = startDate < monthStart ? monthStart : startDate;
+  const end = endDate && endDate < monthEnd ? endDate : monthEnd;
+  if (start > end) {
+    return {
+      due: 0,
+      prorated: false,
+      daysActive: 0,
+      daysInMonth: daysInclusive(monthStart, monthEnd),
+    };
+  }
+  const daysActive = daysInclusive(start, end);
+  const daysInMonth = daysInclusive(monthStart, monthEnd);
+  if (daysActive >= daysInMonth) {
+    return { due: monthlyRent, prorated: false, daysActive, daysInMonth };
+  }
+  return {
+    due: Math.round((monthlyRent * daysActive) / daysInMonth),
+    prorated: true,
+    daysActive,
+    daysInMonth,
+  };
+}
+
 type PageProps = { searchParams: Promise<{ q?: string }> };
 
 export default async function TenantsPage({ searchParams }: PageProps) {
@@ -86,7 +130,9 @@ export default async function TenantsPage({ searchParams }: PageProps) {
 
   const rows = data ?? [];
 
-  // Compute paid-this-month totals + portfolio totals
+  // Compute paid-this-month + prorated due totals + portfolio totals.
+  // If a tenancy started mid-month (or ends mid-month), the "due" amount is
+  // pro-rated by overlap_days / days_in_month — same way the spreadsheet does it.
   let expectedTotal = 0;
   let paidTotal = 0;
   const rowsWithStatus = rows.map((row) => {
@@ -98,10 +144,17 @@ export default async function TenantsPage({ searchParams }: PageProps) {
           p.paid_on <= monthEnd,
       )
       .reduce((sum, p) => sum + Number(p.amount), 0);
-    const balance = Number(row.monthly_rent) - paidThisMonth;
-    expectedTotal += Number(row.monthly_rent);
+    const proration = dueForMonth(
+      row.start_date,
+      row.end_date,
+      Number(row.monthly_rent),
+      monthStart,
+      monthEnd,
+    );
+    const balance = proration.due - paidThisMonth;
+    expectedTotal += proration.due;
     paidTotal += paidThisMonth;
-    return { ...row, paidThisMonth, balance };
+    return { ...row, paidThisMonth, balance, due: proration.due, prorated: proration.prorated, daysActive: proration.daysActive, daysInMonth: proration.daysInMonth };
   });
 
   const visibleRows = query
@@ -205,74 +258,177 @@ export default async function TenantsPage({ searchParams }: PageProps) {
             <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-5 py-3 font-medium">Tenant</th>
-                <th className="px-5 py-3 font-medium">Unit / Room</th>
-                <th className="px-5 py-3 text-right font-medium">Monthly</th>
+                <th className="px-5 py-3 font-medium">Room</th>
+                <th className="px-5 py-3 text-right font-medium">Due</th>
                 <th className="px-5 py-3 text-right font-medium">Paid</th>
                 <th className="px-5 py-3 text-right font-medium">Balance</th>
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((r) => {
-                const tenant = one(r.tenants);
-                const room = one(r.rooms);
-                const p = one(room?.properties ?? null);
-                const unitTitle = p
-                  ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-                  : "—";
-                const tenantName = tenant?.full_name ?? "—";
-                const isPaid = r.balance <= 0;
-
-                return (
-                  <tr
-                    key={r.id}
-                    className="border-t border-stone/40 transition hover:bg-cream/60"
-                  >
-                    <td className="px-5 py-4">
-                      <Link
-                        href={`/tenants/${r.tenant_id}`}
-                        className="text-ink hover:text-accent-text"
-                      >
-                        {tenantName}
-                      </Link>
-                      {tenant?.email && (
-                        <p className="text-xs text-muted">{tenant.email}</p>
-                      )}
-                      {r.end_date && (
-                        <p className="mt-1 text-xs text-accent-text">
-                          Ending {formatDate(r.end_date)}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-ink">
-                      <p>{unitTitle}</p>
-                      <p className="text-xs text-muted">
-                        {room?.room_number ?? ""}
-                      </p>
-                    </td>
-                    <td className="px-5 py-4 text-right text-ink">
-                      {fmtMoney(Number(r.monthly_rent))}
-                    </td>
-                    <td className="px-5 py-4 text-right text-ink">
-                      {fmtMoney(r.paidThisMonth)}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <span
-                        className={
-                          isPaid
-                            ? "rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text"
-                            : "text-ink"
-                        }
-                      >
-                        {isPaid ? "Paid" : fmtMoney(r.balance)}
-                      </span>
-                    </td>
-                  </tr>
+              {(() => {
+                // Group rows by property label. Sort properties alphabetically;
+                // tenancies with no room/property go into "Unassigned".
+                const groups = new Map<
+                  string,
+                  typeof visibleRows
+                >();
+                for (const r of visibleRows) {
+                  const room = one(r.rooms);
+                  const p = one(room?.properties ?? null);
+                  const key = p
+                    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
+                    : "Unassigned";
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(r);
+                }
+                const ordered = Array.from(groups.entries()).sort(
+                  ([a], [b]) =>
+                    a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b),
                 );
-              })}
+
+                return ordered.map(([label, items]) => {
+                  const subDue = items.reduce((s, r) => s + r.due, 0);
+                  const subPaid = items.reduce((s, r) => s + r.paidThisMonth, 0);
+                  const subBalance = subDue - subPaid;
+                  return (
+                    <PropertyGroup
+                      key={label}
+                      label={label}
+                      items={items}
+                      subDue={subDue}
+                      subPaid={subPaid}
+                      subBalance={subBalance}
+                    />
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </section>
       )}
     </div>
+  );
+}
+
+function PropertyGroup({
+  label,
+  items,
+  subDue,
+  subPaid,
+  subBalance,
+}: {
+  label: string;
+  items: Array<{
+    id: string;
+    tenant_id: string;
+    monthly_rent: number;
+    start_date: string;
+    end_date: string | null;
+    tenants: TenantRel | TenantRel[] | null;
+    rooms: RoomRel | RoomRel[] | null;
+    payments: { id: string; amount: number; paid_on: string; payment_type: string }[];
+    paidThisMonth: number;
+    balance: number;
+    due: number;
+    prorated: boolean;
+    daysActive: number;
+    daysInMonth: number;
+  }>;
+  subDue: number;
+  subPaid: number;
+  subBalance: number;
+}) {
+  return (
+    <>
+      <tr className="border-t border-stone/40 bg-warm/40">
+        <td
+          colSpan={5}
+          className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink/80"
+        >
+          {label} <span className="text-muted">({items.length})</span>
+        </td>
+      </tr>
+      {items.map((r) => {
+        const tenant = one(r.tenants);
+        const room = one(r.rooms);
+        const tenantName = tenant?.full_name ?? "—";
+        const isPaid = r.balance <= 0;
+        return (
+          <tr
+            key={r.id}
+            className="border-t border-stone/30 transition hover:bg-cream/60"
+          >
+            <td className="px-5 py-3">
+              <Link
+                href={`/tenants/${r.tenant_id}`}
+                className="text-ink hover:text-accent-text"
+              >
+                {tenantName}
+              </Link>
+              {tenant?.email && (
+                <p className="text-xs text-muted">{tenant.email}</p>
+              )}
+              {r.end_date && (
+                <p className="mt-1 text-xs text-accent-text">
+                  Ending {formatDate(r.end_date)}
+                </p>
+              )}
+            </td>
+            <td className="px-5 py-3 text-ink">
+              {room?.room_number ?? "—"}
+            </td>
+            <td
+              className="px-5 py-3 text-right text-ink"
+              title={
+                r.prorated
+                  ? `Prorated — ${r.daysActive}/${r.daysInMonth} days @ ${fmtMoney(Number(r.monthly_rent))}/mo`
+                  : undefined
+              }
+            >
+              {fmtMoney(r.due)}
+              {r.prorated && (
+                <span className="ml-1 text-[10px] uppercase tracking-wide text-accent-text">
+                  pro
+                </span>
+              )}
+            </td>
+            <td className="px-5 py-3 text-right text-ink">
+              {fmtMoney(r.paidThisMonth)}
+            </td>
+            <td className="px-5 py-3 text-right">
+              <span
+                className={
+                  isPaid
+                    ? "rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text"
+                    : "text-ink"
+                }
+              >
+                {isPaid ? "Paid" : fmtMoney(r.balance)}
+              </span>
+            </td>
+          </tr>
+        );
+      })}
+      <tr className="border-t border-stone/40 bg-cream/60 text-sm font-medium">
+        <td colSpan={2} className="px-5 py-2 text-right text-muted">
+          Subtotal
+        </td>
+        <td className="px-5 py-2 text-right text-ink tabular-nums">
+          {fmtMoney(subDue)}
+        </td>
+        <td className="px-5 py-2 text-right text-ink tabular-nums">
+          {fmtMoney(subPaid)}
+        </td>
+        <td className="px-5 py-2 text-right text-ink tabular-nums">
+          {subBalance <= 0 ? (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text">
+              Paid
+            </span>
+          ) : (
+            fmtMoney(subBalance)
+          )}
+        </td>
+      </tr>
+    </>
   );
 }
