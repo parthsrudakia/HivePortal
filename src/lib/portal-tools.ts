@@ -631,4 +631,57 @@ export const tools = [
     }),
     run: async (args) => JSON.stringify(await setRoomStatus(args)),
   }),
+  betaZodTool({
+    name: "get_collection_summary",
+    description:
+      "Headline rent-collection KPIs: this-month expected/collected/outstanding, " +
+      "year-to-date expected/collected, and lifetime collected + payment count.",
+    inputSchema: z.object({}),
+    run: async () => {
+      const { getCollectionSummary } = await import(
+        "@/lib/analytics/collections"
+      );
+      return JSON.stringify(await getCollectionSummary());
+    },
+  }),
+  betaZodTool({
+    name: "get_monthly_collections",
+    description:
+      "Per-month timeline of expected vs collected rent across the portfolio. " +
+      "Defaults to all months from the earliest tenancy start through the current month.",
+    inputSchema: z.object({
+      from_month: z
+        .string()
+        .optional()
+        .describe('Start month "YYYY-MM"; defaults to earliest tenancy start'),
+      to_month: z
+        .string()
+        .optional()
+        .describe('End month "YYYY-MM"; defaults to current month'),
+    }),
+    run: async (args) => {
+      const { getMonthlyCollections } = await import(
+        "@/lib/analytics/collections"
+      );
+      return JSON.stringify(
+        await getMonthlyCollections(args.from_month, args.to_month),
+      );
+    },
+  }),
+  betaZodTool({
+    name: "get_property_collections",
+    description:
+      "Lifetime rent collected per property, sorted descending. " +
+      "Optionally bounded by date range (paid_on between from and to).",
+    inputSchema: z.object({
+      from: z.string().optional().describe('Start date "YYYY-MM-DD" (optional)'),
+      to: z.string().optional().describe('End date "YYYY-MM-DD" (optional)'),
+    }),
+    run: async (args) => {
+      const { getPropertyCollections } = await import(
+        "@/lib/analytics/collections"
+      );
+      return JSON.stringify(await getPropertyCollections(args.from, args.to));
+    },
+  }),
 ];
