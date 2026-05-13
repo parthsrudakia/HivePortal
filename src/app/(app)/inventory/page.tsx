@@ -254,7 +254,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                 <th className="w-1.5" />
                 <th className="px-3 py-2 font-medium">Unit</th>
                 <th className="px-3 py-2 font-medium">Room</th>
-                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Available</th>
                 <th className="px-3 py-2 text-right font-medium">Rent</th>
                 <th className="px-3 py-2 font-medium">Tenant</th>
                 <th className="px-3 py-2 font-medium">Listing action</th>
@@ -264,7 +264,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
             </thead>
             <tbody>
               {filtered.map((r, i) => (
-                <InventoryRow key={r.id} room={r} today={today} striped={i % 2 === 1} />
+                <InventoryRow key={r.id} room={r} striped={i % 2 === 1} />
               ))}
             </tbody>
           </table>
@@ -315,21 +315,15 @@ function KpiTile({
 
 function InventoryRow({
   room,
-  today,
   striped,
 }: {
   room: Row;
-  today: string;
   striped: boolean;
 }) {
   const p = one(room.properties);
   const unitTitle = p
     ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
     : "—";
-
-  const now =
-    room.status === "available" &&
-    (!room.available_from || room.available_from <= today);
 
   const tenancies = (room.tenancies ?? [])
     .slice()
@@ -361,17 +355,8 @@ function InventoryRow({
         )}
       </td>
       <td className="px-3 py-2.5 text-ink">{room.room_number ?? "—"}</td>
-      <td className="px-3 py-2.5">
-        <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-            now ? "bg-accent text-white" : "bg-ink text-white"
-          }`}
-        >
-          {now ? "Now" : "Sched"}
-          {room.available_from && (
-            <span className="opacity-90">· {formatDate(room.available_from)}</span>
-          )}
-        </span>
+      <td className="px-3 py-2.5 tabular-nums text-ink">
+        {room.available_from ? formatDate(room.available_from) : "—"}
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-ink">
         {fmtMoney(room.total_rent)}
