@@ -5,7 +5,7 @@
  */
 
 const MASTER_EMAILS = new Set<string>([
-  "vdutta1485@hotmail.com",
+  "vdutta1485@gmail.com",
 ]);
 
 export function isMaster(email: string | null | undefined): boolean {
