@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { href: "/credentials", label: "Credentials" },
   { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/audit-log", label: "Audit log", masterOnly: true },
+  { href: "/settings/users", label: "Users", masterOnly: true },
 ];
 
 export default async function AppLayout({
