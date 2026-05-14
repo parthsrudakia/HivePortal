@@ -37,7 +37,11 @@ export async function inviteUser(
   if (!email) return { error: "Email is required." };
   if (!email.includes("@")) return { error: "That doesn't look like an email." };
 
-  const { error } = await admin().auth.admin.inviteUserByEmail(email);
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://hive-portal-1485.vercel.app";
+  const { error } = await admin().auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${origin}/auth/accept-invite`,
+  });
   if (error) return { error: error.message };
 
   revalidatePath("/settings/users");
