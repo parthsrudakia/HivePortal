@@ -1,18 +1,17 @@
 import { Resend } from "resend";
 
-const REMINDER_SUBJECT = "Rent reminder";
+const REMINDER_SUBJECT = "Rent Reminder";
 
 const REMINDER_TEXT = `Hi,
 
-This is a friendly reminder that your rent is due. Please submit payment by the 5th of this month to avoid a $50 late fee.
+This is a friendly reminder that your rent is due. Please submit payment by the 5th of this month to avoid a $50 late fee. Please ignore if already paid.
 
-Thanks,
-Hive`;
+Thanks`;
 
 const REMINDER_HTML = `<div style="font-family: 'DM Sans', Arial, sans-serif; color:#1a1a18; max-width:560px; line-height:1.5;">
   <p>Hi,</p>
-  <p>This is a friendly reminder that your rent is due. Please submit payment by the <strong>5th of this month</strong> to avoid a <strong>$50 late fee</strong>.</p>
-  <p>Thanks,<br/>Hive</p>
+  <p>This is a friendly reminder that your rent is due. Please submit payment by the <strong>5th of this month</strong> to avoid a <strong>$50 late fee</strong>. Please ignore if already paid.</p>
+  <p>Thanks</p>
 </div>`;
 
 export type SendResult =
