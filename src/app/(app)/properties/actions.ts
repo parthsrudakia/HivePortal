@@ -166,7 +166,10 @@ export async function deleteProperty(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  await supabase.from("properties").delete().eq("id", id);
+  const { error } = await supabase.from("properties").delete().eq("id", id);
+  if (error) {
+    throw new Error(`Failed to delete property: ${error.message}`);
+  }
   revalidatePath("/properties");
   redirect("/properties");
 }
