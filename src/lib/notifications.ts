@@ -291,23 +291,26 @@ async function handleAvailableFromChange(
   const { data: room } = await supabase
     .from("rooms")
     .select(
-      "id, room_number, property_id, properties(id, building_name, street_address, unit_number, cleaner_id)",
+      "id, room_number, property_id, properties(id, building_name, street_address, unit_number, cleaner_id, leaseholders(name))",
     )
     .eq("id", roomId)
     .maybeSingle();
   if (!room) return;
 
+  type LeaseholderShape = { name: string };
   type PropertyShape = {
     id: string;
     building_name: string | null;
     street_address: string;
     unit_number: string;
     cleaner_id: string | null;
+    leaseholders: LeaseholderShape | LeaseholderShape[] | null;
   };
   const property = one(
     (room as { properties: PropertyShape | PropertyShape[] | null }).properties,
   ) as PropertyShape | null;
   if (!property) return;
+  const leaseholderName = one(property.leaseholders)?.name ?? null;
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -371,6 +374,36 @@ async function handleAvailableFromChange(
   const unitLabel = `${property.building_name?.trim() || property.street_address} Apt ${property.unit_number}`;
   const roomLabel = room.room_number ?? "Room";
 
+  // Pull active tenants for this property so the cleaner has contact info.
+  const { data: tenancyRows } = await supabase
+    .from("tenancies")
+    .select(
+      "status, rooms!inner(room_number, property_id), tenants(full_name, email, phone)",
+    )
+    .eq("rooms.property_id", property.id)
+    .eq("status", "active");
+
+  type TenantRow = {
+    rooms: { room_number: string | null } | { room_number: string | null }[] | null;
+    tenants:
+      | { full_name: string; email: string | null; phone: string | null }
+      | { full_name: string; email: string | null; phone: string | null }[]
+      | null;
+  };
+  const occupants: OccupantInfo[] = ((tenancyRows ?? []) as TenantRow[])
+    .map((r) => {
+      const room = one(r.rooms);
+      const tenant = one(r.tenants);
+      if (!tenant) return null;
+      return {
+        room_number: room?.room_number ?? null,
+        full_name: tenant.full_name,
+        email: tenant.email,
+        phone: tenant.phone,
+      };
+    })
+    .filter((x): x is OccupantInfo => x !== null);
+
   await sendCleaningEmail({
     to: cleaner.email,
     action,
@@ -378,8 +411,17 @@ async function handleAvailableFromChange(
     roomLabel,
     newDate: cleaningDate,
     oldDate: oldCleaningDate,
+    leaseholderName,
+    occupants,
   });
 }
+
+type OccupantInfo = {
+  room_number: string | null;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+};
 
 export type CleaningEmailInput = {
   to: string;
@@ -388,7 +430,48 @@ export type CleaningEmailInput = {
   roomLabel: string;
   newDate: string | null;
   oldDate: string | null;
+  leaseholderName?: string | null;
+  occupants?: OccupantInfo[];
 };
+
+function unitDetailsText(input: CleaningEmailInput): string {
+  const lines: string[] = ["Unit details:"];
+  lines.push(`Leaseholder: ${input.leaseholderName ?? "—"}`);
+  if (!input.occupants || input.occupants.length === 0) {
+    lines.push("Current tenants: none");
+  } else {
+    lines.push("Current tenants:");
+    for (const o of input.occupants) {
+      const contact = [o.email, o.phone].filter(Boolean).join(" · ") || "no contact on file";
+      const room = o.room_number ? ` (${o.room_number})` : "";
+      lines.push(`- ${o.full_name}${room} — ${contact}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function unitDetailsHtml(input: CleaningEmailInput): string {
+  const lh = input.leaseholderName ?? "—";
+  let tenantsBlock: string;
+  if (!input.occupants || input.occupants.length === 0) {
+    tenantsBlock = `<li style="margin-left:1.2em;">No active tenants.</li>`;
+  } else {
+    tenantsBlock = input.occupants
+      .map((o) => {
+        const contact = [o.email, o.phone].filter(Boolean).join(" · ") || "no contact on file";
+        const room = o.room_number ? ` <em>(${o.room_number})</em>` : "";
+        return `<li><strong>${o.full_name}</strong>${room} — ${contact}</li>`;
+      })
+      .join("");
+    tenantsBlock = `<ul style="margin:0; padding-left:1.2em;">${tenantsBlock}</ul>`;
+  }
+  return `<div style="margin-top:1.5em; padding-top:1em; border-top:1px solid #c4bdb3;">
+  <p style="margin:0 0 0.5em 0;"><strong>Unit details</strong></p>
+  <p style="margin:0;">Leaseholder: ${lh}</p>
+  <p style="margin:0.5em 0 0.25em 0;">Current tenants:</p>
+  ${tenantsBlock}
+</div>`;
+}
 
 async function sendCleaningEmail(
   input: CleaningEmailInput,
@@ -431,7 +514,8 @@ Thanks`;
     bodyHtml = `<p>Hi,</p><p>The cleaning schedule for <strong>${input.unitLabel}</strong> has been updated. The <strong>move-out cleaning</strong> for <strong>${input.roomLabel}</strong> that was set for <strong>${input.oldDate}</strong> is now cancelled.</p><p>Thanks</p>`;
   }
 
-  const html = `<div style="font-family: 'DM Sans', Arial, sans-serif; color:#1a1a18; max-width:560px; line-height:1.5;">${bodyHtml}</div>`;
+  const fullBody = `${body}\n\n${unitDetailsText(input)}`;
+  const html = `<div style="font-family: 'DM Sans', Arial, sans-serif; color:#1a1a18; max-width:560px; line-height:1.5;">${bodyHtml}${unitDetailsHtml(input)}</div>`;
 
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
@@ -439,7 +523,7 @@ Thanks`;
     to: input.to,
     replyTo,
     subject,
-    text: body,
+    text: fullBody,
     html,
   });
 
