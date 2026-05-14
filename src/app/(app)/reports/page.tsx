@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import {
   getCollectionSummary,
   getMonthlyCollections,
@@ -53,6 +56,14 @@ export default async function ReportsPage({
 }: {
   searchParams: SearchParams;
 }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!isMaster(user?.email)) {
+    redirect("/");
+  }
+
   const sp = await searchParams;
   const fromMonth = isMonth(sp.from) ? sp.from : undefined;
   const toMonth = isMonth(sp.to) ? sp.to : undefined;

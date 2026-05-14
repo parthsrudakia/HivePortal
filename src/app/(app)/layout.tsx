@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import { logout } from "../login/actions";
 
-const NAV = [
+type NavItem = { href: string; label: string; masterOnly?: boolean };
+
+const NAV: NavItem[] = [
   { href: "/", label: "Dashboard" },
   { href: "/properties", label: "Properties" },
   { href: "/inventory", label: "Inventory" },
   { href: "/tenants", label: "Tenants & Rent" },
   { href: "/reconciliation", label: "Reconciliation" },
-  { href: "/reports", label: "Reports" },
+  { href: "/reports", label: "Reports", masterOnly: true },
   { href: "/cleaning", label: "Cleaning" },
   { href: "/marketing", label: "Marketing" },
   { href: "/credentials", label: "Credentials" },
@@ -31,6 +34,9 @@ export default async function AppLayout({
   if (!user) {
     redirect("/login");
   }
+
+  const master = isMaster(user.email);
+  const navItems = NAV.filter((item) => !item.masterOnly || master);
 
   return (
     <div className="flex min-h-full">
@@ -60,7 +66,7 @@ export default async function AppLayout({
           </span>
         </Link>
         <nav className="mt-10 flex flex-col gap-1 text-sm">
-          {NAV.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
