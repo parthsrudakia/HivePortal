@@ -98,15 +98,18 @@ export default async function CleaningPage({ searchParams }: PageProps) {
     };
   });
 
-  // Most-recent cleaning per property (rows already sorted desc by date).
+  const today = todayISO();
+
+  // Most-recent *past* cleaning per property — future-dated move-out
+  // scheduled rows shouldn't count as "last cleaned".
   const lastByProperty = new Map<string, string>();
   for (const r of rows) {
+    if (r.cleaning_date > today) continue;
     if (!lastByProperty.has(r.property_id)) {
       lastByProperty.set(r.property_id, r.cleaning_date);
     }
   }
 
-  const today = todayISO();
   const schedule = propertyOptions
     .map((p) => ({
       property: p,

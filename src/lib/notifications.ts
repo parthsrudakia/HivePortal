@@ -43,7 +43,10 @@ function valueLabel(field: "status" | "listing_action", v: string | null): strin
 const WATCHED = ["status", "listing_action"] as const;
 type Watched = (typeof WATCHED)[number];
 
-type RoomPatch = Record<string, unknown> & Partial<Record<Watched, string>>;
+type RoomPatch = Record<string, unknown> &
+  Partial<Record<Watched, string>> & {
+    available_from?: string | null;
+  };
 
 type AnyClient = SupabaseClient<any, any, any>;
 
@@ -61,11 +64,16 @@ export async function updateRoomsWithNotification(
   if (ids.length === 0) return { error: null };
 
   const willChange = WATCHED.filter((f) => f in patch);
-  type BeforeRow = { id: string } & Partial<Record<Watched, string>>;
+  const availableFromTouched = "available_from" in patch;
+
+  type BeforeRow = { id: string; available_from: string | null } & Partial<
+    Record<Watched, string>
+  >;
   const before = new Map<string, BeforeRow>();
 
-  if (willChange.length > 0) {
-    const sel = ["id", ...willChange].join(", ");
+  const needSelect = willChange.length > 0 || availableFromTouched;
+  if (needSelect) {
+    const sel = ["id", "available_from", ...willChange].join(", ");
     const { data } = await supabase
       .from("rooms")
       .select(sel)
@@ -77,7 +85,7 @@ export async function updateRoomsWithNotification(
   const { error } = await supabase.from("rooms").update(patch).in("id", ids);
   if (error) return { error };
 
-  if (willChange.length === 0) return { error: null };
+  if (!needSelect) return { error: null };
 
   for (const id of ids) {
     const old = before.get(id);
@@ -87,6 +95,13 @@ export async function updateRoomsWithNotification(
       const toV = patch[f] ?? null;
       if (fromV === toV) continue;
       await recordChangeAndEmail(supabase, id, f, fromV, toV);
+    }
+    if (availableFromTouched) {
+      const fromDate = old.available_from ?? null;
+      const toDate = (patch.available_from as string | null | undefined) ?? null;
+      if (fromDate !== toDate) {
+        await handleAvailableFromChange(supabase, id, fromDate, toDate);
+      }
     }
   }
   return { error: null };
@@ -238,6 +253,193 @@ Thanks`;
     replyTo,
     subject,
     text,
+    html,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.id) return { ok: false, error: "No id returned from Resend" };
+  return { ok: true, id: data.id };
+}
+
+
+// ----- Move-out cleaning scheduler -----
+//
+// Triggered from updateRoomsWithNotification when a room's available_from
+// transitions:
+//   null → date      schedule a move-out cleaning the day before
+//   date1 → date2    move the existing move-out cleaning (or create one)
+//   date → null      cancel any future move-out cleaning for this room
+//
+// Move-out cleaning rows are stored in cleaning_records with kind='move_out'
+// and the specific room_id. Future-dated rows are excluded from the regular
+// next-due computation (see /cleaning page).
+
+function addDaysISO(iso: string, delta: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+async function handleAvailableFromChange(
+  supabase: AnyClient,
+  roomId: string,
+  fromDate: string | null,
+  toDate: string | null,
+) {
+  // Look up the property, cleaner, and room number we need for both the DB
+  // write and the email.
+  const { data: room } = await supabase
+    .from("rooms")
+    .select(
+      "id, room_number, property_id, properties(id, building_name, street_address, unit_number, cleaner_id)",
+    )
+    .eq("id", roomId)
+    .maybeSingle();
+  if (!room) return;
+
+  type PropertyShape = {
+    id: string;
+    building_name: string | null;
+    street_address: string;
+    unit_number: string;
+    cleaner_id: string | null;
+  };
+  const property = one(
+    (room as { properties: PropertyShape | PropertyShape[] | null }).properties,
+  ) as PropertyShape | null;
+  if (!property) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 1. Find the existing pending move-out cleaning for this room (if any).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (supabase as any)
+    .from("cleaning_records")
+    .select("id, cleaning_date")
+    .eq("room_id", roomId)
+    .eq("kind", "move_out")
+    .gte("cleaning_date", today)
+    .maybeSingle();
+
+  let action: "scheduled" | "rescheduled" | "cancelled" | null = null;
+  let cleaningDate: string | null = null;
+  let oldCleaningDate: string | null = existing?.cleaning_date ?? null;
+
+  if (toDate) {
+    cleaningDate = addDaysISO(toDate, -1);
+    if (existing) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from("cleaning_records")
+        .update({ cleaning_date: cleaningDate })
+        .eq("id", existing.id);
+      action = existing.cleaning_date === cleaningDate ? null : "rescheduled";
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: insErr } = await (supabase as any)
+        .from("cleaning_records")
+        .insert({
+          property_id: property.id,
+          room_id: roomId,
+          cleaning_date: cleaningDate,
+          kind: "move_out",
+          notes: `Move-out cleaning for ${room.room_number ?? "room"}`,
+        });
+      if (!insErr) action = "scheduled";
+    }
+  } else if (existing) {
+    // toDate is null and there's an existing scheduled move-out → cancel.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from("cleaning_records")
+      .delete()
+      .eq("id", existing.id);
+    action = "cancelled";
+  }
+
+  if (!action || !property.cleaner_id) return;
+
+  // 2. Look up the cleaner and send them an email.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: cleaner } = await (supabase as any)
+    .from("cleaners")
+    .select("email, enabled")
+    .eq("id", property.cleaner_id)
+    .maybeSingle();
+  if (!cleaner?.email || cleaner.enabled === false) return;
+
+  const unitLabel = `${property.building_name?.trim() || property.street_address} Apt ${property.unit_number}`;
+  const roomLabel = room.room_number ?? "Room";
+
+  await sendCleaningEmail({
+    to: cleaner.email,
+    action,
+    unitLabel,
+    roomLabel,
+    newDate: cleaningDate,
+    oldDate: oldCleaningDate,
+  });
+}
+
+export type CleaningEmailInput = {
+  to: string;
+  action: "scheduled" | "rescheduled" | "cancelled";
+  unitLabel: string;
+  roomLabel: string;
+  newDate: string | null;
+  oldDate: string | null;
+};
+
+async function sendCleaningEmail(
+  input: CleaningEmailInput,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return { ok: false, error: "RESEND_API_KEY not set" };
+
+  const from = process.env.RESEND_FROM || "onboarding@resend.dev";
+  const replyTo = process.env.RESEND_REPLY_TO;
+
+  const unitRoom = `${input.unitLabel} · ${input.roomLabel}`;
+
+  let subject: string;
+  let body: string;
+  let bodyHtml: string;
+
+  if (input.action === "scheduled") {
+    subject = `Cleaning scheduled — ${unitRoom}`;
+    body = `Hi,
+
+The cleaning schedule for ${input.unitLabel} has been updated. This is a move-out cleaning for ${input.roomLabel}, scheduled for ${input.newDate}.
+
+Thanks`;
+    bodyHtml = `<p>Hi,</p><p>The cleaning schedule for <strong>${input.unitLabel}</strong> has been updated. This is a <strong>move-out cleaning</strong> for <strong>${input.roomLabel}</strong>, scheduled for <strong>${input.newDate}</strong>.</p><p>Thanks</p>`;
+  } else if (input.action === "rescheduled") {
+    subject = `Cleaning rescheduled — ${unitRoom}`;
+    body = `Hi,
+
+The cleaning schedule for ${input.unitLabel} has been updated. The move-out cleaning for ${input.roomLabel} has been moved from ${input.oldDate} to ${input.newDate}.
+
+Thanks`;
+    bodyHtml = `<p>Hi,</p><p>The cleaning schedule for <strong>${input.unitLabel}</strong> has been updated. The <strong>move-out cleaning</strong> for <strong>${input.roomLabel}</strong> has been moved from <strong>${input.oldDate}</strong> to <strong>${input.newDate}</strong>.</p><p>Thanks</p>`;
+  } else {
+    subject = `Cleaning cancelled — ${unitRoom}`;
+    body = `Hi,
+
+The cleaning schedule for ${input.unitLabel} has been updated. The move-out cleaning for ${input.roomLabel} that was set for ${input.oldDate} is now cancelled.
+
+Thanks`;
+    bodyHtml = `<p>Hi,</p><p>The cleaning schedule for <strong>${input.unitLabel}</strong> has been updated. The <strong>move-out cleaning</strong> for <strong>${input.roomLabel}</strong> that was set for <strong>${input.oldDate}</strong> is now cancelled.</p><p>Thanks</p>`;
+  }
+
+  const html = `<div style="font-family: 'DM Sans', Arial, sans-serif; color:#1a1a18; max-width:560px; line-height:1.5;">${bodyHtml}</div>`;
+
+  const resend = new Resend(apiKey);
+  const { data, error } = await resend.emails.send({
+    from,
+    to: input.to,
+    replyTo,
+    subject,
+    text: body,
     html,
   });
 

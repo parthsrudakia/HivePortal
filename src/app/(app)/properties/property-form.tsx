@@ -19,8 +19,11 @@ type InitialValues = {
   in_unit_laundry: boolean;
   amenities_notes: string | null;
   leaseholder_name: string | null;
+  cleaner_id: string | null;
   notes: string | null;
 };
+
+export type CleanerOption = { id: string; name: string; email: string };
 
 const KNOWN_NEIGHBORHOODS = [
   "JSQ",
@@ -42,6 +45,7 @@ type Props = {
     formData: FormData,
   ) => Promise<PropertyFormState>;
   knownLeaseholders: string[];
+  cleaners: CleanerOption[];
   initial?: Partial<InitialValues>;
   submitLabel: string;
 };
@@ -56,6 +60,7 @@ const checkboxLabel =
 export function PropertyForm({
   action,
   knownLeaseholders,
+  cleaners,
   initial,
   submitLabel,
 }: Props) {
@@ -253,7 +258,28 @@ export function PropertyForm({
               ))}
             </datalist>
           </label>
-          <label className="flex flex-col gap-1.5 sm:col-span-1">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Cleaner</span>
+            <select
+              name="cleaner_id"
+              defaultValue={v.cleaner_id ?? ""}
+              className={fieldInput}
+            >
+              <option value="">— none —</option>
+              {cleaners.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} — {c.email}
+                </option>
+              ))}
+            </select>
+            {cleaners.length === 0 && (
+              <span className="text-xs text-muted">
+                No cleaners on file. Add one at{" "}
+                <em>Notifications → Cleaners</em> first.
+              </span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1.5 sm:col-span-2">
             <span className={fieldLabel}>Notes</span>
             <textarea
               name="notes"

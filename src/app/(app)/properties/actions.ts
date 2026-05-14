@@ -22,6 +22,7 @@ type ParsedForm = {
   in_unit_laundry: boolean;
   amenities_notes: string | null;
   leaseholder_name: string | null;
+  cleaner_id: string | null;
   notes: string | null;
 };
 
@@ -59,6 +60,7 @@ function parseForm(formData: FormData): ParsedForm | { error: string } {
     in_unit_laundry: formData.get("in_unit_laundry") === "on",
     amenities_notes: strOrNull("amenities_notes"),
     leaseholder_name: strOrNull("leaseholder_name"),
+    cleaner_id: strOrNull("cleaner_id"),
     notes: strOrNull("notes"),
   };
 }
@@ -102,7 +104,9 @@ export async function createProperty(
 
   const { leaseholder_name: _ignore, ...rest } = parsed;
   void _ignore;
-  const { data, error } = await supabase
+  // cleaner_id is brand-new; types.ts is regenerated after the migration push.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from("properties")
     .insert({ ...rest, leaseholder_id })
     .select("id")
@@ -137,7 +141,8 @@ export async function updateProperty(
 
   const { leaseholder_name: _ignore, ...rest } = parsed;
   void _ignore;
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from("properties")
     .update({ ...rest, leaseholder_id })
     .eq("id", id);

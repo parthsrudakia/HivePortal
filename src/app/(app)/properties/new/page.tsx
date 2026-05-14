@@ -7,13 +7,26 @@ export const dynamic = "force-dynamic";
 
 export default async function NewPropertyPage() {
   const supabase = await createClient();
-  const { data: leaseholders } = await supabase
-    .from("leaseholders")
-    .select("name")
-    .eq("active", true)
-    .order("name");
+  const [{ data: leaseholders }, { data: cleanersData }] = await Promise.all([
+    supabase
+      .from("leaseholders")
+      .select("name")
+      .eq("active", true)
+      .order("name"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("cleaners")
+      .select("id, name, email")
+      .eq("enabled", true)
+      .order("name"),
+  ]);
 
   const knownLeaseholders = (leaseholders ?? []).map((l) => l.name);
+  const cleaners = (cleanersData ?? []) as Array<{
+    id: string;
+    name: string;
+    email: string;
+  }>;
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -36,6 +49,7 @@ export default async function NewPropertyPage() {
         <PropertyForm
           action={createProperty}
           knownLeaseholders={knownLeaseholders}
+          cleaners={cleaners}
           submitLabel="Save property"
         />
       </div>

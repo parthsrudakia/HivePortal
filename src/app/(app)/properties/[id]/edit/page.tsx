@@ -28,6 +28,7 @@ type PropertyRecord = {
   laundry_in_building: boolean;
   in_unit_laundry: boolean;
   amenities_notes: string | null;
+  cleaner_id: string | null;
   notes: string | null;
   leaseholders: LeaseholderRel | LeaseholderRel[] | null;
 };
@@ -36,25 +37,37 @@ export default async function EditPropertyPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: property }, { data: leaseholders }] = await Promise.all([
-    supabase
-      .from("properties")
-      .select(
-        `id, building_name, street_address, unit_number, cross_street,
-         neighborhood, bedrooms, bathrooms,
-         has_gym, has_elevator, has_parking, has_doorman,
-         laundry_in_building, in_unit_laundry,
-         amenities_notes, notes,
-         leaseholders(name)`,
-      )
-      .eq("id", id)
-      .maybeSingle<PropertyRecord>(),
-    supabase
-      .from("leaseholders")
-      .select("name")
-      .eq("active", true)
-      .order("name"),
-  ]);
+  const [{ data: property }, { data: leaseholders }, { data: cleanersData }] =
+    await Promise.all([
+      supabase
+        .from("properties")
+        .select(
+          `id, building_name, street_address, unit_number, cross_street,
+           neighborhood, bedrooms, bathrooms,
+           has_gym, has_elevator, has_parking, has_doorman,
+           laundry_in_building, in_unit_laundry,
+           amenities_notes, cleaner_id, notes,
+           leaseholders(name)`,
+        )
+        .eq("id", id)
+        .maybeSingle<PropertyRecord>(),
+      supabase
+        .from("leaseholders")
+        .select("name")
+        .eq("active", true)
+        .order("name"),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("cleaners")
+        .select("id, name, email")
+        .eq("enabled", true)
+        .order("name"),
+    ]);
+  const cleaners = (cleanersData ?? []) as Array<{
+    id: string;
+    name: string;
+    email: string;
+  }>;
 
   if (!property) notFound();
 
@@ -85,6 +98,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
         <PropertyForm
           action={boundUpdate}
           knownLeaseholders={knownLeaseholders}
+          cleaners={cleaners}
           initial={{
             building_name: property.building_name,
             street_address: property.street_address,
@@ -100,6 +114,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
             laundry_in_building: property.laundry_in_building,
             in_unit_laundry: property.in_unit_laundry,
             amenities_notes: property.amenities_notes,
+            cleaner_id: property.cleaner_id,
             notes: property.notes,
             leaseholder_name: currentLeaseholderName,
           }}
