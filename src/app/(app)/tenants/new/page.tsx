@@ -14,28 +14,49 @@ type RoomRow = {
   id: string;
   room_number: string | null;
   total_rent: number | null;
+  status: "available" | "occupied" | "reserved" | "maintenance";
+  available_from: string | null;
   properties: PropertyRel | PropertyRel[] | null;
 };
 
-export default async function NewTenantPage() {
+type PageProps = {
+  searchParams: Promise<{ room_id?: string }>;
+};
+
+export default async function NewTenantPage({ searchParams }: PageProps) {
+  const { room_id } = await searchParams;
+  const defaultRoomId =
+    typeof room_id === "string" && room_id.length > 0 ? room_id : "";
+
   const supabase = await createClient();
-  const { data } = await supabase
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Show rooms that are listable on /inventory: available now, or
+  // currently occupied but with a future end-date so the tenant slot is
+  // about to open up. Also include the explicitly-requested room (via
+  // ?room_id=) so the form can pre-select it even if it doesn't match.
+  let q = supabase
     .from("rooms")
     .select(
-      "id, room_number, total_rent, properties(building_name, street_address, unit_number)",
+      "id, room_number, total_rent, status, available_from, properties(building_name, street_address, unit_number)",
     )
-    .eq("status", "available")
-    .order("available_from", { ascending: true, nullsFirst: false })
-    .returns<RoomRow[]>();
+    .or(
+      `status.eq.available,and(status.eq.occupied,available_from.gte.${today})${defaultRoomId ? `,id.eq.${defaultRoomId}` : ""}`,
+    )
+    .order("available_from", { ascending: true, nullsFirst: true });
+
+  const { data } = await q.returns<RoomRow[]>();
 
   const rooms = (data ?? []).map((r) => {
     const p = one(r.properties);
     const unitTitle = p
       ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
       : "—";
+    const scheduled = r.status === "occupied" && r.available_from;
+    const suffix = scheduled ? ` (opens ${r.available_from})` : "";
     return {
       id: r.id,
-      label: `${unitTitle} · ${r.room_number ?? "Room"}`,
+      label: `${unitTitle} · ${r.room_number ?? "Room"}${suffix}`,
       total_rent: r.total_rent,
     };
   });
@@ -55,7 +76,7 @@ export default async function NewTenantPage() {
       </header>
 
       <div className="mt-8">
-        <AddTenantForm rooms={rooms} />
+        <AddTenantForm rooms={rooms} defaultRoomId={defaultRoomId} />
       </div>
     </div>
   );

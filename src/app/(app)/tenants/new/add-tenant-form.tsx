@@ -13,7 +13,13 @@ const fieldLabel = "text-xs font-medium uppercase tracking-wide text-muted";
 const fieldInput =
   "rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none";
 
-export function AddTenantForm({ rooms }: { rooms: RoomOption[] }) {
+export function AddTenantForm({
+  rooms,
+  defaultRoomId = "",
+}: {
+  rooms: RoomOption[];
+  defaultRoomId?: string;
+}) {
   const [state, action, pending] = useActionState<TenantFormState, FormData>(
     createTenant,
     undefined,
@@ -76,7 +82,11 @@ export function AddTenantForm({ rooms }: { rooms: RoomOption[] }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5 sm:col-span-2">
             <span className={fieldLabel}>Room</span>
-            <select name="room_id" defaultValue="" className={fieldInput}>
+            <select
+              name="room_id"
+              defaultValue={defaultRoomId}
+              className={fieldInput}
+            >
               <option value="">— none —</option>
               {rooms.map((r) => (
                 <option key={r.id} value={r.id}>

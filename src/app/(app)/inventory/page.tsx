@@ -431,6 +431,12 @@ function InventoryRow({
             </a>
           )}
           <Link
+            href={`/tenants/new?room_id=${room.id}`}
+            className="rounded-full bg-ink px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white hover:bg-accent-dark"
+          >
+            + Tenant
+          </Link>
+          <Link
             href={`/inventory/${room.id}`}
             className="text-[11px] uppercase tracking-wide text-muted hover:text-accent-text"
           >
