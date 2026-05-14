@@ -59,12 +59,14 @@ function isFilterKey(v: string | undefined): v is FilterKey {
 }
 
 type PageProps = {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; view?: string }>;
 };
 
 export default async function CleaningPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const activeFilter = isFilterKey(params.filter) ? params.filter : null;
+  const view: "schedule" | "cleaners" =
+    params.view === "cleaners" ? "cleaners" : "schedule";
 
   const supabase = await createClient();
 
@@ -163,10 +165,34 @@ export default async function CleaningPage({ searchParams }: PageProps) {
             cleans rise to the top.
           </p>
         </div>
-        <AddCleaning properties={propertyOptions} />
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-full bg-warm/60 p-0.5 text-xs">
+            <Link
+              href="/cleaning"
+              className={`rounded-full px-3 py-1.5 transition ${
+                view === "schedule"
+                  ? "bg-white text-ink shadow-sm"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              Schedule
+            </Link>
+            <Link
+              href="/cleaning?view=cleaners"
+              className={`rounded-full px-3 py-1.5 transition ${
+                view === "cleaners"
+                  ? "bg-white text-ink shadow-sm"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              Cleaners
+            </Link>
+          </div>
+          {view === "schedule" && <AddCleaning properties={propertyOptions} />}
+        </div>
       </header>
 
-      {propertyOptions.length > 0 && (
+      {view === "schedule" && propertyOptions.length > 0 && (
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <KpiCard
             label="Overdue"
@@ -196,7 +222,7 @@ export default async function CleaningPage({ searchParams }: PageProps) {
         </section>
       )}
 
-      {propertyOptions.length > 0 && (
+      {view === "schedule" && propertyOptions.length > 0 && (
         <section className="mt-8">
           <h2 className="text-xs uppercase tracking-wide text-muted">
             Cleaning schedule ({filteredSchedule.length})
@@ -247,51 +273,53 @@ export default async function CleaningPage({ searchParams }: PageProps) {
         </section>
       )}
 
-      <section className="mt-10">
-        <h2 className="text-xs uppercase tracking-wide text-muted">
-          All cleanings ({rows.length})
-        </h2>
-        {rows.length === 0 ? (
-          <p className="mt-4 rounded-2xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
-            No cleanings logged yet. Click <em>Log cleaning</em> to record one.
-          </p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-3">
-            {rows.map((r) => (
-              <CleaningRow
-                key={r.id}
-                record={r}
-                properties={propertyOptions}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+      {view === "schedule" && (
+        <section className="mt-10">
+          <h2 className="text-xs uppercase tracking-wide text-muted">
+            All cleanings ({rows.length})
+          </h2>
+          {rows.length === 0 ? (
+            <p className="mt-4 rounded-2xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
+              No cleanings logged yet. Click <em>Log cleaning</em> to record one.
+            </p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-3">
+              {rows.map((r) => (
+                <CleaningRow
+                  key={r.id}
+                  record={r}
+                  properties={propertyOptions}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
-      <section className="mt-12 border-t border-stone/60 pt-8">
-        <h2 className="text-xs uppercase tracking-wide text-muted">
-          Cleaners
-        </h2>
-        <p className="mt-1 text-xs text-muted">
-          Each unit can have one cleaner assigned (on the property page).
-          They&apos;re emailed when the unit&apos;s cleaning schedule changes,
-          including auto-scheduled move-out cleanings.
-        </p>
-        <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
-          <AddCleanerForm />
-        </div>
-        <div className="mt-3 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-          <CleanersTable
-            cleaners={(cleanersData ?? []).map((c) => ({
-              ...c,
-              properties_count:
-                (assignedData ?? []).filter(
-                  (p) => (p as { cleaner_id: string | null }).cleaner_id === c.id,
-                ).length,
-            }))}
-          />
-        </div>
-      </section>
+      {view === "cleaners" && (
+        <section className="mt-8">
+          <p className="text-sm text-muted">
+            Each unit can have one cleaner assigned (on the property page).
+            They&apos;re emailed when the unit&apos;s cleaning schedule changes,
+            including auto-scheduled move-out cleanings.
+          </p>
+          <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+            <AddCleanerForm />
+          </div>
+          <div className="mt-3 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+            <CleanersTable
+              cleaners={(cleanersData ?? []).map((c) => ({
+                ...c,
+                properties_count:
+                  (assignedData ?? []).filter(
+                    (p) =>
+                      (p as { cleaner_id: string | null }).cleaner_id === c.id,
+                  ).length,
+              }))}
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
