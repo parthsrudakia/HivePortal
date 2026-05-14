@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { updateRoomsWithNotification } from "@/lib/notifications";
 
 type PaymentType = Database["public"]["Enums"]["payment_type"];
 const VALID_PAYMENT_TYPES: PaymentType[] = [
@@ -131,10 +132,9 @@ export async function createTenant(
     }
 
     // Mark the room as occupied
-    await supabase
-      .from("rooms")
-      .update({ status: "occupied" })
-      .eq("id", room_id);
+    await updateRoomsWithNotification(supabase, room_id, {
+      status: "occupied",
+    });
   }
 
   revalidatePath("/tenants");
@@ -228,14 +228,11 @@ export async function endTenancy(formData: FormData) {
     // Re-entering the vacancy queue — reset the VA workflow flag so the
     // room shows up as a fresh "Create new ad" instead of inheriting the
     // previous tenancy's color.
-    await supabase
-      .from("rooms")
-      .update({
-        status: isPastOrToday ? "available" : "occupied",
-        available_from: end_date,
-        listing_action: "new_ad",
-      })
-      .eq("id", tenancy.room_id);
+    await updateRoomsWithNotification(supabase, tenancy.room_id, {
+      status: isPastOrToday ? "available" : "occupied",
+      available_from: end_date,
+      listing_action: "new_ad",
+    });
   }
 
   revalidatePath("/tenants");
@@ -264,10 +261,10 @@ export async function reactivateTenancy(formData: FormData) {
     .eq("id", tenancy_id);
 
   if (tenancy?.room_id) {
-    await supabase
-      .from("rooms")
-      .update({ status: "occupied", available_from: null })
-      .eq("id", tenancy.room_id);
+    await updateRoomsWithNotification(supabase, tenancy.room_id, {
+      status: "occupied",
+      available_from: null,
+    });
   }
 
   revalidatePath("/tenants");
@@ -298,10 +295,10 @@ export async function processExpiredTenancies() {
   await supabase.from("tenancies").update({ status: "ended" }).in("id", ids);
 
   if (roomIds.length > 0) {
-    await supabase
-      .from("rooms")
-      .update({ status: "available", listing_action: "new_ad" })
-      .in("id", roomIds);
+    await updateRoomsWithNotification(supabase, roomIds, {
+      status: "available",
+      listing_action: "new_ad",
+    });
   }
 }
 
@@ -325,10 +322,9 @@ export async function deleteTenant(formData: FormData) {
   if (rooms && rooms.length > 0) {
     const roomIds = rooms.map((r) => r.room_id).filter(Boolean) as string[];
     if (roomIds.length > 0) {
-      await supabase
-        .from("rooms")
-        .update({ status: "available" })
-        .in("id", roomIds);
+      await updateRoomsWithNotification(supabase, roomIds, {
+        status: "available",
+      });
     }
   }
 

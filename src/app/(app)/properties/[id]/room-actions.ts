@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { updateRoomsWithNotification } from "@/lib/notifications";
 
 type RoomStatus = Database["public"]["Enums"]["room_status"];
 const VALID_STATUSES: RoomStatus[] = [
@@ -98,10 +99,7 @@ export async function updateRoom(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("rooms")
-    .update(parsed)
-    .eq("id", roomId);
+  const { error } = await updateRoomsWithNotification(supabase, roomId, parsed);
 
   if (error) return { error: error.message };
 

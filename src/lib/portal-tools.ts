@@ -9,6 +9,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { updateRoomsWithNotification } from "@/lib/notifications";
 
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -396,10 +397,9 @@ export async function setListingAction(args: {
     | "priority";
 }) {
   const supabase = admin();
-  const { error } = await supabase
-    .from("rooms")
-    .update({ listing_action: args.action })
-    .eq("id", args.room_id);
+  const { error } = await updateRoomsWithNotification(supabase, args.room_id, {
+    listing_action: args.action,
+  });
   if (error) throw new Error(error.message);
   return { ok: true };
 }
@@ -449,14 +449,11 @@ export async function endTenancy(args: {
     // Re-entering the vacancy queue — reset the VA workflow flag so the
     // room shows up as a fresh "Create new ad" instead of inheriting the
     // previous tenancy's color.
-    await supabase
-      .from("rooms")
-      .update({
-        status: isPastOrToday ? "available" : "occupied",
-        available_from: args.end_date,
-        listing_action: "new_ad",
-      })
-      .eq("id", tenancy.room_id);
+    await updateRoomsWithNotification(supabase, tenancy.room_id, {
+      status: isPastOrToday ? "available" : "occupied",
+      available_from: args.end_date,
+      listing_action: "new_ad",
+    });
   }
 
   return {
@@ -476,10 +473,11 @@ export async function setRoomStatus(args: {
   const update: Record<string, unknown> = { status: args.status };
   if (args.available_from !== undefined)
     update.available_from = args.available_from;
-  const { error } = await supabase
-    .from("rooms")
-    .update(update)
-    .eq("id", args.room_id);
+  const { error } = await updateRoomsWithNotification(
+    supabase,
+    args.room_id,
+    update,
+  );
   if (error) throw new Error(error.message);
   return { ok: true };
 }

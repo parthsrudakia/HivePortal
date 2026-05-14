@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { updateRoomsWithNotification } from "@/lib/notifications";
 
 type Action = Database["public"]["Enums"]["listing_action"];
 const VALID: Action[] = [
@@ -17,10 +18,9 @@ export async function setListingAction(roomId: string, action: Action) {
   if (!roomId || !VALID.includes(action)) return;
 
   const supabase = await createClient();
-  await supabase
-    .from("rooms")
-    .update({ listing_action: action })
-    .eq("id", roomId);
+  await updateRoomsWithNotification(supabase, roomId, {
+    listing_action: action,
+  });
 
   revalidatePath("/inventory");
   revalidatePath(`/inventory/${roomId}`);
