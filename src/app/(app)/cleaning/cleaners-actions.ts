@@ -17,13 +17,12 @@ export async function addCleaner(
   if (!email.includes("@")) return { error: "That doesn't look like an email." };
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("cleaners")
     .insert({ name, email, phone, enabled: true });
   if (error) return { error: error.message };
 
-  revalidatePath("/settings/cleaners");
+  revalidatePath("/cleaning");
   return undefined;
 }
 
@@ -33,13 +32,12 @@ export async function toggleCleaner(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  await supabase
     .from("cleaners")
     .update({ enabled: !enabled })
     .eq("id", id);
 
-  revalidatePath("/settings/cleaners");
+  revalidatePath("/cleaning");
 }
 
 export async function deleteCleaner(formData: FormData) {
@@ -47,9 +45,8 @@ export async function deleteCleaner(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from("cleaners").delete().eq("id", id);
+  await supabase.from("cleaners").delete().eq("id", id);
 
-  revalidatePath("/settings/cleaners");
+  revalidatePath("/cleaning");
   revalidatePath("/properties");
 }

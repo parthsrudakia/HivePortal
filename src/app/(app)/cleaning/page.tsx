@@ -10,6 +10,8 @@ import {
 } from "@/lib/cleaning";
 import { AddCleaning, type PropertyOption } from "./add-cleaning";
 import { CleaningRow, type CleaningRowData } from "./cleaning-row";
+import { AddCleanerForm } from "./add-cleaner";
+import { toggleCleaner, deleteCleaner } from "./cleaners-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +68,12 @@ export default async function CleaningPage({ searchParams }: PageProps) {
 
   const supabase = await createClient();
 
-  const [{ data: cleanings }, { data: properties }] = await Promise.all([
+  const [
+    { data: cleanings },
+    { data: properties },
+    { data: cleanersData },
+    { data: assignedData },
+  ] = await Promise.all([
     supabase
       .from("cleaning_records")
       .select(
@@ -79,6 +86,15 @@ export default async function CleaningPage({ searchParams }: PageProps) {
       .from("properties")
       .select("id, building_name, street_address, unit_number")
       .order("street_address", { ascending: true }),
+    supabase
+      .from("cleaners")
+      .select("id, name, email, phone, enabled, created_at")
+      .order("enabled", { ascending: false })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("properties")
+      .select("cleaner_id")
+      .not("cleaner_id", "is", null),
   ]);
 
   const propertyOptions: PropertyOption[] = (properties ?? []).map((p) => ({
@@ -251,7 +267,123 @@ export default async function CleaningPage({ searchParams }: PageProps) {
           </ul>
         )}
       </section>
+
+      <section className="mt-12 border-t border-stone/60 pt-8">
+        <h2 className="text-xs uppercase tracking-wide text-muted">
+          Cleaners
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          Each unit can have one cleaner assigned (on the property page).
+          They&apos;re emailed when the unit&apos;s cleaning schedule changes,
+          including auto-scheduled move-out cleanings.
+        </p>
+        <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+          <AddCleanerForm />
+        </div>
+        <div className="mt-3 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+          <CleanersTable
+            cleaners={(cleanersData ?? []).map((c) => ({
+              ...c,
+              properties_count:
+                (assignedData ?? []).filter(
+                  (p) => (p as { cleaner_id: string | null }).cleaner_id === c.id,
+                ).length,
+            }))}
+          />
+        </div>
+      </section>
     </div>
+  );
+}
+
+type CleanerRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  enabled: boolean;
+  created_at: string;
+  properties_count: number;
+};
+
+function CleanersTable({ cleaners }: { cleaners: CleanerRow[] }) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
+        <tr>
+          <th className="px-4 py-2 font-medium">Name</th>
+          <th className="px-4 py-2 font-medium">Email</th>
+          <th className="px-4 py-2 font-medium">Phone</th>
+          <th className="px-4 py-2 text-right font-medium">Units</th>
+          <th className="px-4 py-2 font-medium">Status</th>
+          <th className="px-4 py-2 text-right font-medium" />
+        </tr>
+      </thead>
+      <tbody>
+        {cleaners.length === 0 && (
+          <tr>
+            <td
+              colSpan={6}
+              className="px-4 py-10 text-center text-sm text-muted"
+            >
+              No cleaners yet. Add one above, then assign them on a property
+              page.
+            </td>
+          </tr>
+        )}
+        {cleaners.map((c, i) => (
+          <tr
+            key={c.id}
+            className={`border-t border-stone/30 ${i % 2 === 1 ? "bg-cream/40" : "bg-white"}`}
+          >
+            <td className="px-4 py-2.5 text-ink">{c.name}</td>
+            <td className="px-4 py-2.5 text-ink">{c.email}</td>
+            <td className="px-4 py-2.5 text-muted">{c.phone || "—"}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums text-ink">
+              {c.properties_count}
+            </td>
+            <td className="px-4 py-2.5">
+              {c.enabled ? (
+                <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-accent-text">
+                  Enabled
+                </span>
+              ) : (
+                <span className="rounded-full border border-stone bg-white px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted">
+                  Paused
+                </span>
+              )}
+            </td>
+            <td className="px-4 py-2.5 text-right">
+              <div className="flex items-center justify-end gap-2">
+                <form action={toggleCleaner}>
+                  <input type="hidden" name="id" value={c.id} />
+                  <input
+                    type="hidden"
+                    name="enabled"
+                    value={String(c.enabled)}
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-full border border-stone bg-white px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-ink hover:bg-warm"
+                  >
+                    {c.enabled ? "Pause" : "Resume"}
+                  </button>
+                </form>
+                <form action={deleteCleaner}>
+                  <input type="hidden" name="id" value={c.id} />
+                  <button
+                    type="submit"
+                    className="rounded-full px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-red-700 hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
