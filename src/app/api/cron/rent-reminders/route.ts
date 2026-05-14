@@ -127,14 +127,5 @@ export async function GET(req: NextRequest) {
     skipped,
     failed,
     errors,
-    debug: {
-      has_RESEND_API_KEY: !!process.env.RESEND_API_KEY,
-      RESEND_API_KEY_length: process.env.RESEND_API_KEY?.length ?? 0,
-      has_CRON_SECRET: !!process.env.CRON_SECRET,
-      has_RESEND_FROM: !!process.env.RESEND_FROM,
-      has_RESEND_REPLY_TO: !!process.env.RESEND_REPLY_TO,
-      vercel_env: process.env.VERCEL_ENV ?? null,
-      vercel_git_commit_sha: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
-    },
   });
 }
