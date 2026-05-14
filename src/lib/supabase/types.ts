@@ -39,6 +39,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string
+          after_data: Json | null
+          before_data: Json | null
+          changed_columns: string[] | null
+          created_at: string
+          id: string
+          record_id: string | null
+          table_name: string
+          user_email: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          after_data?: Json | null
+          before_data?: Json | null
+          changed_columns?: string[] | null
+          created_at?: string
+          id?: string
+          record_id?: string | null
+          table_name: string
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          after_data?: Json | null
+          before_data?: Json | null
+          changed_columns?: string[] | null
+          created_at?: string
+          id?: string
+          record_id?: string | null
+          table_name?: string
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       cleaners: {
         Row: {
           created_at: string
