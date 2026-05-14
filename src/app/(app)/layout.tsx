@@ -35,8 +35,29 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-full">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-stone/60 bg-white/60 px-4 py-8 md:flex">
-        <Link href="/" className="px-2 text-2xl tracking-tight text-ink">
-          Hive <span className="font-display text-accent-text">Portal</span>
+        <Link
+          href="/"
+          className="flex items-center gap-2 px-2 text-2xl tracking-tight text-ink"
+        >
+          <svg
+            width="24"
+            height="30"
+            viewBox="0 0 80 100"
+            xmlns="http://www.w3.org/2000/svg"
+            className="shrink-0 text-accent"
+            aria-hidden="true"
+          >
+            <circle cx="40" cy="8" r="4.5" fill="currentColor" />
+            <rect x="28" y="18" width="24" height="6" rx="3" fill="currentColor" />
+            <rect x="18" y="32" width="44" height="6" rx="3" fill="currentColor" />
+            <rect x="15" y="46" width="50" height="6" rx="3" fill="currentColor" />
+            <rect x="18" y="60" width="44" height="6" rx="3" fill="currentColor" />
+            <rect x="28" y="74" width="24" height="6" rx="3" fill="currentColor" />
+            <circle cx="40" cy="88" r="4" fill="currentColor" />
+          </svg>
+          <span>
+            Hive <span className="font-display text-accent-text">Portal</span>
+          </span>
         </Link>
         <nav className="mt-10 flex flex-col gap-1 text-sm">
           {NAV.map((item) => (
