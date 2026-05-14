@@ -274,9 +274,10 @@ Thanks`;
 // and the specific room_id. Future-dated rows are excluded from the regular
 // next-due computation (see /cleaning page).
 
-function addDaysISO(iso: string, delta: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
+function lastDayOfMonthISO(iso: string): string {
+  // Day 0 of (month+1) is the last day of the given month.
+  const [y, m] = iso.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 0));
   return d.toISOString().slice(0, 10);
 }
 
@@ -329,7 +330,7 @@ async function handleAvailableFromChange(
   let oldCleaningDate: string | null = existing?.cleaning_date ?? null;
 
   if (toDate) {
-    cleaningDate = addDaysISO(toDate, -1);
+    cleaningDate = lastDayOfMonthISO(toDate);
     if (existing) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
