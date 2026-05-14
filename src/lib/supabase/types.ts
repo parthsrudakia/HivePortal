@@ -39,30 +39,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      cleaners: {
+        Row: {
+          created_at: string
+          email: string
+          enabled: boolean
+          id: string
+          name: string
+          phone: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          enabled?: boolean
+          id?: string
+          name: string
+          phone?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+          phone?: string | null
+        }
+        Relationships: []
+      }
       cleaning_records: {
         Row: {
           assigned_to: string | null
           cleaning_date: string
           created_at: string
           id: string
+          kind: string
           notes: string | null
           property_id: string
+          room_id: string | null
         }
         Insert: {
           assigned_to?: string | null
           cleaning_date: string
           created_at?: string
           id?: string
+          kind?: string
           notes?: string | null
           property_id: string
+          room_id?: string | null
         }
         Update: {
           assigned_to?: string | null
           cleaning_date?: string
           created_at?: string
           id?: string
+          kind?: string
           notes?: string | null
           property_id?: string
+          room_id?: string | null
         }
         Relationships: [
           {
@@ -71,6 +104,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_records_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_records_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["room_id"]
           },
         ]
       }
@@ -222,6 +269,30 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_recipients: {
+        Row: {
+          created_at: string
+          email: string
+          enabled: boolean
+          id: string
+          label: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number
@@ -325,6 +396,7 @@ export type Database = {
           bathrooms: number | null
           bedrooms: number | null
           building_name: string | null
+          cleaner_id: string | null
           created_at: string
           cross_street: string | null
           has_doorman: boolean
@@ -346,6 +418,7 @@ export type Database = {
           bathrooms?: number | null
           bedrooms?: number | null
           building_name?: string | null
+          cleaner_id?: string | null
           created_at?: string
           cross_street?: string | null
           has_doorman?: boolean
@@ -367,6 +440,7 @@ export type Database = {
           bathrooms?: number | null
           bedrooms?: number | null
           building_name?: string | null
+          cleaner_id?: string | null
           created_at?: string
           cross_street?: string | null
           has_doorman?: boolean
@@ -384,6 +458,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "properties_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "cleaners"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "properties_leaseholder_id_fkey"
             columns: ["leaseholder_id"]
@@ -521,6 +602,125 @@ export type Database = {
           unmatched_deposits?: Json | null
         }
         Relationships: []
+      }
+      rent_reminder_emails: {
+        Row: {
+          created_at: string
+          email_to: string
+          error_text: string | null
+          id: string
+          period_month: string
+          resend_id: string | null
+          sent_at: string | null
+          tenancy_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_to: string
+          error_text?: string | null
+          id?: string
+          period_month: string
+          resend_id?: string | null
+          sent_at?: string | null
+          tenancy_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          email_to?: string
+          error_text?: string | null
+          id?: string
+          period_month?: string
+          resend_id?: string | null
+          sent_at?: string | null
+          tenancy_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rent_reminder_emails_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rent_reminder_emails_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "rent_reminder_emails_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "rent_reminder_emails_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      room_change_events: {
+        Row: {
+          changed_at: string
+          field: string
+          followup_error: string | null
+          followup_sent_at: string | null
+          from_value: string | null
+          id: string
+          immediate_error: string | null
+          immediate_sent_at: string | null
+          room_id: string
+          to_value: string | null
+        }
+        Insert: {
+          changed_at?: string
+          field: string
+          followup_error?: string | null
+          followup_sent_at?: string | null
+          from_value?: string | null
+          id?: string
+          immediate_error?: string | null
+          immediate_sent_at?: string | null
+          room_id: string
+          to_value?: string | null
+        }
+        Update: {
+          changed_at?: string
+          field?: string
+          followup_error?: string | null
+          followup_sent_at?: string | null
+          from_value?: string | null
+          id?: string
+          immediate_error?: string | null
+          immediate_sent_at?: string | null
+          room_id?: string
+          to_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_change_events_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "room_change_events_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["room_id"]
+          },
+        ]
       }
       rooms: {
         Row: {
