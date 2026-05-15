@@ -4,16 +4,16 @@
  * Match rules (per Vinny):
  *   - Bank file: ONLY rows whose description starts with "Zelle payment from"
  *     (or "Zelle Scheduled payment from") count. Everything else is dropped.
- *   - The payer key is the first TWO words after "from", lowercased — e.g.
- *     "Zelle payment from PATRICK J WALL for May rent" → "patrick j".
- *   - Tenant key is the first TWO words of their `pays_as` (falling back to
- *     full_name), lowercased — so to match a bank deposit named
- *     "RYAN D BADOLATO" the tenant's pays_as must start with "RYAN D".
+ *   - The payer key is everything after "from" up to (but not including)
+ *     " for …" or " Conf# …" suffixes, lowercased — e.g.
+ *     "Zelle payment from PATRICK J WALL for May rent" → "patrick j wall".
+ *   - Tenant key is `pays_as` (falling back to full_name), lowercased.
+ *     So the tenant's pays_as should exactly match how the bank prints
+ *     them (e.g. "PATRICK J WALL", not "Patrick Wall").
  *
  * The "other payments" optional file is for manually-recorded payments
- * (Venmo, cash, ClickPay reports). It uses the same two-word rule but
- * doesn't require the Zelle prefix — the Description field is the
- * payer's name.
+ * (Venmo, cash, ClickPay reports). Its Description field IS the payer's
+ * name (no Zelle prefix required).
  */
 
 import Papa from "papaparse";
@@ -54,29 +54,29 @@ function toIsoDate(v: unknown): string | null {
   return null;
 }
 
-/** Take the first two whitespace-separated tokens, lowercased.
- *  "PATRICK J WALL for May rent" → "patrick j". */
-function firstTwoWords(s: string): string {
-  return s
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .join(" ")
-    .toLowerCase();
+/** Normalise a name into the match key: collapse whitespace, lowercase. */
+function normalizeName(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 /** Extract payer match key from a Zelle deposit description.
  *  Returns null if the row isn't a Zelle deposit. */
 function bankPayerKey(raw: string): string | null {
   if (!ZELLE_FROM_RE.test(raw)) return null;
-  const afterFrom = raw.replace(ZELLE_FROM_RE, "");
-  return firstTwoWords(afterFrom);
+  let s = raw.replace(ZELLE_FROM_RE, "");
+  // Stop at the first " for ..." or "Conf#" or "Ref#" or ";" — those follow
+  // the payer name in BoA's format.
+  s = s.split(/ for /i)[0];
+  s = s.split(/Conf#/i)[0];
+  s = s.split(/Ref#/i)[0];
+  s = s.split(/;/)[0];
+  return normalizeName(s);
 }
 
 /** Compute the tenant's match key from their pays_as (or full_name). */
 export function tenantKey(paysAs: string | null, fullName: string): string {
   const src = (paysAs ?? "").trim() || fullName.trim();
-  return firstTwoWords(src);
+  return normalizeName(src);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ function rowsToDeposits(
       }
     } else {
       // Other-payments file: description is the payer name directly.
-      key = firstTwoWords(r.description);
+      key = normalizeName(r.description);
       if (!key) {
         blank++;
         continue;
