@@ -25,6 +25,7 @@ type PropertyRecord = {
   has_elevator: boolean;
   has_parking: boolean;
   has_doorman: boolean;
+  has_rooftop: boolean;
   laundry_in_building: boolean;
   in_unit_laundry: boolean;
   amenities_notes: string | null;
@@ -44,7 +45,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
         .select(
           `id, building_name, street_address, unit_number, cross_street,
            neighborhood, bedrooms, bathrooms,
-           has_gym, has_elevator, has_parking, has_doorman,
+           has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
            laundry_in_building, in_unit_laundry,
            amenities_notes, cleaner_id, notes,
            leaseholders(name)`,
@@ -111,6 +112,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
             has_elevator: property.has_elevator,
             has_parking: property.has_parking,
             has_doorman: property.has_doorman,
+            has_rooftop: property.has_rooftop,
             laundry_in_building: property.laundry_in_building,
             in_unit_laundry: property.in_unit_laundry,
             amenities_notes: property.amenities_notes,

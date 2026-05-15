@@ -442,6 +442,7 @@ export type Database = {
           has_elevator: boolean
           has_gym: boolean
           has_parking: boolean
+          has_rooftop: boolean
           id: string
           in_unit_laundry: boolean
           laundry_in_building: boolean
@@ -464,6 +465,7 @@ export type Database = {
           has_elevator?: boolean
           has_gym?: boolean
           has_parking?: boolean
+          has_rooftop?: boolean
           id?: string
           in_unit_laundry?: boolean
           laundry_in_building?: boolean
@@ -486,6 +488,7 @@ export type Database = {
           has_elevator?: boolean
           has_gym?: boolean
           has_parking?: boolean
+          has_rooftop?: boolean
           id?: string
           in_unit_laundry?: boolean
           laundry_in_building?: boolean
