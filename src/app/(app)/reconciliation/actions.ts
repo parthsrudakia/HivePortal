@@ -9,6 +9,7 @@ import {
   parseOtherFile,
   aggregateByDescription,
   unmatchedDeposits,
+  tenantKey,
   type Deposit,
 } from "@/lib/reconciliation/parsers";
 
@@ -176,7 +177,7 @@ export async function runReconciliation(
     const tenant = one(t.tenants);
     if (!tenant) continue;
 
-    const rawKey = (tenant.pays_as ?? tenant.full_name).trim().toLowerCase();
+    const rawKey = tenantKey(tenant.pays_as, tenant.full_name);
     const expected = Number(t.monthly_rent);
     const actual = aggregate.get(rawKey) ?? 0;
     if (actual > 0) claimedKeys.add(rawKey);

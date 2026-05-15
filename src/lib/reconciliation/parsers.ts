@@ -1,30 +1,33 @@
 /**
  * Reconciliation file parsers.
  *
- * Both inputs (bank statement, other-payments) flow through the same
- * pipeline: extract a list of {date, description, amount} rows, normalise
- * the description into a match key, drop non-positive amounts. Header row
- * is auto-detected by looking for a row that contains both "Description"
- * and "Amount" columns (or close variants), so we don't break the moment
- * a bank changes its export preamble length.
+ * Match rules (per Vinny):
+ *   - Bank file: ONLY rows whose description starts with "Zelle payment from"
+ *     (or "Zelle Scheduled payment from") count. Everything else is dropped.
+ *   - The payer key is the first TWO words after "from", lowercased — e.g.
+ *     "Zelle payment from PATRICK J WALL for May rent" → "patrick j".
+ *   - Tenant key is the first TWO words of their `pays_as` (falling back to
+ *     full_name), lowercased — so to match a bank deposit named
+ *     "RYAN D BADOLATO" the tenant's pays_as must start with "RYAN D".
+ *
+ * The "other payments" optional file is for manually-recorded payments
+ * (Venmo, cash, ClickPay reports). It uses the same two-word rule but
+ * doesn't require the Zelle prefix — the Description field is the
+ * payer's name.
  */
 
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 
 export type Deposit = {
-  description: string; // lowercased match key
-  raw: string;         // original description (for display / debugging)
+  description: string; // 2-word lowercase match key
+  raw: string;         // original raw description (for display / debugging)
   amount: number;
-  date: string | null; // YYYY-MM-DD when known
+  date: string | null;
   source: "bank" | "other";
 };
 
-const ZELLE_PREFIX_PAID = /^Zelle payment from /i;
-const ZELLE_PREFIX_SCHED = /^Zelle Scheduled payment from /i;
-const FOR_SUFFIX = / for [^,]*$/i;
-const CONF_SUFFIX = / Conf# .*$/i;
-const REF_SUFFIX = / Ref# .*$/i;
+const ZELLE_FROM_RE = /^Zelle (?:Scheduled )?payment from /i;
 
 function moneyToNumber(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -40,7 +43,6 @@ function toIsoDate(v: unknown): string | null {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   const s = String(v).trim();
   if (!s) return null;
-  // MM/DD/YYYY or MM/DD/YY
   const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
   if (m) {
     let [, mm, dd, yy] = m;
@@ -48,35 +50,41 @@ function toIsoDate(v: unknown): string | null {
     if (year < 100) year += 2000;
     return `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
   }
-  // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   return null;
 }
 
-/** Strip Zelle-style prefixes and trailing junk so a Zelle deposit collapses
- *  to the payer's name. Generic enough that non-Zelle rows pass through with
- *  just normalisation. */
-function cleanDescription(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(ZELLE_PREFIX_SCHED, "");
-  s = s.replace(ZELLE_PREFIX_PAID, "");
-  s = s.replace(FOR_SUFFIX, "");
-  s = s.replace(CONF_SUFFIX, "");
-  s = s.replace(REF_SUFFIX, "");
-  s = s.replace(/\s+/g, " ").trim();
-  return s.toLowerCase();
+/** Take the first two whitespace-separated tokens, lowercased.
+ *  "PATRICK J WALL for May rent" → "patrick j". */
+function firstTwoWords(s: string): string {
+  return s
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ")
+    .toLowerCase();
+}
+
+/** Extract payer match key from a Zelle deposit description.
+ *  Returns null if the row isn't a Zelle deposit. */
+function bankPayerKey(raw: string): string | null {
+  if (!ZELLE_FROM_RE.test(raw)) return null;
+  const afterFrom = raw.replace(ZELLE_FROM_RE, "");
+  return firstTwoWords(afterFrom);
+}
+
+/** Compute the tenant's match key from their pays_as (or full_name). */
+export function tenantKey(paysAs: string | null, fullName: string): string {
+  const src = (paysAs ?? "").trim() || fullName.trim();
+  return firstTwoWords(src);
 }
 
 // ---------------------------------------------------------------------------
-// CSV / XLSX → rows[]
+// CSV / XLSX → matrix → rows
 // ---------------------------------------------------------------------------
 
-type Row = Record<string, unknown>;
-
 async function readCsvToMatrix(text: string): Promise<string[][]> {
-  const parsed = Papa.parse<string[]>(text, {
-    skipEmptyLines: true,
-  });
+  const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   return (parsed.data as string[][]).filter((r) => Array.isArray(r));
 }
 
@@ -85,22 +93,19 @@ async function readXlsxToMatrix(buffer: ArrayBuffer): Promise<string[][]> {
   await wb.xlsx.load(buffer);
   const ws = wb.worksheets[0];
   if (!ws) return [];
-
   const matrix: string[][] = [];
   ws.eachRow({ includeEmpty: false }, (row) => {
     const cells = row.values as (ExcelJS.CellValue | undefined)[];
-    // ExcelJS rows are 1-indexed (cells[0] unused).
     const values = cells.slice(1).map((c) => {
       if (c === null || c === undefined) return "";
       if (c instanceof Date) return c.toISOString().slice(0, 10);
       if (typeof c === "object" && c !== null) {
         if ("text" in c) return String((c as { text: unknown }).text ?? "");
         if ("result" in c) return String((c as { result: unknown }).result ?? "");
-        if ("richText" in c) {
+        if ("richText" in c)
           return (c as { richText: { text: string }[] }).richText
             .map((p) => p.text)
             .join("");
-        }
       }
       return String(c);
     });
@@ -109,21 +114,24 @@ async function readXlsxToMatrix(buffer: ArrayBuffer): Promise<string[][]> {
   return matrix;
 }
 
-/** Find the header row by looking for a row containing both an
- *  amount-ish and description-ish column. Returns -1 if not found. */
-function findHeaderRowIdx(rows: string[][]): number {
+/** Find the row with Description + Amount columns. Bank of America puts a
+ *  preamble on top; we don't care how many rows it is — we scan up to 30
+ *  rows for the header. */
+function findHeaderIdx(rows: string[][]): number {
   for (let i = 0; i < Math.min(rows.length, 30); i++) {
     const cells = rows[i].map((c) => String(c ?? "").trim().toLowerCase());
-    const hasAmount = cells.some((c) => /^(amount|total|debit|credit|deposit)$/.test(c));
     const hasDesc = cells.some(
       (c) => /^(description|payee|memo|details?|narration|payer)$/.test(c),
     );
-    if (hasAmount && hasDesc) return i;
+    const hasAmount = cells.some(
+      (c) => /^(amount|deposit|credit|total)$/.test(c),
+    );
+    if (hasDesc && hasAmount) return i;
   }
   return -1;
 }
 
-function indexOfMatching(headers: string[], patterns: RegExp[]): number {
+function colIdx(headers: string[], patterns: RegExp[]): number {
   for (const re of patterns) {
     for (let i = 0; i < headers.length; i++) {
       if (re.test(headers[i])) return i;
@@ -132,34 +140,34 @@ function indexOfMatching(headers: string[], patterns: RegExp[]): number {
   return -1;
 }
 
-function matrixToRows(rows: string[][]): Row[] {
-  const headerIdx = findHeaderRowIdx(rows);
-  if (headerIdx < 0) return [];
+type Row = { description: string; amount: number; date: string | null };
 
-  const headers = rows[headerIdx].map((c) => String(c ?? "").trim().toLowerCase());
-  const descIdx = indexOfMatching(headers, [
+function matrixToRows(matrix: string[][]): {
+  rows: Row[];
+  parsedRowCount: number;
+} {
+  const hIdx = findHeaderIdx(matrix);
+  if (hIdx < 0) return { rows: [], parsedRowCount: 0 };
+  const headers = matrix[hIdx].map((c) => String(c ?? "").trim().toLowerCase());
+  const dIdx = colIdx(headers, [
     /^description$/, /^payee$/, /^memo$/, /^details?$/, /^narration$/, /^payer$/,
   ]);
-  const amountIdx = indexOfMatching(headers, [
-    /^amount$/, /^deposit$/, /^credit$/, /^total$/,
-  ]);
-  const dateIdx = indexOfMatching(headers, [
+  const aIdx = colIdx(headers, [/^amount$/, /^deposit$/, /^credit$/, /^total$/]);
+  const tIdx = colIdx(headers, [
     /^date$/, /^posted date$/, /^posting date$/, /^transaction date$/,
   ]);
+  if (dIdx < 0 || aIdx < 0) return { rows: [], parsedRowCount: 0 };
 
-  if (descIdx < 0 || amountIdx < 0) return [];
-
-  const out: Row[] = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const r = rows[i];
-    const row: Row = {
-      Description: r[descIdx],
-      Amount: r[amountIdx],
-      Date: dateIdx >= 0 ? r[dateIdx] : null,
-    };
-    out.push(row);
+  const rows: Row[] = [];
+  for (let i = hIdx + 1; i < matrix.length; i++) {
+    const r = matrix[i];
+    rows.push({
+      description: String(r[dIdx] ?? "").trim(),
+      amount: moneyToNumber(r[aIdx]),
+      date: tIdx >= 0 ? toIsoDate(r[tIdx]) : null,
+    });
   }
-  return out;
+  return { rows, parsedRowCount: rows.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,58 +176,87 @@ function matrixToRows(rows: string[][]): Row[] {
 
 export type ParseResult = {
   deposits: Deposit[];
-  /** Lines from the file that were skipped because amount was zero / negative,
-   *  or description was blank. Useful for the "we parsed N rows" sanity check. */
   parsedRowCount: number;
+  /** Rows we saw but skipped because they weren't Zelle, were negative,
+   *  or had a blank description. For debugging if the result is empty. */
+  skipped: { reason: string; count: number }[];
 };
 
-export async function parseBankFile(file: File): Promise<ParseResult> {
-  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
-  let matrix: string[][];
-  if (isExcel) {
-    matrix = await readXlsxToMatrix(await file.arrayBuffer());
-  } else {
-    const text = await file.text();
-    matrix = await readCsvToMatrix(text);
+async function readFileToMatrix(file: File): Promise<string[][]> {
+  if (/\.(xlsx|xls)$/i.test(file.name)) {
+    return readXlsxToMatrix(await file.arrayBuffer());
   }
-  return rowsToDeposits(matrixToRows(matrix), "bank");
+  return readCsvToMatrix(await file.text());
+}
+
+export async function parseBankFile(file: File): Promise<ParseResult> {
+  const matrix = await readFileToMatrix(file);
+  const { rows, parsedRowCount } = matrixToRows(matrix);
+  return rowsToDeposits(rows, parsedRowCount, "bank", { zelleOnly: true });
 }
 
 export async function parseOtherFile(file: File): Promise<ParseResult> {
-  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
-  let matrix: string[][];
-  if (isExcel) {
-    matrix = await readXlsxToMatrix(await file.arrayBuffer());
-  } else {
-    const text = await file.text();
-    matrix = await readCsvToMatrix(text);
-  }
-  return rowsToDeposits(matrixToRows(matrix), "other");
+  const matrix = await readFileToMatrix(file);
+  const { rows, parsedRowCount } = matrixToRows(matrix);
+  return rowsToDeposits(rows, parsedRowCount, "other", { zelleOnly: false });
 }
 
-function rowsToDeposits(rows: Row[], source: "bank" | "other"): ParseResult {
+function rowsToDeposits(
+  rows: Row[],
+  parsedRowCount: number,
+  source: "bank" | "other",
+  opts: { zelleOnly: boolean },
+): ParseResult {
+  let nonPositive = 0;
+  let nonZelle = 0;
+  let blank = 0;
   const out: Deposit[] = [];
   for (const r of rows) {
-    const raw = String(r["Description"] ?? "").trim();
-    if (!raw) continue;
-    const amount = moneyToNumber(r["Amount"]);
-    if (amount <= 0) continue;
+    if (!r.description) {
+      blank++;
+      continue;
+    }
+    if (r.amount <= 0) {
+      nonPositive++;
+      continue;
+    }
+    let key: string | null;
+    if (opts.zelleOnly) {
+      key = bankPayerKey(r.description);
+      if (key === null) {
+        nonZelle++;
+        continue;
+      }
+    } else {
+      // Other-payments file: description is the payer name directly.
+      key = firstTwoWords(r.description);
+      if (!key) {
+        blank++;
+        continue;
+      }
+    }
     out.push({
-      description: cleanDescription(raw),
-      raw,
-      amount,
-      date: toIsoDate(r["Date"]),
+      description: key,
+      raw: r.description,
+      amount: r.amount,
+      date: r.date,
       source,
     });
   }
-  return { deposits: out, parsedRowCount: rows.length };
+  const skipped: { reason: string; count: number }[] = [];
+  if (nonPositive > 0)
+    skipped.push({ reason: "Negative or zero amount", count: nonPositive });
+  if (nonZelle > 0)
+    skipped.push({ reason: "Not a Zelle payment", count: nonZelle });
+  if (blank > 0)
+    skipped.push({ reason: "Blank description", count: blank });
+  return { deposits: out, parsedRowCount, skipped };
 }
 
 // ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 
-/** Sum deposits by their cleaned description (lower-cased match key). */
 export function aggregateByDescription(deposits: Deposit[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const d of deposits) {
@@ -228,13 +265,10 @@ export function aggregateByDescription(deposits: Deposit[]): Map<string, number>
   return m;
 }
 
-/** Deposits whose description didn't appear in `claimedKeys`. */
 export function unmatchedDeposits(
   deposits: Deposit[],
   claimedKeys: Set<string>,
 ): { description: string; raw: string; amount: number; date: string | null }[] {
-  // Aggregate per cleaned description so multiple deposits to the same
-  // unmatched payer collapse to one line.
   const m = new Map<
     string,
     { raw: string; amount: number; date: string | null }
