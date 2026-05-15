@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/date";
 import { DeleteRunButton } from "./delete-run";
+import { postPayments, unpostPayments } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,9 @@ type Run = {
   mismatch_count: number | null;
   missing_count: number | null;
   unmatched_deposits:
-    | { description: string; amount: number }[]
+    | { description: string; raw?: string; amount: number; date?: string | null }[]
     | null;
+  posted_at: string | null;
   created_at: string;
 };
 
@@ -86,7 +88,7 @@ export default async function ReconciliationRunPage({
         `id, month, bank_statement_path, other_payments_path,
          total_expected, total_actual,
          match_count, mismatch_count, missing_count,
-         unmatched_deposits, created_at`,
+         unmatched_deposits, posted_at, created_at`,
       )
       .eq("id", id)
       .maybeSingle<Run>(),
@@ -130,12 +132,57 @@ export default async function ReconciliationRunPage({
         <div className="flex items-center gap-3">
           <a
             href={`/reconciliation/${run.id}/export`}
-            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-dark"
+            className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-ink shadow-sm hover:bg-warm"
           >
             Download Excel
           </a>
+          {run.posted_at ? (
+            <form action={unpostPayments}>
+              <input type="hidden" name="run_id" value={run.id} />
+              <button
+                type="submit"
+                className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+              >
+                Unpost payments
+              </button>
+            </form>
+          ) : (
+            <form action={postPayments}>
+              <input type="hidden" name="run_id" value={run.id} />
+              <button
+                type="submit"
+                className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-dark"
+              >
+                Post payments
+              </button>
+            </form>
+          )}
         </div>
       </header>
+
+      <section
+        className={`mt-6 rounded-2xl p-4 text-sm ${
+          run.posted_at
+            ? "bg-accent/10 text-accent-text"
+            : "bg-warm/60 text-ink/80"
+        }`}
+      >
+        {run.posted_at ? (
+          <p>
+            <strong>Posted</strong> on {formatDate(run.posted_at)}. Each
+            matched tenancy has a corresponding row in the payments table.
+            Click <em>Unpost payments</em> above to remove them (you can
+            re-post afterward).
+          </p>
+        ) : (
+          <p>
+            <strong>Preview</strong> — payments are <em>not</em> recorded
+            yet. Review the matches and unmatched deposits below, then click{" "}
+            <em>Post payments</em> to write a payment row for every match
+            with <code>$ &gt; 0</code>.
+          </p>
+        )}
+      </section>
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
@@ -269,10 +316,17 @@ export default async function ReconciliationRunPage({
             {run.unmatched_deposits.map((d, i) => (
               <li
                 key={i}
-                className="flex items-center justify-between rounded-lg bg-cream/60 px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-3 rounded-lg bg-cream/60 px-3 py-2 text-sm"
               >
-                <span className="text-ink">{d.description}</span>
-                <span className="font-medium text-ink">{fmtMoney(d.amount)}</span>
+                <div className="min-w-0">
+                  <p className="truncate text-ink">{d.raw ?? d.description}</p>
+                  {d.date && (
+                    <p className="text-[11px] text-muted">{formatDate(d.date)}</p>
+                  )}
+                </div>
+                <span className="shrink-0 font-medium text-ink tabular-nums">
+                  {fmtMoney(d.amount)}
+                </span>
               </li>
             ))}
           </ul>

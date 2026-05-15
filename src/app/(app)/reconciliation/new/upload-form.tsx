@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { runReconciliation, type RunFormState } from "../actions";
+import { useFormToast } from "@/components/use-form-toast";
 
 const fieldLabel = "text-xs font-medium uppercase tracking-wide text-muted";
 const fieldInput =
@@ -18,6 +19,7 @@ export function RunReconciliationForm({
     runReconciliation,
     undefined,
   );
+  useFormToast({ pending, state, successMessage: "Reconciliation complete" });
 
   return (
     <form action={action} className="flex flex-col gap-6">
@@ -45,16 +47,17 @@ export function RunReconciliationForm({
           2 · Upload bank statement
         </h2>
         <p className="mt-1 text-xs text-muted">
-          Bank of America CSV. Only{" "}
-          <strong>Zelle payments</strong> are imported (matches the reconciler at
-          reconciliation.hiveny.com).
+          CSV or Excel. We auto-detect the header row — any row with{" "}
+          <code>Description</code> + <code>Amount</code> columns works. All
+          positive-amount deposits are matched; payments that don&apos;t
+          match a tenant&apos;s <code>pays as</code> show up as unmatched.
         </p>
         <label className="mt-4 flex flex-col gap-1.5">
-          <span className={fieldLabel}>Bank statement CSV *</span>
+          <span className={fieldLabel}>Bank statement *</span>
           <input
             type="file"
             name="bank_statement"
-            accept="text/csv,.csv"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
             required
             className={fileInput}
           />

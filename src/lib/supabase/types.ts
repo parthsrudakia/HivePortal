@@ -611,6 +611,7 @@ export type Database = {
           month: string
           notes: string | null
           other_payments_path: string | null
+          posted_at: string | null
           total_actual: number | null
           total_expected: number | null
           unmatched_deposits: Json | null
@@ -625,6 +626,7 @@ export type Database = {
           month: string
           notes?: string | null
           other_payments_path?: string | null
+          posted_at?: string | null
           total_actual?: number | null
           total_expected?: number | null
           unmatched_deposits?: Json | null
@@ -639,6 +641,7 @@ export type Database = {
           month?: string
           notes?: string | null
           other_payments_path?: string | null
+          posted_at?: string | null
           total_actual?: number | null
           total_expected?: number | null
           unmatched_deposits?: Json | null
