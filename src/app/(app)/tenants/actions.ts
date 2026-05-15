@@ -175,13 +175,38 @@ export async function updateTenant(
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const pays_as = String(formData.get("pays_as") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const profession =
+    String(formData.get("profession") ?? "").trim() || null;
+  const linkedin_url =
+    String(formData.get("linkedin_url") ?? "").trim() || null;
+  const instagram_url =
+    String(formData.get("instagram_url") ?? "").trim() || null;
+  const ageStr = String(formData.get("age") ?? "").trim();
+  let age: number | null = null;
+  if (ageStr !== "") {
+    const n = Number(ageStr);
+    if (!Number.isInteger(n) || n < 0 || n > 150) {
+      return { error: "Age must be a whole number between 0 and 150." };
+    }
+    age = n;
+  }
 
   if (!full_name) return { error: "Name is required." };
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("tenants")
-    .update({ full_name, email, phone, pays_as, notes })
+    .update({
+      full_name,
+      email,
+      phone,
+      pays_as,
+      notes,
+      age,
+      profession,
+      linkedin_url,
+      instagram_url,
+    })
     .eq("id", id);
 
   if (error) return { error: error.message };

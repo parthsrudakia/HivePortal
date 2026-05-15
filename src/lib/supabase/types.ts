@@ -931,33 +931,45 @@ export type Database = {
       }
       tenants: {
         Row: {
+          age: number | null
           created_at: string
           email: string | null
           full_name: string
           id: string
+          instagram_url: string | null
+          linkedin_url: string | null
           notes: string | null
           pays_as: string | null
           phone: string | null
+          profession: string | null
           updated_at: string
         }
         Insert: {
+          age?: number | null
           created_at?: string
           email?: string | null
           full_name: string
           id?: string
+          instagram_url?: string | null
+          linkedin_url?: string | null
           notes?: string | null
           pays_as?: string | null
           phone?: string | null
+          profession?: string | null
           updated_at?: string
         }
         Update: {
+          age?: number | null
           created_at?: string
           email?: string | null
           full_name?: string
           id?: string
+          instagram_url?: string | null
+          linkedin_url?: string | null
           notes?: string | null
           pays_as?: string | null
           phone?: string | null
+          profession?: string | null
           updated_at?: string
         }
         Relationships: []

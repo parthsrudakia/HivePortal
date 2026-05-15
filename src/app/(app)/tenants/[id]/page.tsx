@@ -69,7 +69,9 @@ export default async function TenantDetailPage({ params }: PageProps) {
     await Promise.all([
       supabase
         .from("tenants")
-        .select("id, full_name, email, phone, pays_as, notes")
+        .select(
+          "id, full_name, email, phone, pays_as, notes, age, profession, linkedin_url, instagram_url",
+        )
         .eq("id", id)
         .maybeSingle(),
       supabase
@@ -132,6 +134,10 @@ export default async function TenantDetailPage({ params }: PageProps) {
           phone={tenant.phone}
           pays_as={tenant.pays_as}
           notes={tenant.notes}
+          age={tenant.age}
+          profession={tenant.profession}
+          linkedin_url={tenant.linkedin_url}
+          instagram_url={tenant.instagram_url}
         />
 
         <div className="rounded-2xl bg-white p-6 shadow-sm">
