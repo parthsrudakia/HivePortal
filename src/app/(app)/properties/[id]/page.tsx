@@ -393,7 +393,7 @@ function ResidentsWidget({ rows }: { rows: ResidentRow[] }) {
     .sort((a, b) => (a.room_number ?? "").localeCompare(b.room_number ?? ""));
 
   return (
-    <section className="mt-10">
+    <section id="residents" className="mt-10 scroll-mt-6">
       <header className="flex items-end justify-between gap-3">
         <h2 className="text-xl tracking-tight text-ink">
           <span className="font-display text-accent-text">Residents</span>
