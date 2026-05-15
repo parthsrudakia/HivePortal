@@ -336,6 +336,7 @@ export type Database = {
         Row: {
           amount: number
           created_at: string
+          external_ref: string | null
           id: string
           method: string | null
           notes: string | null
@@ -347,6 +348,7 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string
+          external_ref?: string | null
           id?: string
           method?: string | null
           notes?: string | null
@@ -358,6 +360,7 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string
+          external_ref?: string | null
           id?: string
           method?: string | null
           notes?: string | null
@@ -513,6 +516,81 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "leaseholders"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_deposits: {
+        Row: {
+          amount: number
+          created_at: string
+          deposit_date: string | null
+          external_ref: string
+          id: string
+          payer_key: string
+          payment_id: string | null
+          raw_description: string
+          run_id: string
+          tenancy_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          deposit_date?: string | null
+          external_ref: string
+          id?: string
+          payer_key: string
+          payment_id?: string | null
+          raw_description: string
+          run_id: string
+          tenancy_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          deposit_date?: string | null
+          external_ref?: string
+          id?: string
+          payer_key?: string
+          payment_id?: string | null
+          raw_description?: string
+          run_id?: string
+          tenancy_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_deposits_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_deposits_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliation_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_deposits_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_deposits_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "reconciliation_deposits_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
           },
         ]
       }

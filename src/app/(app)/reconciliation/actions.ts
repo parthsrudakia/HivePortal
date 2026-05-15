@@ -171,7 +171,8 @@ export async function runReconciliation(
       });
   }
 
-  // 5) Build per-tenant matches.
+  // 5) Build per-tenant matches AND save the raw per-deposit rows so we
+  //    can dedupe later at Post time.
   type MatchRow = {
     run_id: string;
     tenancy_id: string;
@@ -187,6 +188,7 @@ export async function runReconciliation(
   };
   const matches: MatchRow[] = [];
   const claimedKeys = new Set<string>();
+  const tenancyByKey = new Map<string, string>();
   let matchCount = 0;
   let mismatchCount = 0;
   let missingCount = 0;
@@ -200,7 +202,10 @@ export async function runReconciliation(
     const rawKey = tenantKey(tenant.pays_as, tenant.full_name);
     const expected = Number(t.monthly_rent);
     const actual = aggregate.get(rawKey) ?? 0;
-    if (actual > 0) claimedKeys.add(rawKey);
+    if (actual > 0) {
+      claimedKeys.add(rawKey);
+      tenancyByKey.set(rawKey, t.id);
+    }
 
     const difference = actual - expected;
     let status: MatchRow["status"];
@@ -245,6 +250,26 @@ export async function runReconciliation(
     }
   }
 
+  // 5b) Save every parsed deposit (matched or not) so Post payments can
+  //     iterate them and dedupe by external_ref.
+  const depositRows = allDeposits.map((d) => ({
+    run_id: runId,
+    tenancy_id: tenancyByKey.get(d.description) ?? null,
+    external_ref: d.externalRef,
+    payer_key: d.description,
+    raw_description: d.raw,
+    amount: d.amount,
+    deposit_date: d.date,
+  }));
+  if (depositRows.length > 0) {
+    const { error: dErr } = await supabase
+      .from("reconciliation_deposits")
+      .insert(depositRows);
+    if (dErr) {
+      console.error("[recon] failed to save deposits:", dErr);
+    }
+  }
+
   const unmatched = unmatchedDeposits(allDeposits, claimedKeys);
 
   await supabase
@@ -276,60 +301,74 @@ export async function postPayments(formData: FormData) {
 
   const supabase = await createClient();
 
-  // Cancel any prior posting for this run.
-  await supabase
-    .from("payments")
-    .delete()
-    .eq("reconciliation_run_id", runId);
-
-  const { data: run, error: rErr } = await supabase
-    .from("reconciliation_runs")
-    .select("id, month")
-    .eq("id", runId)
-    .maybeSingle();
-  if (rErr || !run) {
-    throw new Error(rErr?.message ?? "Run not found.");
-  }
-
-  const { data: matches, error: mErr } = await supabase
-    .from("reconciliation_matches")
-    .select("tenancy_id, actual_amount, status")
-    .eq("run_id", runId)
-    .gt("actual_amount", 0);
-  if (mErr) {
-    throw new Error(mErr.message);
-  }
-
-  const { start } = monthBounds(run.month);
-  const paidOn = start;
-  const stamp = new Date().toISOString().slice(0, 10);
-  type Payment = {
-    tenancy_id: string;
-    paid_on: string;
-    amount: number;
-    payment_type: "rent";
-    method: string;
-    notes: string;
-    reconciliation_run_id: string;
-  };
-  const payments: Payment[] = (matches ?? [])
-    .filter((m): m is { tenancy_id: string; actual_amount: number; status: string } =>
-      Boolean(m.tenancy_id),
+  // Load every parsed deposit on this run that matched a tenancy.
+  const { data: deposits, error: dErr } = await supabase
+    .from("reconciliation_deposits")
+    .select(
+      "id, tenancy_id, external_ref, amount, deposit_date, raw_description",
     )
-    .map((m) => ({
-      tenancy_id: m.tenancy_id,
-      paid_on: paidOn,
-      amount: Number(m.actual_amount),
-      payment_type: "rent",
-      method: "Reconciliation",
-      notes: `Posted from reconciliation run on ${stamp}`,
-      reconciliation_run_id: runId,
-    }));
+    .eq("run_id", runId)
+    .not("tenancy_id", "is", null);
+  if (dErr) {
+    throw new Error(`Failed to load deposits: ${dErr.message}`);
+  }
+  if (!deposits || deposits.length === 0) {
+    // Nothing to post — still flip the run to "posted" so the UI updates.
+    await supabase
+      .from("reconciliation_runs")
+      .update({ posted_at: new Date().toISOString() })
+      .eq("id", runId);
+    revalidatePath("/reconciliation");
+    revalidatePath(`/reconciliation/${runId}`);
+    return;
+  }
 
-  if (payments.length > 0) {
-    const { error: pErr } = await supabase.from("payments").insert(payments);
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  // For each matched deposit:
+  //   1) try to insert a payments row with external_ref = the deposit's
+  //      Conf# (or synthetic fingerprint). If it already exists from a
+  //      prior overlapping bank statement run, ON CONFLICT short-circuits
+  //      and we just re-link this deposit to the existing payment.
+  //   2) update the deposit row with payment_id so future Unpost knows.
+  for (const d of deposits) {
+    if (!d.tenancy_id) continue;
+    const { data: ins, error: pErr } = await supabase
+      .from("payments")
+      .upsert(
+        {
+          tenancy_id: d.tenancy_id,
+          paid_on: d.deposit_date ?? stamp,
+          amount: Number(d.amount),
+          payment_type: "rent",
+          method: "Reconciliation",
+          notes: `Posted from recon (${d.external_ref})`,
+          reconciliation_run_id: runId,
+          external_ref: d.external_ref,
+        },
+        { onConflict: "external_ref", ignoreDuplicates: true },
+      )
+      .select("id")
+      .maybeSingle();
     if (pErr) {
-      throw new Error(`Failed to insert payments: ${pErr.message}`);
+      console.error("[recon] upsert payment failed:", pErr, d.external_ref);
+      continue;
+    }
+    let paymentId: string | null = ins?.id ?? null;
+    // If ignored (conflict), look up the existing row so we can link.
+    if (!paymentId) {
+      const { data: existing } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("external_ref", d.external_ref)
+        .maybeSingle();
+      paymentId = existing?.id ?? null;
+    }
+    if (paymentId) {
+      await supabase
+        .from("reconciliation_deposits")
+        .update({ payment_id: paymentId })
+        .eq("id", d.id);
     }
   }
 
@@ -348,10 +387,41 @@ export async function unpostPayments(formData: FormData) {
   if (!runId) return;
 
   const supabase = await createClient();
+
+  // Collect this run's external_refs so we can remove only the payment
+  // rows that were created from these deposits.
+  const { data: deps } = await supabase
+    .from("reconciliation_deposits")
+    .select("external_ref")
+    .eq("run_id", runId);
+
+  const refs = Array.from(
+    new Set(((deps ?? []) as { external_ref: string }[]).map((d) => d.external_ref)),
+  );
+  if (refs.length > 0) {
+    // Only delete payments whose external_ref isn't referenced by any
+    // OTHER run's deposits — so overlap with another posted run keeps
+    // its payment alive.
+    const { data: otherRefs } = await supabase
+      .from("reconciliation_deposits")
+      .select("external_ref")
+      .neq("run_id", runId)
+      .in("external_ref", refs);
+    const stillReferenced = new Set(
+      ((otherRefs ?? []) as { external_ref: string }[]).map((r) => r.external_ref),
+    );
+    const safeToDelete = refs.filter((r) => !stillReferenced.has(r));
+    if (safeToDelete.length > 0) {
+      await supabase.from("payments").delete().in("external_ref", safeToDelete);
+    }
+  }
+
+  // Detach this run's deposits from their payment rows.
   await supabase
-    .from("payments")
-    .delete()
-    .eq("reconciliation_run_id", runId);
+    .from("reconciliation_deposits")
+    .update({ payment_id: null })
+    .eq("run_id", runId);
+
   await supabase
     .from("reconciliation_runs")
     .update({ posted_at: null })

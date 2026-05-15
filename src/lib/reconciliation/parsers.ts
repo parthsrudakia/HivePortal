@@ -20,11 +20,12 @@ import Papa from "papaparse";
 import ExcelJS from "exceljs";
 
 export type Deposit = {
-  description: string; // 2-word lowercase match key
-  raw: string;         // original raw description (for display / debugging)
+  description: string; // payer key (lowercase, after "from")
+  raw: string;         // original raw description
   amount: number;
   date: string | null;
   source: "bank" | "other";
+  externalRef: string; // unique fingerprint — Conf# when available, else hash
 };
 
 const ZELLE_FROM_RE = /^Zelle (?:Scheduled )?payment from /i;
@@ -71,6 +72,24 @@ function bankPayerKey(raw: string): string | null {
   s = s.split(/Ref#/i)[0];
   s = s.split(/;/)[0];
   return normalizeName(s);
+}
+
+/** Pull a Zelle Conf# (or Ref#) out of the description. Used as the
+ *  external_ref so the same Zelle transaction never gets posted twice. */
+function extractConfNumber(raw: string): string | null {
+  const m = raw.match(/(?:Conf|Ref)#\s*([A-Za-z0-9]+)/i);
+  return m ? m[1] : null;
+}
+
+/** Fallback fingerprint when no Conf# is present (e.g. an "other payments"
+ *  row, or a non-Zelle deposit). Stable on (date, raw, amount). */
+function fingerprintFor(
+  source: "bank" | "other",
+  date: string | null,
+  raw: string,
+  amount: number,
+): string {
+  return `${source}:${date ?? "nodate"}:${raw}:${amount.toFixed(2)}`;
 }
 
 /** Compute the tenant's match key from their pays_as (or full_name). */
@@ -235,12 +254,17 @@ function rowsToDeposits(
         continue;
       }
     }
+    const conf = extractConfNumber(r.description);
+    const externalRef = conf
+      ? `zelle:${conf}`
+      : fingerprintFor(source, r.date, r.description, r.amount);
     out.push({
       description: key,
       raw: r.description,
       amount: r.amount,
       date: r.date,
       source,
+      externalRef,
     });
   }
   const skipped: { reason: string; count: number }[] = [];
