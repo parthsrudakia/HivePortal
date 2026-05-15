@@ -26,6 +26,13 @@ type PropertyRel = {
   street_address: string;
   unit_number: string;
   neighborhood: string | null;
+  has_gym: boolean;
+  has_elevator: boolean;
+  has_parking: boolean;
+  has_doorman: boolean;
+  has_rooftop: boolean;
+  laundry_in_building: boolean;
+  in_unit_laundry: boolean;
 };
 
 type TenantRel = { full_name: string };
@@ -46,6 +53,8 @@ type Row = {
   status: "occupied" | "available" | "reserved" | "maintenance";
   marketing_description: string | null;
   photos_url: string | null;
+  has_ac: boolean;
+  has_private_bathroom: boolean;
   listing_action: Action;
   ad_url: string | null;
   ad_boosted: boolean;
@@ -122,8 +131,11 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     .from("rooms")
     .select(
       `id, room_number, base_rent, bundle_fee, total_rent, available_from, status,
-       marketing_description, photos_url, listing_action, ad_url, ad_boosted,
-       properties(id, building_name, street_address, unit_number, neighborhood),
+       marketing_description, photos_url, has_ac, has_private_bathroom,
+       listing_action, ad_url, ad_boosted,
+       properties(id, building_name, street_address, unit_number, neighborhood,
+                  has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
+                  laundry_in_building, in_unit_laundry),
        tenancies(status, start_date, end_date, tenants(full_name))`,
     )
     .or(
@@ -255,16 +267,18 @@ export default async function InventoryPage({ searchParams }: PageProps) {
 
       {filtered.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-          <table className="w-full min-w-[1100px] text-sm">
+          <table className="w-full min-w-[1400px] text-sm">
             <thead className="sticky top-0 z-10 bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
               <tr>
                 <th className="w-1.5" />
                 <th className="px-3 py-2 font-medium">Unit</th>
                 <th className="px-3 py-2 font-medium">Room</th>
                 <th className="px-3 py-2 font-medium">Available</th>
-                <th className="px-3 py-2 text-right font-medium">Base</th>
+                <th className="px-3 py-2 text-right font-medium">Rent</th>
                 <th className="px-3 py-2 text-right font-medium">Services</th>
                 <th className="px-3 py-2 text-right font-medium">Total</th>
+                <th className="px-3 py-2 font-medium">Amenities</th>
+                <th className="px-3 py-2 font-medium">Photos</th>
                 <th className="px-3 py-2 font-medium">Tenant</th>
                 <th className="px-3 py-2 font-medium">Listing action</th>
                 <th className="px-3 py-2 font-medium">Ad</th>
@@ -376,6 +390,23 @@ function InventoryRow({
       <td className="px-3 py-1.5 text-right tabular-nums font-medium text-ink">
         {fmtMoney(room.total_rent)}
       </td>
+      <td className="px-3 py-2.5">
+        <Amenities room={room} property={p} />
+      </td>
+      <td className="px-3 py-2.5">
+        {room.photos_url ? (
+          <a
+            href={room.photos_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-stone bg-white px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink hover:bg-warm"
+          >
+            Open ↗
+          </a>
+        ) : (
+          <span className="text-[11px] text-muted">—</span>
+        )}
+      </td>
       <td className="px-3 py-2.5 text-[12px]">
         {featuredTenantName ? (
           <>
@@ -420,16 +451,6 @@ function InventoryRow({
           {room.marketing_description && (
             <CopyListing text={room.marketing_description} />
           )}
-          {room.photos_url && (
-            <a
-              href={room.photos_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full border border-stone bg-white px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink hover:bg-warm"
-            >
-              Photos ↗
-            </a>
-          )}
           <Link
             href={`/tenants/new?room_id=${room.id}`}
             className="rounded-full bg-ink px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white hover:bg-accent-dark"
@@ -445,6 +466,41 @@ function InventoryRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+function Amenities({
+  room,
+  property,
+}: {
+  room: Pick<Row, "has_ac" | "has_private_bathroom">;
+  property: PropertyRel | null;
+}) {
+  const tags: string[] = [];
+  if (room.has_ac) tags.push("AC");
+  if (room.has_private_bathroom) tags.push("Private bath");
+  if (property?.has_gym) tags.push("Gym");
+  if (property?.has_elevator) tags.push("Elevator");
+  if (property?.has_doorman) tags.push("Doorman");
+  if (property?.has_parking) tags.push("Parking");
+  if (property?.has_rooftop) tags.push("Rooftop");
+  if (property?.in_unit_laundry) tags.push("In-unit laundry");
+  else if (property?.laundry_in_building) tags.push("Laundry");
+
+  if (tags.length === 0) {
+    return <span className="text-[11px] text-muted">—</span>;
+  }
+  return (
+    <div className="flex max-w-[220px] flex-wrap gap-1">
+      {tags.map((t) => (
+        <span
+          key={t}
+          className="rounded-full bg-warm px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink/70"
+        >
+          {t}
+        </span>
+      ))}
+    </div>
   );
 }
 
