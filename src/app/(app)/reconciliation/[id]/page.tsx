@@ -30,6 +30,7 @@ type Run = {
   unmatched_deposits:
     | { description: string; raw?: string; amount: number; date?: string | null }[]
     | null;
+  notes: string | null;
   posted_at: string | null;
   created_at: string;
 };
@@ -88,7 +89,7 @@ export default async function ReconciliationRunPage({
         `id, month, bank_statement_path, other_payments_path,
          total_expected, total_actual,
          match_count, mismatch_count, missing_count,
-         unmatched_deposits, posted_at, created_at`,
+         unmatched_deposits, notes, posted_at, created_at`,
       )
       .eq("id", id)
       .maybeSingle<Run>(),
@@ -159,6 +160,13 @@ export default async function ReconciliationRunPage({
           )}
         </div>
       </header>
+
+      {run.notes && (
+        <section className="mt-6 rounded-2xl bg-cream/60 p-4 text-xs text-muted">
+          <p className="font-medium uppercase tracking-wide">Run diagnostics</p>
+          <p className="mt-1">{run.notes}</p>
+        </section>
+      )}
 
       <section
         className={`mt-6 rounded-2xl p-4 text-sm ${
