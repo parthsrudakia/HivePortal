@@ -43,7 +43,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
       .select(
         `id, building_name, street_address, unit_number, cross_street,
          neighborhood, bedrooms, bathrooms,
-         has_gym, has_elevator, has_parking, has_doorman,
+         has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
          laundry_in_building, in_unit_laundry,
          amenities_notes, notes,
          leaseholders(id, name)`,
@@ -83,6 +83,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     { label: "Elevator", on: property.has_elevator },
     { label: "Parking", on: property.has_parking },
     { label: "Doorman", on: property.has_doorman },
+    { label: "Rooftop", on: property.has_rooftop },
     { label: "Laundry in building", on: property.laundry_in_building },
     { label: "In-unit laundry", on: property.in_unit_laundry },
   ];
