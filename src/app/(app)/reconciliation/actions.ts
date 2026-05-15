@@ -59,12 +59,13 @@ export async function runReconciliation(
       error: `Couldn't read bank file: ${e instanceof Error ? e.message : String(e)}`,
     };
   }
-  if (bankResult.deposits.length === 0) {
-    return {
-      error:
-        "No deposit rows found in the bank file. Check the file has 'Description' and 'Amount' columns and at least one positive-amount row.",
-    };
-  }
+  console.log("[recon] bank parse:", {
+    name: bankFile.name,
+    size: bankFile.size,
+    parsedRowCount: bankResult.parsedRowCount,
+    deposits: bankResult.deposits.length,
+    skipped: bankResult.skipped,
+  });
 
   let allDeposits: Deposit[] = bankResult.deposits;
   if (otherFile instanceof File && otherFile.size > 0) {
@@ -75,6 +76,12 @@ export async function runReconciliation(
         error: `Couldn't read other-payments file: ${e instanceof Error ? e.message : String(e)}`,
       };
     }
+    console.log("[recon] other parse:", {
+      name: otherFile.name,
+      size: otherFile.size,
+      parsedRowCount: otherResult.parsedRowCount,
+      deposits: otherResult.deposits.length,
+    });
     allDeposits = [...allDeposits, ...otherResult.deposits];
   }
 
@@ -118,17 +125,30 @@ export async function runReconciliation(
 
   if (tErr) return { error: `Failed to load tenancies: ${tErr.message}` };
   const tenancyRows = tenancies ?? [];
+  console.log("[recon] tenancies loaded:", tenancyRows.length);
 
-  // 3) Create the run (preview state, posted_at = null).
+  // 3) Create the run (preview state, posted_at = null). Build a diagnostic
+  // note so the operator can immediately see what happened.
+  const diagnostics =
+    `Parsed ${bankResult.parsedRowCount} bank rows → ${bankResult.deposits.length} deposits. ` +
+    (otherResult
+      ? `Parsed ${otherResult.parsedRowCount} other-file rows → ${otherResult.deposits.length} deposits. `
+      : "") +
+    `Loaded ${tenancyRows.length} active tenancies for month.` +
+    (bankResult.skipped.length > 0
+      ? ` Bank skipped: ${bankResult.skipped.map((s) => `${s.count} ${s.reason.toLowerCase()}`).join(", ")}.`
+      : "");
+
   const { data: runIns, error: runErr } = await supabase
     .from("reconciliation_runs")
-    .insert({ month })
+    .insert({ month, notes: diagnostics })
     .select("id")
     .single();
   if (runErr || !runIns) {
     return { error: runErr?.message ?? "Failed to create run." };
   }
   const runId = runIns.id;
+  console.log("[recon] run created:", runId);
 
   // 4) Upload source files to storage (audit trail; non-fatal on failure).
   const safeName = (s: string) => s.replace(/[^\w.\-]/g, "_");
