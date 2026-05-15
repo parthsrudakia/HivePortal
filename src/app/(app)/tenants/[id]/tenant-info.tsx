@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { updateTenant, type TenantFormState } from "../actions";
+import { useFormToast } from "@/components/use-form-toast";
 
 type Props = {
   id: string;
@@ -30,6 +31,7 @@ export function TenantInfo(props: Props) {
     boundUpdate,
     undefined,
   );
+  useFormToast({ pending, state, successMessage: "Tenant updated" });
 
   if (!editing) {
     return (

@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { recordPayment, type PaymentFormState } from "../actions";
+import { useFormToast } from "@/components/use-form-toast";
 
 const fieldInput =
   "rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none";
@@ -28,6 +29,7 @@ export function RecordPayment({
     bound,
     undefined,
   );
+  useFormToast({ pending, state, successMessage: "Payment recorded" });
 
   useEffect(() => {
     if (state === undefined && open) {

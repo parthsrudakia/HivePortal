@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createTenant, type TenantFormState } from "../actions";
+import { useFormToast } from "@/components/use-form-toast";
 
 type RoomOption = {
   id: string;
@@ -24,6 +25,7 @@ export function AddTenantForm({
     createTenant,
     undefined,
   );
+  useFormToast({ pending, state, successMessage: "Tenant added" });
 
   return (
     <form action={action} className="flex flex-col gap-8">

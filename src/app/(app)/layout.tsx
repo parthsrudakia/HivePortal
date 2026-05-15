@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isMaster } from "@/lib/access";
 import { logout } from "../login/actions";
+import { MobileNav } from "./mobile-nav";
+import { CommandPalette } from "./command-palette";
 
 type NavItem = { href: string; label: string; masterOnly?: boolean };
 
@@ -41,7 +43,9 @@ export default async function AppLayout({
   const navItems = NAV.filter((item) => !item.masterOnly || master);
 
   return (
-    <div className="flex min-h-full">
+    <div className="flex min-h-full flex-col md:flex-row">
+      <MobileNav items={navItems} userEmail={user.email ?? null} />
+      <CommandPalette />
       <aside className="hidden w-64 shrink-0 flex-col border-r border-stone/60 bg-white/60 px-4 py-8 md:flex">
         <Link
           href="/"
@@ -91,7 +95,7 @@ export default async function AppLayout({
         </div>
       </aside>
 
-      <main className="flex-1 px-6 py-8 md:px-10 md:py-12">{children}</main>
+      <main className="flex-1 px-4 py-6 md:px-10 md:py-12">{children}</main>
     </div>
   );
 }

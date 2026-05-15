@@ -93,50 +93,65 @@ export default async function PropertiesPage({ searchParams }: PageProps) {
       )}
 
       {properties.length > 0 && (
-        <ul className="mt-8 grid gap-4 md:grid-cols-2">
-          {properties.map((p) => {
-            const totalRooms = p.rooms?.length ?? 0;
-            const vacantRooms =
-              p.rooms?.filter((r) => r.status === "available").length ?? 0;
-            const title =
-              p.building_name?.trim() ||
-              `${p.street_address}`;
-            return (
-              <li key={p.id}>
-                <Link
-                  href={`/properties/${p.id}`}
-                  className="block rounded-2xl bg-white p-6 shadow-sm transition hover:shadow"
-                >
-                  <p className="text-xs uppercase tracking-wide text-muted">
-                    {p.neighborhood ?? "—"}
-                  </p>
-                  <h2 className="mt-1 text-lg text-ink">
-                    {title}{" "}
-                    <span className="text-muted">Apt {p.unit_number}</span>
-                  </h2>
-                  {p.building_name && (
-                    <p className="mt-0.5 text-xs text-muted">
-                      {p.street_address}
-                    </p>
-                  )}
-                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-                    <span>
-                      {totalRooms} room{totalRooms === 1 ? "" : "s"}
-                    </span>
-                    {vacantRooms > 0 && (
-                      <span className="text-accent-text">
-                        {vacantRooms} vacant
-                      </span>
-                    )}
-                    {one(p.leaseholders)?.name && (
-                      <span>Lease: {one(p.leaseholders)?.name}</span>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="mt-6 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+          <table className="w-full min-w-[800px] text-sm">
+            <thead className="sticky top-0 z-10 bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
+              <tr>
+                <th className="px-3 py-2 font-medium">Unit</th>
+                <th className="px-3 py-2 font-medium">Neighborhood</th>
+                <th className="px-3 py-2 text-right font-medium">Rooms</th>
+                <th className="px-3 py-2 text-right font-medium">Vacant</th>
+                <th className="px-3 py-2 font-medium">Leaseholder</th>
+              </tr>
+            </thead>
+            <tbody>
+              {properties.map((p, i) => {
+                const totalRooms = p.rooms?.length ?? 0;
+                const vacantRooms =
+                  p.rooms?.filter((r) => r.status === "available").length ?? 0;
+                const title = p.building_name?.trim() || p.street_address;
+                const leaseholderName = one(p.leaseholders)?.name ?? null;
+                return (
+                  <tr
+                    key={p.id}
+                    className={`border-t border-stone/30 ${i % 2 === 1 ? "bg-cream/40" : "bg-white"} hover:bg-warm/30`}
+                  >
+                    <td className="px-3 py-2.5">
+                      <Link
+                        href={`/properties/${p.id}`}
+                        className="text-ink hover:text-accent-text"
+                      >
+                        {title}{" "}
+                        <span className="text-muted">Apt {p.unit_number}</span>
+                      </Link>
+                      {p.building_name && (
+                        <div className="text-[11px] text-muted">
+                          {p.street_address}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-ink">
+                      {p.neighborhood ?? <span className="text-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">
+                      {totalRooms}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {vacantRooms > 0 ? (
+                        <span className="text-accent-text">{vacantRooms}</span>
+                      ) : (
+                        <span className="text-muted">0</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-ink">
+                      {leaseholderName ?? <span className="text-muted">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
