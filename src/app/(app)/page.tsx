@@ -299,6 +299,29 @@ export default async function Dashboard() {
         </Worklist>
 
         <Worklist
+          title="Rooms with no ad"
+          emptyText="Every listable room has an ad live."
+          countLabel={`${adWorklist.length} rooms`}
+          href="/inventory?filter=no_ad"
+        >
+          {adWorklist.slice(0, 8).map((r) => (
+            <WorklistRow
+              key={r.id}
+              href={`/inventory/${r.id}`}
+              primary={`${r.unit} · ${r.room}`}
+              secondary={
+                r.available_from ? `Opens ${formatDate(r.available_from)}` : "Available now"
+              }
+              right="Post ad"
+              rightTone="muted"
+            />
+          ))}
+          {adWorklist.length > 8 && (
+            <ShowMore href="/inventory?filter=no_ad" label={`+${adWorklist.length - 8} more`} />
+          )}
+        </Worklist>
+
+        <Worklist
           title="Cleanings due"
           emptyText={`All units are on the ${CLEANING_CADENCE_DAYS}-day cadence.`}
           countLabel={`${cleaningWorklist.length} units`}
@@ -323,29 +346,6 @@ export default async function Dashboard() {
           })}
           {cleaningWorklist.length > 8 && (
             <ShowMore href="/cleaning" label={`+${cleaningWorklist.length - 8} more`} />
-          )}
-        </Worklist>
-
-        <Worklist
-          title="Rooms with no ad"
-          emptyText="Every listable room has an ad live."
-          countLabel={`${adWorklist.length} rooms`}
-          href="/inventory?filter=no_ad"
-        >
-          {adWorklist.slice(0, 8).map((r) => (
-            <WorklistRow
-              key={r.id}
-              href={`/inventory/${r.id}`}
-              primary={`${r.unit} · ${r.room}`}
-              secondary={
-                r.available_from ? `Opens ${formatDate(r.available_from)}` : "Available now"
-              }
-              right="Post ad"
-              rightTone="muted"
-            />
-          ))}
-          {adWorklist.length > 8 && (
-            <ShowMore href="/inventory?filter=no_ad" label={`+${adWorklist.length - 8} more`} />
           )}
         </Worklist>
 
