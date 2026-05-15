@@ -451,6 +451,14 @@ function InventoryRow({
           {room.marketing_description && (
             <CopyListing text={room.marketing_description} />
           )}
+          {p && (
+            <Link
+              href={`/properties/${p.id}#residents`}
+              className="rounded-full border border-stone bg-white px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-ink hover:bg-warm"
+            >
+              Roommates
+            </Link>
+          )}
           <Link
             href={`/tenants/new?room_id=${room.id}`}
             className="rounded-full bg-ink px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white hover:bg-accent-dark"
