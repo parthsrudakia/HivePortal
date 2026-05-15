@@ -10,6 +10,10 @@ type Props = {
   phone: string | null;
   pays_as: string | null;
   notes: string | null;
+  age: number | null;
+  profession: string | null;
+  linkedin_url: string | null;
+  instagram_url: string | null;
 };
 
 const fieldInput =
@@ -53,6 +57,40 @@ export function TenantInfo(props: Props) {
               <span className="text-muted">
                 — (falls back to <em>{props.full_name}</em>)
               </span>
+            )}
+          </dd>
+          <dt className="text-muted">Age</dt>
+          <dd className="col-span-2 text-ink">{props.age ?? "—"}</dd>
+          <dt className="text-muted">Profession</dt>
+          <dd className="col-span-2 text-ink">{props.profession ?? "—"}</dd>
+          <dt className="text-muted">LinkedIn</dt>
+          <dd className="col-span-2 text-ink">
+            {props.linkedin_url ? (
+              <a
+                href={props.linkedin_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-text hover:underline"
+              >
+                {props.linkedin_url}
+              </a>
+            ) : (
+              "—"
+            )}
+          </dd>
+          <dt className="text-muted">Instagram</dt>
+          <dd className="col-span-2 text-ink">
+            {props.instagram_url ? (
+              <a
+                href={props.instagram_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-text hover:underline"
+              >
+                {props.instagram_url}
+              </a>
+            ) : (
+              "—"
             )}
           </dd>
           {props.notes && (
@@ -116,6 +154,50 @@ export function TenantInfo(props: Props) {
             name="pays_as"
             defaultValue={props.pays_as ?? ""}
             placeholder="Leave blank to use the full name"
+            className={fieldInput}
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Age</span>
+            <input
+              type="number"
+              name="age"
+              min={0}
+              max={150}
+              step={1}
+              defaultValue={props.age ?? ""}
+              className={fieldInput}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Profession</span>
+            <input
+              type="text"
+              name="profession"
+              defaultValue={props.profession ?? ""}
+              placeholder="e.g. Product Designer"
+              className={fieldInput}
+            />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className={fieldLabel}>LinkedIn URL</span>
+          <input
+            type="url"
+            name="linkedin_url"
+            defaultValue={props.linkedin_url ?? ""}
+            placeholder="https://linkedin.com/in/…"
+            className={fieldInput}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={fieldLabel}>Instagram URL</span>
+          <input
+            type="url"
+            name="instagram_url"
+            defaultValue={props.instagram_url ?? ""}
+            placeholder="https://instagram.com/…"
             className={fieldInput}
           />
         </label>

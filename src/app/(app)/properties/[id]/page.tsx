@@ -37,6 +37,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     { data: rooms },
     { data: cleanings },
     { data: credentials },
+    { data: residents },
   ] = await Promise.all([
     supabase
       .from("properties")
@@ -71,6 +72,15 @@ export default async function PropertyDetailPage({ params }: PageProps) {
       .eq("property_id", id)
       .order("category", { ascending: true })
       .order("service_name", { ascending: true }),
+    // Active residents of this property — for the Residents widget.
+    supabase
+      .from("tenancies")
+      .select(
+        `status, rooms!inner(room_number, property_id),
+         tenants(id, full_name, age, profession, linkedin_url, instagram_url)`,
+      )
+      .eq("rooms.property_id", id)
+      .eq("status", "active"),
   ]);
 
   if (!property) notFound();
@@ -195,6 +205,8 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           </p>
         </section>
       )}
+
+      <ResidentsWidget rows={residents ?? []} />
 
       <section className="mt-10">
         <header className="flex flex-wrap items-end justify-between gap-3">
@@ -341,5 +353,167 @@ export default async function PropertyDetailPage({ params }: PageProps) {
         <DeletePropertyButton id={property.id} label={propertyLabel} />
       </section>
     </div>
+  );
+}
+
+type ResidentRow = {
+  rooms: { room_number: string | null } | { room_number: string | null }[] | null;
+  tenants:
+    | {
+        id: string;
+        full_name: string;
+        age: number | null;
+        profession: string | null;
+        linkedin_url: string | null;
+        instagram_url: string | null;
+      }
+    | {
+        id: string;
+        full_name: string;
+        age: number | null;
+        profession: string | null;
+        linkedin_url: string | null;
+        instagram_url: string | null;
+      }[]
+    | null;
+};
+
+function ResidentsWidget({ rows }: { rows: ResidentRow[] }) {
+  const cards = rows
+    .map((r) => {
+      const room = one(r.rooms);
+      const tenant = one(r.tenants);
+      if (!tenant) return null;
+      return {
+        ...tenant,
+        room_number: room?.room_number ?? null,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => (a.room_number ?? "").localeCompare(b.room_number ?? ""));
+
+  return (
+    <section className="mt-10">
+      <header className="flex items-end justify-between gap-3">
+        <h2 className="text-xl tracking-tight text-ink">
+          <span className="font-display text-accent-text">Residents</span>
+        </h2>
+        <span className="text-xs text-muted">
+          {cards.length} active
+        </span>
+      </header>
+
+      {cards.length === 0 ? (
+        <p className="mt-4 rounded-2xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
+          No active tenants in this unit yet.
+        </p>
+      ) : (
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((c) => {
+            const initials = c.full_name
+              .split(/\s+/)
+              .map((part) => part[0])
+              .slice(0, 2)
+              .join("")
+              .toUpperCase();
+            return (
+              <li
+                key={c.id}
+                className="rounded-2xl bg-white p-5 shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/15 text-base font-medium text-accent-text">
+                    {initials || "—"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/tenants/${c.id}`}
+                      className="block truncate text-ink hover:text-accent-text"
+                    >
+                      {c.full_name}
+                    </Link>
+                    {c.room_number && (
+                      <p className="text-[11px] uppercase tracking-wide text-muted">
+                        {c.room_number}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <dl className="mt-4 grid grid-cols-3 gap-y-1.5 text-xs">
+                  <dt className="text-muted">Age</dt>
+                  <dd className="col-span-2 text-ink">{c.age ?? "—"}</dd>
+                  <dt className="text-muted">Profession</dt>
+                  <dd className="col-span-2 truncate text-ink">
+                    {c.profession ?? "—"}
+                  </dd>
+                </dl>
+
+                <div className="mt-4 flex items-center gap-2">
+                  {c.linkedin_url ? (
+                    <a
+                      href={c.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="LinkedIn"
+                      title="LinkedIn"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone bg-white text-[#0a66c2] transition hover:bg-warm"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.05-1.86-3.05-1.86 0-2.14 1.45-2.14 2.95v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.86 3.38-1.86 3.61 0 4.28 2.38 4.28 5.47v6.28zM5.34 7.43a2.06 2.06 0 11-.01-4.12 2.06 2.06 0 01.01 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone/50 text-muted/50">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.05-1.86-3.05-1.86 0-2.14 1.45-2.14 2.95v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.86 3.38-1.86 3.61 0 4.28 2.38 4.28 5.47v6.28zM5.34 7.43a2.06 2.06 0 11-.01-4.12 2.06 2.06 0 01.01 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
+                      </svg>
+                    </span>
+                  )}
+                  {c.instagram_url ? (
+                    <a
+                      href={c.instagram_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Instagram"
+                      title="Instagram"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone bg-white text-[#e1306c] transition hover:bg-warm"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.22.415.56.217.96.477 1.38.897.42.42.68.819.897 1.38.166.42.36 1.05.415 2.22.058 1.27.07 1.65.07 4.85s-.012 3.58-.07 4.85c-.054 1.17-.249 1.8-.415 2.22a3.72 3.72 0 01-.897 1.38 3.72 3.72 0 01-1.38.897c-.42.166-1.05.36-2.22.415-1.27.058-1.65.07-4.85.07s-3.58-.012-4.85-.07c-1.17-.054-1.8-.249-2.22-.415a3.72 3.72 0 01-1.38-.897 3.72 3.72 0 01-.897-1.38c-.166-.42-.36-1.05-.415-2.22-.058-1.27-.07-1.65-.07-4.85s.012-3.58.07-4.85c.054-1.17.249-1.8.415-2.22.217-.56.477-.96.897-1.38.42-.42.819-.68 1.38-.897.42-.166 1.05-.36 2.22-.415C8.42 2.172 8.8 2.16 12 2.16zM12 0C8.74 0 8.33.014 7.05.072 5.78.13 4.9.333 4.14.63a5.88 5.88 0 00-2.13 1.38A5.88 5.88 0 00.63 4.14C.333 4.9.13 5.78.072 7.05.014 8.33 0 8.74 0 12s.014 3.67.072 4.95c.058 1.27.261 2.15.558 2.91a5.88 5.88 0 001.38 2.13 5.88 5.88 0 002.13 1.38c.76.297 1.64.5 2.91.558C8.33 23.986 8.74 24 12 24s3.67-.014 4.95-.072c1.27-.058 2.15-.261 2.91-.558a5.88 5.88 0 002.13-1.38 5.88 5.88 0 001.38-2.13c.297-.76.5-1.64.558-2.91.058-1.28.072-1.69.072-4.95s-.014-3.67-.072-4.95c-.058-1.27-.261-2.15-.558-2.91a5.88 5.88 0 00-1.38-2.13A5.88 5.88 0 0019.86.63c-.76-.297-1.64-.5-2.91-.558C15.67.014 15.26 0 12 0zm0 5.84a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zM12 16a4 4 0 110-8 4 4 0 010 8zm6.4-11.85a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone/50 text-muted/50">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.22.415.56.217.96.477 1.38.897.42.42.68.819.897 1.38.166.42.36 1.05.415 2.22.058 1.27.07 1.65.07 4.85s-.012 3.58-.07 4.85c-.054 1.17-.249 1.8-.415 2.22a3.72 3.72 0 01-.897 1.38 3.72 3.72 0 01-1.38.897c-.42.166-1.05.36-2.22.415-1.27.058-1.65.07-4.85.07s-3.58-.012-4.85-.07c-1.17-.054-1.8-.249-2.22-.415a3.72 3.72 0 01-1.38-.897 3.72 3.72 0 01-.897-1.38c-.166-.42-.36-1.05-.415-2.22-.058-1.27-.07-1.65-.07-4.85s.012-3.58.07-4.85c.054-1.17.249-1.8.415-2.22.217-.56.477-.96.897-1.38.42-.42.819-.68 1.38-.897.42-.166 1.05-.36 2.22-.415C8.42 2.172 8.8 2.16 12 2.16z" />
+                      </svg>
+                    </span>
+                  )}
+                  <Link
+                    href={`/tenants/${c.id}`}
+                    className="ml-auto text-[11px] uppercase tracking-wide text-muted hover:text-accent-text"
+                  >
+                    Edit →
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
