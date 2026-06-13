@@ -245,6 +245,42 @@ export type Database = {
           },
         ]
       }
+      email_log: {
+        Row: {
+          context: string | null
+          created_at: string
+          error: string | null
+          id: string
+          recipient: string
+          resend_id: string | null
+          status: string
+          subject: string | null
+          type: string
+        }
+        Insert: {
+          context?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          recipient: string
+          resend_id?: string | null
+          status: string
+          subject?: string | null
+          type: string
+        }
+        Update: {
+          context?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          recipient?: string
+          resend_id?: string | null
+          status?: string
+          subject?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
       leaseholders: {
         Row: {
           active: boolean
@@ -438,7 +474,6 @@ export type Database = {
           bathrooms: number | null
           bedrooms: number | null
           building_name: string | null
-          cleaner_id: string | null
           created_at: string
           cross_street: string | null
           has_doorman: boolean
@@ -461,7 +496,6 @@ export type Database = {
           bathrooms?: number | null
           bedrooms?: number | null
           building_name?: string | null
-          cleaner_id?: string | null
           created_at?: string
           cross_street?: string | null
           has_doorman?: boolean
@@ -484,7 +518,6 @@ export type Database = {
           bathrooms?: number | null
           bedrooms?: number | null
           building_name?: string | null
-          cleaner_id?: string | null
           created_at?: string
           cross_street?: string | null
           has_doorman?: boolean
@@ -504,17 +537,43 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "properties_cleaner_id_fkey"
+            foreignKeyName: "properties_leaseholder_id_fkey"
+            columns: ["leaseholder_id"]
+            isOneToOne: false
+            referencedRelation: "leaseholders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_cleaners: {
+        Row: {
+          cleaner_id: string
+          created_at: string
+          property_id: string
+        }
+        Insert: {
+          cleaner_id: string
+          created_at?: string
+          property_id: string
+        }
+        Update: {
+          cleaner_id?: string
+          created_at?: string
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_cleaners_cleaner_id_fkey"
             columns: ["cleaner_id"]
             isOneToOne: false
             referencedRelation: "cleaners"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "properties_leaseholder_id_fkey"
-            columns: ["leaseholder_id"]
+            foreignKeyName: "property_cleaners_property_id_fkey"
+            columns: ["property_id"]
             isOneToOne: false
-            referencedRelation: "leaseholders"
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -723,6 +782,33 @@ export type Database = {
           total_actual?: number | null
           total_expected?: number | null
           unmatched_deposits?: Json | null
+        }
+        Relationships: []
+      }
+      rent_reminder_batches: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          period_month: string
+          recipient_count: number
+          triggered_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          period_month: string
+          recipient_count?: number
+          triggered_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          period_month?: string
+          recipient_count?: number
+          triggered_by?: string | null
         }
         Relationships: []
       }

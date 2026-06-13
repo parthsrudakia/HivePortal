@@ -93,10 +93,8 @@ export default async function CleaningPage({ searchParams }: PageProps) {
       .select("id, name, email, phone, enabled, created_at")
       .order("enabled", { ascending: false })
       .order("created_at", { ascending: true }),
-    supabase
-      .from("properties")
-      .select("cleaner_id")
-      .not("cleaner_id", "is", null),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from("property_cleaners").select("cleaner_id"),
   ]);
 
   const propertyOptions: PropertyOption[] = (properties ?? []).map((p) => ({
@@ -299,9 +297,9 @@ export default async function CleaningPage({ searchParams }: PageProps) {
       {view === "cleaners" && (
         <section className="mt-8">
           <p className="text-sm text-muted">
-            Each unit can have one cleaner assigned (on the property page).
-            They&apos;re emailed when the unit&apos;s cleaning schedule changes,
-            including auto-scheduled move-out cleanings.
+            Each unit can have one or more cleaners assigned (on the property
+            page). They&apos;re emailed when the unit&apos;s cleaning schedule
+            changes, including auto-scheduled move-out cleanings.
           </p>
           <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
             <AddCleanerForm />
@@ -311,9 +309,8 @@ export default async function CleaningPage({ searchParams }: PageProps) {
               cleaners={(cleanersData ?? []).map((c) => ({
                 ...c,
                 properties_count:
-                  (assignedData ?? []).filter(
-                    (p) =>
-                      (p as { cleaner_id: string | null }).cleaner_id === c.id,
+                  ((assignedData ?? []) as Array<{ cleaner_id: string }>).filter(
+                    (p) => p.cleaner_id === c.id,
                   ).length,
               }))}
             />

@@ -20,9 +20,9 @@ const STATIC_PAGES: Item[] = [
   { id: "p-tenants", kind: "page", label: "Tenants & Rent", href: "/tenants" },
   { id: "p-reconciliation", kind: "page", label: "Reconciliation", href: "/reconciliation" },
   { id: "p-cleaning", kind: "page", label: "Cleaning", href: "/cleaning" },
-  { id: "p-marketing", kind: "page", label: "Marketing", href: "/marketing" },
   { id: "p-credentials", kind: "page", label: "Credentials", href: "/credentials" },
   { id: "p-notifications", kind: "page", label: "Notifications", href: "/settings/notifications" },
+  { id: "p-admin-settings", kind: "page", label: "Admin Settings", href: "/settings" },
 ];
 
 const KIND_LABEL: Record<Item["kind"], string> = {

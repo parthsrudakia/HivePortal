@@ -7,6 +7,7 @@ import {
   CLEANING_CADENCE_DAYS,
 } from "@/lib/cleaning";
 import { formatDate } from "@/lib/date";
+import { NavIcon } from "./nav-icons";
 
 export const dynamic = "force-dynamic";
 
@@ -221,7 +222,9 @@ export default async function Dashboard() {
     }));
 
   // Tenancies ending soon (within 30 days).
-  const in30 = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const in30Date = new Date(today + "T00:00:00");
+  in30Date.setDate(in30Date.getDate() + 30);
+  const in30 = in30Date.toISOString().slice(0, 10);
   const endingSoon = ((tenancies.data ?? []) as TenancyRow[])
     .filter((t) => t.end_date && t.end_date >= today && t.end_date <= in30)
     .map((t) => {
@@ -245,40 +248,72 @@ export default async function Dashboard() {
       (payments.data ?? []).reduce((s, p) => s + Number(p.amount), 0),
   };
 
+  const dateLabel = new Date(today + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
   return (
     <div className="mx-auto w-full max-w-6xl">
-      <header className="border-b border-stone/60 pb-6">
-        <h1 className="text-3xl tracking-tight text-ink">
-          <span className="font-display text-accent-text">Today</span>
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          What needs attention right now. Press{" "}
-          <kbd className="rounded border border-stone/60 px-1 text-[10px]">
-            ⌘K
-          </kbd>{" "}
-          to jump to anything.
-        </p>
+      <header className="relative overflow-hidden rounded-3xl bg-ink px-6 py-8 text-cream shadow-sm md:px-9 md:py-10">
+        <div
+          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-accent/25 blur-3xl"
+          aria-hidden="true"
+        />
+        <div className="relative">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-accent">
+            {dateLabel}
+          </p>
+          <h1 className="mt-2 text-3xl font-medium tracking-tight md:text-4xl">
+            What needs{" "}
+            <span className="font-display font-light italic text-accent">
+              attention
+            </span>{" "}
+            today
+          </h1>
+          <p className="mt-2 text-sm text-cream/60">
+            Press{" "}
+            <kbd className="rounded border border-cream/30 px-1 text-[10px] text-cream/80">
+              ⌘K
+            </kbd>{" "}
+            to jump to anything.
+          </p>
+        </div>
       </header>
 
-      <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Properties" value={totals.properties} href="/properties" />
-        <Stat label="Rooms" value={totals.rooms} href="/properties" />
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat
+          label="Properties"
+          value={totals.properties}
+          href="/properties"
+          icon={<NavIcon name="properties" />}
+        />
+        <Stat
+          label="Rooms"
+          value={totals.rooms}
+          href="/properties"
+          icon={<NavIcon name="inventory" />}
+        />
         <Stat
           label="Collected this month"
           value={fmtMoney(totals.collected)}
           href="/tenants"
+          icon={<IconMoney />}
         />
         <Stat
           label="Outstanding rent"
           value={fmtMoney(totals.expected)}
           href="/tenants"
-          accent={totals.expected > 0}
+          icon={<IconAlert />}
+          tone={totals.expected > 0 ? "warn" : "default"}
         />
       </section>
 
-      <section className="mt-10 grid gap-6 lg:grid-cols-2">
+      <section className="mt-8 grid gap-5 lg:grid-cols-2">
         <Worklist
           title="Outstanding rent"
+          icon={<NavIcon name="tenants" />}
           emptyText="Every tenant is paid up for this month."
           countLabel={`${rentWorklist.length} unpaid`}
           href="/tenants"
@@ -300,6 +335,7 @@ export default async function Dashboard() {
 
         <Worklist
           title="Rooms with no ad"
+          icon={<NavIcon name="inventory" />}
           emptyText="Every listable room has an ad live."
           countLabel={`${adWorklist.length} rooms`}
           href="/inventory?filter=no_ad"
@@ -313,7 +349,7 @@ export default async function Dashboard() {
                 r.available_from ? `Opens ${formatDate(r.available_from)}` : "Available now"
               }
               right="Post ad"
-              rightTone="muted"
+              rightTone="accent"
             />
           ))}
           {adWorklist.length > 8 && (
@@ -323,6 +359,7 @@ export default async function Dashboard() {
 
         <Worklist
           title="Cleanings due"
+          icon={<NavIcon name="cleaning" />}
           emptyText={`All units are on the ${CLEANING_CADENCE_DAYS}-day cadence.`}
           countLabel={`${cleaningWorklist.length} units`}
           href="/cleaning"
@@ -340,7 +377,7 @@ export default async function Dashboard() {
                 href={`/properties/${c.property_id}`}
                 primary={c.label}
                 right={right}
-                rightTone={c.status === "due_soon" ? "muted" : "warn"}
+                rightTone={c.status === "due_soon" ? "accent" : "warn"}
               />
             );
           })}
@@ -351,6 +388,7 @@ export default async function Dashboard() {
 
         <Worklist
           title="Tenancies ending soon"
+          icon={<IconCalendar />}
           emptyText="No moves planned in the next 30 days."
           countLabel={`${endingSoon.length} moves`}
           href="/tenants"
@@ -378,21 +416,38 @@ function Stat({
   label,
   value,
   href,
-  accent,
+  icon,
+  tone = "default",
 }: {
   label: string;
   value: string | number;
   href: string;
-  accent?: boolean;
+  icon: React.ReactNode;
+  tone?: "default" | "warn";
 }) {
   return (
     <Link
       href={href}
-      className="rounded-2xl bg-white p-5 shadow-sm transition hover:shadow"
+      className="group rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40"
     >
-      <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted">
+          {label}
+        </p>
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition ${
+            tone === "warn"
+              ? "bg-red-50 text-red-600"
+              : "bg-accent/10 text-accent group-hover:bg-accent/20"
+          }`}
+        >
+          {icon}
+        </span>
+      </div>
       <p
-        className={`mt-2 text-3xl font-light ${accent ? "text-red-700" : "text-ink"}`}
+        className={`mt-3 text-3xl font-semibold tabular-nums ${
+          tone === "warn" ? "text-red-700" : "text-ink"
+        }`}
       >
         {value}
       </p>
@@ -402,12 +457,14 @@ function Stat({
 
 function Worklist({
   title,
+  icon,
   emptyText,
   countLabel,
   href,
   children,
 }: {
   title: string;
+  icon: React.ReactNode;
   emptyText: string;
   countLabel: string;
   href: string;
@@ -417,17 +474,30 @@ function Worklist({
     ? children.flat().some((c) => c)
     : Boolean(children);
   return (
-    <div className="rounded-2xl bg-white shadow-sm">
-      <header className="flex items-center justify-between border-b border-stone/30 px-5 py-3">
-        <h2 className="text-sm font-medium text-ink">{title}</h2>
-        <Link href={href} className="text-[11px] uppercase tracking-wide text-muted hover:text-ink">
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-stone/30">
+      <header className="flex items-center justify-between gap-3 border-b border-stone/20 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+            {icon}
+          </span>
+          <h2 className="truncate text-sm font-medium text-ink">{title}</h2>
+        </div>
+        <Link
+          href={href}
+          className="shrink-0 rounded-full bg-warm px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-muted transition hover:bg-stone/40 hover:text-ink"
+        >
           {countLabel}
         </Link>
       </header>
       {hasChildren ? (
-        <ul className="divide-y divide-stone/20">{children}</ul>
+        <ul className="divide-y divide-stone/15">{children}</ul>
       ) : (
-        <p className="px-5 py-8 text-center text-sm text-muted">{emptyText}</p>
+        <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+          <span className="text-accent/70">
+            <IconCheck />
+          </span>
+          <p className="text-sm text-muted">{emptyText}</p>
+        </div>
       )}
     </div>
   );
@@ -444,24 +514,28 @@ function WorklistRow({
   primary: string;
   secondary?: string;
   right: string;
-  rightTone?: "muted" | "warn";
+  rightTone?: "muted" | "warn" | "accent";
 }) {
+  const pill =
+    rightTone === "warn"
+      ? "bg-red-50 text-red-700 ring-1 ring-red-100"
+      : rightTone === "accent"
+        ? "bg-accent/10 text-accent-text ring-1 ring-accent/20"
+        : "bg-warm text-muted ring-1 ring-stone/30";
   return (
     <li>
       <Link
         href={href}
-        className="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-cream/60"
+        className="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-cream/70"
       >
         <div className="min-w-0">
-          <p className="truncate text-sm text-ink">{primary}</p>
+          <p className="truncate text-sm font-medium text-ink">{primary}</p>
           {secondary && (
             <p className="truncate text-[11px] text-muted">{secondary}</p>
           )}
         </div>
         <span
-          className={`shrink-0 text-xs tabular-nums ${
-            rightTone === "warn" ? "text-red-700" : "text-muted"
-          }`}
+          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium tabular-nums ${pill}`}
         >
           {right}
         </span>
@@ -472,10 +546,88 @@ function WorklistRow({
 
 function ShowMore({ href, label }: { href: string; label: string }) {
   return (
-    <li className="px-5 py-2 text-center">
-      <Link href={href} className="text-xs uppercase tracking-wide text-accent-text hover:underline">
+    <li className="px-5 py-2.5 text-center">
+      <Link
+        href={href}
+        className="text-xs font-medium uppercase tracking-wide text-accent-text hover:underline"
+      >
         {label}
       </Link>
     </li>
+  );
+}
+
+function Svg({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+function IconMoney() {
+  return (
+    <Svg>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 12h.01M18 12h.01" />
+    </Svg>
+  );
+}
+
+function IconAlert() {
+  return (
+    <Svg>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </Svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <Svg>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </Svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
   );
 }

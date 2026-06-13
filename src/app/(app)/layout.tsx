@@ -5,22 +5,22 @@ import { isMaster } from "@/lib/access";
 import { logout } from "../login/actions";
 import { MobileNav } from "./mobile-nav";
 import { CommandPalette } from "./command-palette";
+import { NavIcon, type NavIconName } from "./nav-icons";
 
-type NavItem = { href: string; label: string; masterOnly?: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: NavIconName;
+  masterOnly?: boolean;
+};
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/properties", label: "Properties" },
-  { href: "/inventory", label: "Inventory" },
-  { href: "/tenants", label: "Tenants & Rent" },
-  { href: "/reconciliation", label: "Reconciliation" },
-  { href: "/reports", label: "Reports", masterOnly: true },
-  { href: "/cleaning", label: "Cleaning" },
-  { href: "/marketing", label: "Marketing" },
-  { href: "/credentials", label: "Credentials" },
-  { href: "/settings/notifications", label: "Notifications" },
-  { href: "/settings/audit-log", label: "Audit log", masterOnly: true },
-  { href: "/settings/users", label: "Users", masterOnly: true },
+  { href: "/", label: "Dashboard", icon: "dashboard" },
+  { href: "/inventory", label: "Inventory", icon: "inventory" },
+  { href: "/tenants", label: "Tenants & Rent", icon: "tenants" },
+  { href: "/reconciliation", label: "Reconciliation", icon: "reconciliation" },
+  { href: "/cleaning", label: "Cleaning", icon: "cleaning" },
+  { href: "/credentials", label: "Credentials", icon: "credentials" },
 ];
 
 export default async function AppLayout({
@@ -76,26 +76,48 @@ export default async function AppLayout({
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-lg px-3 py-2 text-ink/80 transition hover:bg-warm hover:text-ink"
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
             >
+              <NavIcon name={item.icon} className="shrink-0 text-accent" />
               {item.label}
             </Link>
           ))}
         </nav>
-        <div className="mt-auto px-3 pt-6 text-xs text-muted">
-          <p className="truncate">{user?.email ?? "—"}</p>
-          <form action={logout} className="mt-2">
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 hidden items-center justify-end gap-3 border-b border-stone/60 bg-cream/90 px-10 py-3 backdrop-blur md:flex">
+          <Link
+            href="/settings/notifications"
+            aria-label="Notifications"
+            title="Notifications"
+            className="rounded-lg p-2 text-ink transition hover:bg-warm hover:text-accent-text"
+          >
+            <NavIcon name="notifications" />
+          </Link>
+          <Link
+            href="/settings"
+            aria-label="Admin Settings"
+            title="Admin Settings"
+            className="rounded-lg p-2 text-ink transition hover:bg-warm hover:text-accent-text"
+          >
+            <NavIcon name="settings" />
+          </Link>
+          <span className="mx-1 h-5 w-px bg-stone/60" aria-hidden="true" />
+          <span className="truncate text-xs text-ink">
+            {user?.email ?? "—"}
+          </span>
+          <form action={logout}>
             <button
               type="submit"
-              className="text-xs uppercase tracking-wide text-muted hover:text-ink"
+              className="text-xs uppercase tracking-wide text-ink hover:text-accent-text"
             >
               Sign out
             </button>
           </form>
-        </div>
-      </aside>
-
-      <main className="flex-1 px-4 py-6 md:px-10 md:py-12">{children}</main>
+        </header>
+        <main className="flex-1 px-4 py-6 md:px-10 md:py-12">{children}</main>
+      </div>
     </div>
   );
 }

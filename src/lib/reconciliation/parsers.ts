@@ -3,7 +3,8 @@
  *
  * Match rules (per Vinny):
  *   - Bank file: ONLY rows whose description starts with "Zelle payment from"
- *     (or "Zelle Scheduled payment from") count. Everything else is dropped.
+ *     (or "Zelle Scheduled payment from" / "Zelle Recurring payment from")
+ *     count. Everything else is dropped.
  *   - The payer key is everything after "from" up to (but not including)
  *     " for …" or " Conf# …" suffixes, lowercased — e.g.
  *     "Zelle payment from PATRICK J WALL for May rent" → "patrick j wall".
@@ -28,7 +29,7 @@ export type Deposit = {
   externalRef: string; // unique fingerprint — Conf# when available, else hash
 };
 
-const ZELLE_FROM_RE = /^Zelle (?:Scheduled )?payment from /i;
+const ZELLE_FROM_RE = /^Zelle (?:Scheduled |Recurring )?payment from /i;
 
 function moneyToNumber(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;

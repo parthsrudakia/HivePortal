@@ -127,10 +127,11 @@ export async function setRoomAvailableFrom(
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
   const value = date === null || date.trim() === "" ? null : date;
-  const { error } = await supabase
-    .from("rooms")
-    .update({ available_from: value })
-    .eq("id", roomId);
+  // Route through updateRoomsWithNotification so changing the move-out date
+  // reschedules the move-out cleaning and emails the unit's cleaners.
+  const { error } = await updateRoomsWithNotification(supabase, roomId, {
+    available_from: value,
+  });
   if (error) return { error: error.message };
   revalidatePath("/inventory");
   revalidatePath(`/inventory/${roomId}`);

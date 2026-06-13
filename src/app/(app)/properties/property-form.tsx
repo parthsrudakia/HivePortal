@@ -20,7 +20,7 @@ type InitialValues = {
   in_unit_laundry: boolean;
   amenities_notes: string | null;
   leaseholder_name: string | null;
-  cleaner_id: string | null;
+  cleaner_ids: string[];
   notes: string | null;
 };
 
@@ -268,27 +268,37 @@ export function PropertyForm({
               ))}
             </datalist>
           </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={fieldLabel}>Cleaner</span>
-            <select
-              name="cleaner_id"
-              defaultValue={v.cleaner_id ?? ""}
-              className={fieldInput}
-            >
-              <option value="">— none —</option>
-              {cleaners.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.email}
-                </option>
-              ))}
-            </select>
-            {cleaners.length === 0 && (
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <span className={fieldLabel}>Cleaners</span>
+            {cleaners.length === 0 ? (
               <span className="text-xs text-muted">
                 No cleaners on file. Add one at{" "}
-                <em>Notifications → Cleaners</em> first.
+                <em>Cleaning → Cleaners</em> first.
               </span>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {cleaners.map((c) => (
+                  <label key={c.id} className={checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      name="cleaner_ids"
+                      value={c.id}
+                      defaultChecked={(v.cleaner_ids ?? []).includes(c.id)}
+                      className="h-4 w-4 accent-accent"
+                    />
+                    <span className="min-w-0 truncate">
+                      {c.name}
+                      <span className="text-muted"> — {c.email}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             )}
-          </label>
+            <span className="text-xs text-muted">
+              Assign one or more cleaners. Each is emailed when this unit&apos;s
+              cleaning schedule changes.
+            </span>
+          </div>
           <label className="flex flex-col gap-1.5 sm:col-span-2">
             <span className={fieldLabel}>Notes</span>
             <textarea

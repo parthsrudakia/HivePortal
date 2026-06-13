@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/date";
 import { DeleteRunButton } from "./delete-run";
 import { postPayments, unpostPayments } from "../actions";
+import { RentReminderButton } from "../../tenants/rent-reminder-button";
+import { getReminderInfo } from "../../tenants/reminder-info";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +84,7 @@ export default async function ReconciliationRunPage({
 
   const supabase = await createClient();
 
-  const [{ data: run }, { data: matches }] = await Promise.all([
+  const [{ data: run }, { data: matches }, reminderInfo] = await Promise.all([
     supabase
       .from("reconciliation_runs")
       .select(
@@ -104,6 +106,7 @@ export default async function ReconciliationRunPage({
       .order("status", { ascending: true })
       .order("tenant_name", { ascending: true })
       .returns<Match[]>(),
+    getReminderInfo(supabase),
   ]);
 
   if (!run) notFound();
@@ -191,6 +194,12 @@ export default async function ReconciliationRunPage({
           </p>
         )}
       </section>
+
+      <RentReminderButton
+        outstandingCount={reminderInfo.outstandingCount}
+        lastGeneralText={reminderInfo.lastGeneralText}
+        lastBalanceText={reminderInfo.lastBalanceText}
+      />
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard

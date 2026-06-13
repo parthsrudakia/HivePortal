@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { one } from "@/lib/relations";
 import { updateRoomsWithNotification } from "@/lib/notifications";
+import { sendBalanceReminder } from "@/lib/email";
 
 type PaymentType = Database["public"]["Enums"]["payment_type"];
 const VALID_PAYMENT_TYPES: PaymentType[] = [
@@ -18,6 +20,11 @@ const VALID_PAYMENT_TYPES: PaymentType[] = [
 
 export type TenantFormState = { error?: string } | undefined;
 export type PaymentFormState = { error?: string } | undefined;
+export type ReminderState = { error?: string; success?: string } | undefined;
+
+// Services bundle baked into every room's rent: utilities + wi-fi + maid +
+// amenities. A room's total_rent (generated) = base_rent + bundle_fee.
+const BUNDLE_FEE = 125;
 
 // ----- Create tenant + first tenancy -----
 
@@ -237,7 +244,7 @@ export async function endTenancy(formData: FormData) {
 
   const { data: tenancy } = await supabase
     .from("tenancies")
-    .select("room_id")
+    .select("room_id, monthly_rent")
     .eq("id", tenancy_id)
     .single();
 
@@ -250,6 +257,16 @@ export async function endTenancy(formData: FormData) {
     .eq("id", tenancy_id);
 
   if (tenancy?.room_id) {
+    // Carry the last tenant's rent forward as the room's list price. Their
+    // monthly_rent is the all-in total (base + $125 bundle), so split it back
+    // into base_rent + the services bundle; the room's generated total_rent
+    // then equals exactly what the tenant was paying.
+    const total = Number(tenancy.monthly_rent);
+    const rentPatch =
+      Number.isFinite(total) && total > 0
+        ? { base_rent: Math.max(0, total - BUNDLE_FEE), bundle_fee: BUNDLE_FEE }
+        : {};
+
     // Re-entering the vacancy queue — reset the VA workflow flag so the
     // room shows up as a fresh "Create new ad" instead of inheriting the
     // previous tenancy's color.
@@ -257,6 +274,7 @@ export async function endTenancy(formData: FormData) {
       status: isPastOrToday ? "available" : "occupied",
       available_from: end_date,
       listing_action: "new_ad",
+      ...rentPatch,
     });
   }
 
@@ -412,4 +430,109 @@ export async function deletePayment(formData: FormData) {
 
   revalidatePath("/tenants");
   if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
+}
+
+// ----- Manually email this month's rent reminder to tenants with a balance -----
+// Computes each active tenant's outstanding balance for the current month
+// (due − rent paid this month, the same way the Tenants & Rent page does) and
+// emails only those who still owe. Meant to be run after the month's
+// reconciliation has posted payments. Records a batch row so the page can show
+// when these last went out.
+
+export async function sendBalanceReminders(
+  _prev: ReminderState,
+  _formData: FormData,
+): Promise<ReminderState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const monthStart = new Date(y, m, 1).toISOString().slice(0, 10);
+  const monthEnd = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+  const period = `${y}-${String(m + 1).padStart(2, "0")}`;
+  const monthLabel = now.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const today = now.toISOString().slice(0, 10);
+
+  type ReminderTenancy = {
+    monthly_rent: number;
+    first_month_rent: number | null;
+    start_date: string;
+    end_date: string | null;
+    tenants:
+      | { full_name: string; email: string | null }
+      | { full_name: string; email: string | null }[]
+      | null;
+    payments: { amount: number; paid_on: string; payment_type: string }[];
+  };
+
+  const { data, error } = await supabase
+    .from("tenancies")
+    .select(
+      `monthly_rent, first_month_rent, start_date, end_date,
+       tenants(full_name, email),
+       payments(amount, paid_on, payment_type)`,
+    )
+    .eq("status", "active")
+    .returns<ReminderTenancy[]>();
+
+  if (error) return { error: error.message };
+
+  let sent = 0;
+  let failed = 0;
+  for (const row of data ?? []) {
+    const tenant = one(row.tenants);
+    const email = tenant?.email?.trim();
+    if (!email) continue;
+    // Skip tenancies that have already ended this month.
+    if (row.end_date && row.end_date <= today) continue;
+    // Skip tenancies that haven't started yet.
+    if (row.start_date > monthEnd) continue;
+
+    const isStartingMonth =
+      row.start_date >= monthStart && row.start_date <= monthEnd;
+    const due =
+      isStartingMonth && row.first_month_rent !== null
+        ? Number(row.first_month_rent)
+        : Number(row.monthly_rent);
+    const paid = (row.payments ?? [])
+      .filter(
+        (p) =>
+          p.payment_type === "rent" &&
+          p.paid_on >= monthStart &&
+          p.paid_on <= monthEnd,
+      )
+      .reduce((s, p) => s + Number(p.amount), 0);
+    const balance = due - paid;
+    if (balance <= 0.01) continue;
+
+    const res = await sendBalanceReminder(email, balance, monthLabel);
+    if (res.ok) sent++;
+    else failed++;
+  }
+
+  if (sent === 0 && failed === 0) {
+    return { success: "No tenants have an outstanding balance this month." };
+  }
+
+  // Record the batch so the page can show when balance reminders last ran.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from("rent_reminder_batches").insert({
+    kind: "balance",
+    period_month: period,
+    recipient_count: sent,
+    triggered_by: user?.email ?? null,
+  });
+
+  revalidatePath("/tenants");
+  const msg =
+    `Sent ${sent} balance reminder${sent === 1 ? "" : "s"}.` +
+    (failed > 0 ? ` ${failed} failed to send.` : "");
+  return { success: msg };
 }

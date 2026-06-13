@@ -23,7 +23,7 @@ type ParsedForm = {
   in_unit_laundry: boolean;
   amenities_notes: string | null;
   leaseholder_name: string | null;
-  cleaner_id: string | null;
+  cleaner_ids: string[];
   notes: string | null;
 };
 
@@ -62,9 +62,32 @@ function parseForm(formData: FormData): ParsedForm | { error: string } {
     in_unit_laundry: formData.get("in_unit_laundry") === "on",
     amenities_notes: strOrNull("amenities_notes"),
     leaseholder_name: strOrNull("leaseholder_name"),
-    cleaner_id: strOrNull("cleaner_id"),
+    cleaner_ids: formData
+      .getAll("cleaner_ids")
+      .map((v) => String(v))
+      .filter(Boolean),
     notes: strOrNull("notes"),
   };
+}
+
+// Replace a property's cleaner assignments with the given set.
+async function syncPropertyCleaners(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  propertyId: string,
+  cleanerIds: string[],
+) {
+  // property_cleaners is new; types.ts is regenerated after the migration push.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any;
+  await sb.from("property_cleaners").delete().eq("property_id", propertyId);
+  if (cleanerIds.length > 0) {
+    await sb.from("property_cleaners").insert(
+      cleanerIds.map((cleaner_id) => ({
+        property_id: propertyId,
+        cleaner_id,
+      })),
+    );
+  }
 }
 
 // Find an existing leaseholder by name (case-insensitive); create one if not.
@@ -104,11 +127,9 @@ export async function createProperty(
     parsed.leaseholder_name,
   );
 
-  const { leaseholder_name: _ignore, ...rest } = parsed;
+  const { leaseholder_name: _ignore, cleaner_ids, ...rest } = parsed;
   void _ignore;
-  // cleaner_id is brand-new; types.ts is regenerated after the migration push.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("properties")
     .insert({ ...rest, leaseholder_id })
     .select("id")
@@ -122,6 +143,8 @@ export async function createProperty(
           : error.message,
     };
   }
+
+  await syncPropertyCleaners(supabase, data.id, cleaner_ids);
 
   revalidatePath("/properties");
   redirect(`/properties/${data.id}`);
@@ -141,10 +164,9 @@ export async function updateProperty(
     parsed.leaseholder_name,
   );
 
-  const { leaseholder_name: _ignore, ...rest } = parsed;
+  const { leaseholder_name: _ignore, cleaner_ids, ...rest } = parsed;
   void _ignore;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("properties")
     .update({ ...rest, leaseholder_id })
     .eq("id", id);
@@ -157,6 +179,8 @@ export async function updateProperty(
           : error.message,
     };
   }
+
+  await syncPropertyCleaners(supabase, id, cleaner_ids);
 
   revalidatePath("/properties");
   revalidatePath(`/properties/${id}`);

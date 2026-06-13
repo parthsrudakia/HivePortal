@@ -29,7 +29,6 @@ type PropertyRecord = {
   laundry_in_building: boolean;
   in_unit_laundry: boolean;
   amenities_notes: string | null;
-  cleaner_id: string | null;
   notes: string | null;
   leaseholders: LeaseholderRel | LeaseholderRel[] | null;
 };
@@ -38,37 +37,49 @@ export default async function EditPropertyPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: property }, { data: leaseholders }, { data: cleanersData }] =
-    await Promise.all([
-      supabase
-        .from("properties")
-        .select(
-          `id, building_name, street_address, unit_number, cross_street,
+  const [
+    { data: property },
+    { data: leaseholders },
+    { data: cleanersData },
+    { data: assignedData },
+  ] = await Promise.all([
+    supabase
+      .from("properties")
+      .select(
+        `id, building_name, street_address, unit_number, cross_street,
            neighborhood, bedrooms, bathrooms,
            has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
            laundry_in_building, in_unit_laundry,
-           amenities_notes, cleaner_id, notes,
+           amenities_notes, notes,
            leaseholders(name)`,
-        )
-        .eq("id", id)
-        .maybeSingle<PropertyRecord>(),
-      supabase
-        .from("leaseholders")
-        .select("name")
-        .eq("active", true)
-        .order("name"),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from("cleaners")
-        .select("id, name, email")
-        .eq("enabled", true)
-        .order("name"),
-    ]);
+      )
+      .eq("id", id)
+      .maybeSingle<PropertyRecord>(),
+    supabase
+      .from("leaseholders")
+      .select("name")
+      .eq("active", true)
+      .order("name"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("cleaners")
+      .select("id, name, email")
+      .eq("enabled", true)
+      .order("name"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("property_cleaners")
+      .select("cleaner_id")
+      .eq("property_id", id),
+  ]);
   const cleaners = (cleanersData ?? []) as Array<{
     id: string;
     name: string;
     email: string;
   }>;
+  const cleanerIds = ((assignedData ?? []) as Array<{ cleaner_id: string }>).map(
+    (a) => a.cleaner_id,
+  );
 
   if (!property) notFound();
 
@@ -116,7 +127,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
             laundry_in_building: property.laundry_in_building,
             in_unit_laundry: property.in_unit_laundry,
             amenities_notes: property.amenities_notes,
-            cleaner_id: property.cleaner_id,
+            cleaner_ids: cleanerIds,
             notes: property.notes,
             leaseholder_name: currentLeaseholderName,
           }}

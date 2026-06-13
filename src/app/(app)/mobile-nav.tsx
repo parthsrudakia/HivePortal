@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { NavIcon, type NavIconName } from "./nav-icons";
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; icon: NavIconName };
 
 export function MobileNav({
   items,
@@ -55,18 +56,34 @@ export function MobileNav({
             Hive <span className="font-display text-accent-text">Portal</span>
           </span>
         </Link>
-        <button
-          type="button"
-          aria-label="Open menu"
-          onClick={() => setOpen(true)}
-          className="rounded-lg p-2 text-ink hover:bg-warm"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="4" y1="7" x2="20" y2="7" />
-            <line x1="4" y1="12" x2="20" y2="12" />
-            <line x1="4" y1="17" x2="20" y2="17" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/settings/notifications"
+            aria-label="Notifications"
+            className="rounded-lg p-2 text-ink hover:bg-warm hover:text-accent-text"
+          >
+            <NavIcon name="notifications" />
+          </Link>
+          <Link
+            href="/settings"
+            aria-label="Admin Settings"
+            className="rounded-lg p-2 text-ink hover:bg-warm hover:text-accent-text"
+          >
+            <NavIcon name="settings" />
+          </Link>
+          <button
+            type="button"
+            aria-label="Open menu"
+            onClick={() => setOpen(true)}
+            className="rounded-lg p-2 text-ink hover:bg-warm"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {open && (
@@ -99,19 +116,20 @@ export function MobileNav({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-lg px-3 py-2 transition ${
+                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 transition ${
                       active
                         ? "bg-warm text-ink"
-                        : "text-ink/80 hover:bg-warm hover:text-ink"
+                        : "text-ink hover:bg-warm hover:text-ink"
                     }`}
                   >
+                    <NavIcon name={item.icon} className="shrink-0 text-accent" />
                     {item.label}
                   </Link>
                 );
               })}
             </nav>
             {userEmail && (
-              <div className="mt-auto px-3 pt-6 text-xs text-muted">
+              <div className="mt-auto px-3 pt-6 text-xs text-ink/80">
                 <p className="truncate">{userEmail}</p>
               </div>
             )}

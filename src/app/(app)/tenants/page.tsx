@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
-import { formatDate } from "@/lib/date";
 import { SearchInput } from "@/components/search-input";
 import { processExpiredTenancies } from "./actions";
+import {
+  TenantGroups,
+  type DisplayGroup,
+  type DisplayRow,
+} from "./tenant-groups";
+import { RentReminderButton } from "./rent-reminder-button";
+import { getReminderInfo } from "./reminder-info";
 
 export const dynamic = "force-dynamic";
 
@@ -112,8 +118,6 @@ export default async function TenantsPage({ searchParams }: PageProps) {
   // Compute paid-this-month + due totals + portfolio totals. "Due" is the
   // tenancy's first_month_rent for the starting calendar month (when set)
   // and the regular monthly_rent every other month.
-  let expectedTotal = 0;
-  let paidTotal = 0;
   const rowsWithStatus = rows.map((row) => {
     const paidThisMonth = (row.payments ?? [])
       .filter(
@@ -131,10 +135,10 @@ export default async function TenantsPage({ searchParams }: PageProps) {
       monthEnd,
     );
     const balance = due - paidThisMonth;
-    expectedTotal += due;
-    paidTotal += paidThisMonth;
     return { ...row, paidThisMonth, balance, due };
   });
+  const expectedTotal = rowsWithStatus.reduce((s, r) => s + r.due, 0);
+  const paidTotal = rowsWithStatus.reduce((s, r) => s + r.paidThisMonth, 0);
 
   const visibleRows = query
     ? rowsWithStatus.filter((r) => {
@@ -157,6 +161,55 @@ export default async function TenantsPage({ searchParams }: PageProps) {
       })
     : rowsWithStatus;
 
+  // Group active tenancies by property for the collapsible list. Capture the
+  // property id so the group header can link to that property's page.
+  const groupsMap = new Map<
+    string,
+    { propertyId: string | null; rows: DisplayRow[] }
+  >();
+  for (const r of visibleRows) {
+    const tenant = one(r.tenants);
+    const room = one(r.rooms);
+    const p = one(room?.properties ?? null);
+    const key = p
+      ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
+      : "Unassigned";
+    if (!groupsMap.has(key))
+      groupsMap.set(key, { propertyId: p?.id ?? null, rows: [] });
+    groupsMap.get(key)!.rows.push({
+      id: r.id,
+      tenant_id: r.tenant_id,
+      tenant_name: tenant?.full_name ?? "—",
+      tenant_email: tenant?.email ?? null,
+      end_date: r.end_date,
+      room_number: room?.room_number ?? null,
+      due: r.due,
+      paid: r.paidThisMonth,
+      balance: r.balance,
+    });
+  }
+  const groups: DisplayGroup[] = Array.from(groupsMap.entries())
+    .sort(([a], [b]) =>
+      a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b),
+    )
+    .map(([label, g]) => {
+      const subDue = g.rows.reduce((s, r) => s + r.due, 0);
+      const subPaid = g.rows.reduce((s, r) => s + r.paid, 0);
+      return {
+        label,
+        propertyId: g.propertyId,
+        rows: g.rows,
+        subDue,
+        subPaid,
+        subBalance: subDue - subPaid,
+      };
+    });
+
+  // Reminder button state (outstanding count + last-sent note), shared with
+  // the reconciliation run page.
+  const { outstandingCount, lastGeneralText, lastBalanceText } =
+    await getReminderInfo(supabase);
+
   return (
     <div className="mx-auto w-full max-w-6xl">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-stone/60 pb-6">
@@ -171,9 +224,15 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         <div className="flex items-center gap-3">
           <Link
             href="/tenants/history"
-            className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
+            className="text-xs uppercase tracking-wide text-ink hover:text-accent-text"
           >
             Past tenants →
+          </Link>
+          <Link
+            href="/properties/new"
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
+          >
+            Add property
           </Link>
           <Link
             href="/tenants/new"
@@ -244,6 +303,14 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         );
       })()}
 
+      {rows.length > 0 && (
+        <RentReminderButton
+          outstandingCount={outstandingCount}
+          lastGeneralText={lastGeneralText}
+          lastBalanceText={lastBalanceText}
+        />
+      )}
+
       <div className="mt-6">
         <SearchInput
           placeholder="Search by tenant, email, phone, or unit…"
@@ -266,182 +333,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         </p>
       )}
 
-      {visibleRows.length > 0 && (
-        <section className="mt-8 overflow-hidden rounded-2xl bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-5 py-3 font-medium">Tenant</th>
-                <th className="px-5 py-3 font-medium">Room</th>
-                <th className="px-5 py-3 text-right font-medium">Due</th>
-                <th className="px-5 py-3 text-right font-medium">Paid</th>
-                <th className="px-5 py-3 text-right font-medium">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                // Group rows by property label. Sort properties alphabetically;
-                // tenancies with no room/property go into "Unassigned".
-                const groups = new Map<
-                  string,
-                  typeof visibleRows
-                >();
-                for (const r of visibleRows) {
-                  const room = one(r.rooms);
-                  const p = one(room?.properties ?? null);
-                  const key = p
-                    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-                    : "Unassigned";
-                  if (!groups.has(key)) groups.set(key, []);
-                  groups.get(key)!.push(r);
-                }
-                const ordered = Array.from(groups.entries()).sort(
-                  ([a], [b]) =>
-                    a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b),
-                );
-
-                return ordered.map(([label, items]) => {
-                  const subDue = items.reduce((s, r) => s + r.due, 0);
-                  const subPaid = items.reduce((s, r) => s + r.paidThisMonth, 0);
-                  const subBalance = subDue - subPaid;
-                  return (
-                    <PropertyGroup
-                      key={label}
-                      label={label}
-                      items={items}
-                      subDue={subDue}
-                      subPaid={subPaid}
-                      subBalance={subBalance}
-                    />
-                  );
-                });
-              })()}
-            </tbody>
-          </table>
-        </section>
-      )}
+      {visibleRows.length > 0 && <TenantGroups groups={groups} />}
     </div>
-  );
-}
-
-function PropertyGroup({
-  label,
-  items,
-  subDue,
-  subPaid,
-  subBalance,
-}: {
-  label: string;
-  items: Array<{
-    id: string;
-    tenant_id: string;
-    monthly_rent: number;
-    first_month_rent: number | null;
-    start_date: string;
-    end_date: string | null;
-    tenants: TenantRel | TenantRel[] | null;
-    rooms: RoomRel | RoomRel[] | null;
-    payments: { id: string; amount: number; paid_on: string; payment_type: string }[];
-    paidThisMonth: number;
-    balance: number;
-    due: number;
-  }>;
-  subDue: number;
-  subPaid: number;
-  subBalance: number;
-}) {
-  return (
-    <>
-      <tr className="border-t border-stone/40 bg-warm/40">
-        <td
-          colSpan={5}
-          className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink/80"
-        >
-          {label} <span className="text-muted">({items.length})</span>
-        </td>
-      </tr>
-      {items.map((r) => {
-        const tenant = one(r.tenants);
-        const room = one(r.rooms);
-        const tenantName = tenant?.full_name ?? "—";
-        const isPaid = r.balance <= 0;
-        const mismatched =
-          r.due > 0 && Math.abs(r.due - r.paidThisMonth) >= 0.005;
-        const rowTxt = mismatched ? "text-red-700" : "text-ink";
-        return (
-          <tr
-            key={r.id}
-            className="border-t border-stone/30 transition hover:bg-cream/60"
-          >
-            <td className="px-5 py-3">
-              <Link
-                href={`/tenants/${r.tenant_id}`}
-                className={`${rowTxt} hover:text-accent-text`}
-              >
-                {tenantName}
-              </Link>
-              {tenant?.email && (
-                <p className="text-xs text-muted">{tenant.email}</p>
-              )}
-              {r.end_date && (
-                <p className="mt-1 text-xs text-accent-text">
-                  Ending {formatDate(r.end_date)}
-                </p>
-              )}
-            </td>
-            <td className="px-5 py-3 text-ink">
-              {room?.room_number ?? "—"}
-            </td>
-            <td className={`px-5 py-3 text-right tabular-nums ${rowTxt}`}>
-              {fmtMoney(r.due)}
-            </td>
-            <td className={`px-5 py-3 text-right ${rowTxt}`}>
-              {fmtMoney(r.paidThisMonth)}
-            </td>
-            <td className="px-5 py-3 text-right">
-              <span
-                className={
-                  isPaid
-                    ? "rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text"
-                    : rowTxt
-                }
-              >
-                {isPaid ? "Paid" : fmtMoney(r.balance)}
-              </span>
-            </td>
-          </tr>
-        );
-      })}
-      {(() => {
-        const matched = subDue > 0 && Math.abs(subDue - subPaid) < 0.005;
-        const rowCls = matched
-          ? "text-green-700"
-          : subDue > 0
-            ? "text-red-700"
-            : "text-muted";
-        return (
-          <tr className="border-t border-stone/40 bg-cream/60 text-sm font-medium">
-            <td colSpan={2} className="px-5 py-2 text-right text-muted">
-              Subtotal
-            </td>
-            <td className={`px-5 py-2 text-right tabular-nums ${rowCls}`}>
-              {fmtMoney(subDue)}
-            </td>
-            <td className={`px-5 py-2 text-right tabular-nums ${rowCls}`}>
-              {fmtMoney(subPaid)}
-            </td>
-            <td className="px-5 py-2 text-right tabular-nums">
-              {subBalance <= 0 && subDue > 0 ? (
-                <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text">
-                  Paid
-                </span>
-              ) : (
-                <span className={rowCls}>{fmtMoney(subBalance)}</span>
-              )}
-            </td>
-          </tr>
-        );
-      })()}
-    </>
   );
 }
