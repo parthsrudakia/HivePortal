@@ -10,6 +10,9 @@ import {
 } from "./tenant-groups";
 import { RentReminderButton } from "./rent-reminder-button";
 import { getReminderInfo } from "./reminder-info";
+import { computeLedger } from "@/lib/rent";
+import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +38,7 @@ type Row = {
   id: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
   tenant_id: string;
@@ -103,7 +107,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, start_date, move_out_date, tenant_id,
+      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, tenant_id,
        tenants(id, full_name, email, phone),
        rooms(id, room_number,
              properties(id, building_name, street_address, unit_number)),
@@ -115,9 +119,13 @@ export default async function TenantsPage({ searchParams }: PageProps) {
 
   const rows = data ?? [];
 
-  // Compute paid-this-month + due totals + portfolio totals. "Due" is the
-  // tenancy's first_month_rent for the starting calendar month (when set)
-  // and the regular monthly_rent every other month.
+  // Ad-hoc charges + credit allocations feed the running ledger balance.
+  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+  const today = todayISO();
+
+  // Per row we keep the *this-month* operational figures (Due / Paid, mirrored
+  // by the portfolio KPIs and progress bar) but the Balance column now shows
+  // the running net ledger balance, which carries arrears/credit across months.
   const rowsWithStatus = rows.map((row) => {
     const paidThisMonth = (row.payments ?? [])
       .filter(
@@ -134,11 +142,21 @@ export default async function TenantsPage({ searchParams }: PageProps) {
       monthStart,
       monthEnd,
     );
-    const balance = due - paidThisMonth;
-    return { ...row, paidThisMonth, balance, due };
+    const ledger = computeLedger(
+      row,
+      row.payments ?? [],
+      charges.get(row.id) ?? [],
+      allocations.get(row.id) ?? [],
+      today,
+    );
+    return { ...row, paidThisMonth, balance: ledger.netBalance, due };
   });
   const expectedTotal = rowsWithStatus.reduce((s, r) => s + r.due, 0);
   const paidTotal = rowsWithStatus.reduce((s, r) => s + r.paidThisMonth, 0);
+  const outstandingTotal = rowsWithStatus.reduce(
+    (s, r) => s + Math.max(0, r.balance),
+    0,
+  );
 
   const visibleRows = query
     ? rowsWithStatus.filter((r) => {
@@ -195,13 +213,14 @@ export default async function TenantsPage({ searchParams }: PageProps) {
     .map(([label, g]) => {
       const subDue = g.rows.reduce((s, r) => s + r.due, 0);
       const subPaid = g.rows.reduce((s, r) => s + r.paid, 0);
+      const subBalance = g.rows.reduce((s, r) => s + r.balance, 0);
       return {
         label,
         propertyId: g.propertyId,
         rows: g.rows,
         subDue,
         subPaid,
-        subBalance: subDue - subPaid,
+        subBalance,
       };
     });
 
@@ -260,10 +279,13 @@ export default async function TenantsPage({ searchParams }: PageProps) {
             </p>
           </div>
           <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-muted">Outstanding</p>
-            <p className="mt-2 text-2xl font-light text-ink">
-              {fmtMoney(expectedTotal - paidTotal)}
+            <p className="text-xs uppercase tracking-wide text-muted">
+              Total outstanding
             </p>
+            <p className="mt-2 text-2xl font-light text-ink">
+              {fmtMoney(outstandingTotal)}
+            </p>
+            <p className="mt-1 text-xs text-muted">Running balance, all months</p>
           </div>
         </section>
       )}

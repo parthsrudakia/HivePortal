@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
+import { computeLedger } from "@/lib/rent";
+import { fetchLedgerSidecars } from "@/lib/rent-data";
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
@@ -29,8 +31,9 @@ function fmtWhen(iso: string | null): string | null {
  * Shared by the Tenants & Rent page and the reconciliation run page so the
  * "Send balance reminders" button shows the same count and last-sent note in
  * both places. Mirrors the send action: a tenant is "outstanding" when their
- * current-month due (first_month_rent in the starting month, else monthly_rent)
- * exceeds rent paid this month, skipping tenancies already ended or not started.
+ * running ledger net balance (rent carry-forward plus any deposit / broker /
+ * late-fee amounts owed) is positive, skipping tenancies already ended or not
+ * started.
  */
 export async function getReminderInfo(
   supabase: SupabaseServer,
@@ -38,13 +41,14 @@ export async function getReminderInfo(
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
-  const monthStart = new Date(y, m, 1).toISOString().slice(0, 10);
   const monthEnd = new Date(y, m + 1, 0).toISOString().slice(0, 10);
   const today = todayISO();
 
   type ReminderTenancy = {
+    id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
     payments: { amount: number; paid_on: string; payment_type: string }[];
@@ -55,7 +59,7 @@ export async function getReminderInfo(
       supabase
         .from("tenancies")
         .select(
-          `monthly_rent, first_month_rent, start_date, move_out_date,
+          `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date,
            payments(amount, paid_on, payment_type)`,
         )
         .eq("status", "active")
@@ -77,25 +81,20 @@ export async function getReminderInfo(
         .maybeSingle(),
     ]);
 
+  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+
   let outstandingCount = 0;
   for (const row of tenancies ?? []) {
     if (row.move_out_date && row.move_out_date <= today) continue;
     if (row.start_date > monthEnd) continue;
-    const isStartingMonth =
-      row.start_date >= monthStart && row.start_date <= monthEnd;
-    const due =
-      isStartingMonth && row.first_month_rent !== null
-        ? Number(row.first_month_rent)
-        : Number(row.monthly_rent);
-    const paid = (row.payments ?? [])
-      .filter(
-        (p) =>
-          p.payment_type === "rent" &&
-          p.paid_on >= monthStart &&
-          p.paid_on <= monthEnd,
-      )
-      .reduce((s, p) => s + Number(p.amount), 0);
-    if (due - paid > 0.01) outstandingCount++;
+    const { netBalance } = computeLedger(
+      row,
+      row.payments ?? [],
+      charges.get(row.id) ?? [],
+      allocations.get(row.id) ?? [],
+      today,
+    );
+    if (netBalance > 0.01) outstandingCount++;
   }
 
   const lastBalance = lastBalanceRes?.data as

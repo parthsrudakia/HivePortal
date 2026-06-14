@@ -29,6 +29,24 @@ function fmtMoney(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+// Running net balance: red amount when owed, honey "Credit" badge when in
+// credit, green "Paid" when settled.
+function BalanceBadge({ n }: { n: number }) {
+  if (n > 0.005) return <span className="text-red-700">{fmtMoney(n)}</span>;
+  if (n < -0.005) {
+    return (
+      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-sm uppercase tracking-wide text-accent-text">
+        Credit {fmtMoney(-n)}
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-green-100 px-2 py-0.5 text-sm uppercase tracking-wide text-green-800">
+      Paid
+    </span>
+  );
+}
+
 export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
   // Track collapsed groups by label; empty = everything expanded.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -76,13 +94,6 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
           <tbody>
             {groups.map((g) => {
               const isCollapsed = collapsed.has(g.label);
-              const matched =
-                g.subDue > 0 && Math.abs(g.subDue - g.subPaid) < 0.005;
-              const balCls = matched
-                ? "text-green-700"
-                : g.subDue > 0
-                  ? "text-red-700"
-                  : "text-muted";
               return (
                 <Fragment key={g.label}>
                   <tr className="border-t border-stone/40 bg-warm/40">
@@ -131,33 +142,21 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
                         </span>
                       </div>
                     </td>
-                    <td
-                      className={`px-5 py-2 text-right tabular-nums text-sm font-medium ${balCls}`}
-                    >
+                    <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
                       {fmtMoney(g.subDue)}
                     </td>
-                    <td
-                      className={`px-5 py-2 text-right tabular-nums text-sm font-medium ${balCls}`}
-                    >
+                    <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
                       {fmtMoney(g.subPaid)}
                     </td>
                     <td className="px-5 py-2 text-right tabular-nums text-sm font-medium">
-                      {g.subBalance <= 0 && g.subDue > 0 ? (
-                        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-sm uppercase tracking-wide text-accent-text">
-                          Paid
-                        </span>
-                      ) : (
-                        <span className={balCls}>{fmtMoney(g.subBalance)}</span>
-                      )}
+                      <BalanceBadge n={g.subBalance} />
                     </td>
                   </tr>
 
                   {!isCollapsed &&
                     g.rows.map((r) => {
-                      const isPaid = r.balance <= 0;
-                      const mismatched =
-                        r.due > 0 && Math.abs(r.due - r.paid) >= 0.005;
-                      const rowTxt = mismatched ? "text-red-700" : "text-ink";
+                      const rowTxt =
+                        r.balance > 0.005 ? "text-red-700" : "text-ink";
                       return (
                         <tr
                           key={r.id}
@@ -184,24 +183,14 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
                           <td className="px-5 py-3 text-ink">
                             {r.room_number ?? "—"}
                           </td>
-                          <td
-                            className={`px-5 py-3 text-right tabular-nums ${rowTxt}`}
-                          >
+                          <td className="px-5 py-3 text-right tabular-nums text-ink">
                             {fmtMoney(r.due)}
                           </td>
-                          <td className={`px-5 py-3 text-right ${rowTxt}`}>
+                          <td className="px-5 py-3 text-right tabular-nums text-ink">
                             {fmtMoney(r.paid)}
                           </td>
-                          <td className="px-5 py-3 text-right">
-                            <span
-                              className={
-                                isPaid
-                                  ? "rounded-full bg-accent/15 px-2 py-0.5 text-sm uppercase tracking-wide text-accent-text"
-                                  : rowTxt
-                              }
-                            >
-                              {isPaid ? "Paid" : fmtMoney(r.balance)}
-                            </span>
+                          <td className="px-5 py-3 text-right tabular-nums">
+                            <BalanceBadge n={r.balance} />
                           </td>
                         </tr>
                       );

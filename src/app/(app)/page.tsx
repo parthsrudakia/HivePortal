@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
 import { formatDate } from "@/lib/date";
+import { computeLedger } from "@/lib/rent";
+import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { NavIcon } from "./nav-icons";
 
 export const dynamic = "force-dynamic";
@@ -30,23 +32,6 @@ function monthBounds(monthIso: string): { start: string; end: string } {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
   };
-}
-
-function dueForMonth(
-  t: {
-    start_date: string;
-    move_out_date: string | null;
-    monthly_rent: number;
-    first_month_rent: number | null;
-  },
-  monthStart: string,
-  monthEnd: string,
-): number {
-  if (t.start_date > monthEnd) return 0;
-  if (t.move_out_date && t.move_out_date < monthStart) return 0;
-  const isStart = t.start_date >= monthStart && t.start_date <= monthEnd;
-  if (isStart && t.first_month_rent !== null) return Number(t.first_month_rent);
-  return Number(t.monthly_rent);
 }
 
 export default async function Dashboard() {
@@ -83,17 +68,14 @@ export default async function Dashboard() {
     supabase
       .from("tenancies")
       .select(
-        `id, tenant_id, monthly_rent, first_month_rent, start_date, move_out_date, lease_end_date, status,
+        `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, lease_end_date, status,
          rooms(room_number, properties(building_name, street_address, unit_number)),
          tenants(full_name, email, phone)`,
       )
       .eq("status", "active"),
     supabase
       .from("payments")
-      .select("tenancy_id, amount, paid_on")
-      .eq("payment_type", "rent")
-      .gte("paid_on", tm.start)
-      .lte("paid_on", tm.end),
+      .select("tenancy_id, amount, paid_on, payment_type"),
   ]);
 
   // Last past cleaning per property (skip future-dated move-out rows).
@@ -135,22 +117,34 @@ export default async function Dashboard() {
     return a.next < b.next ? -1 : 1;
   });
 
-  // Rent worklist: active tenancies with this-month due > paid so far.
-  const paidByTenancy = new Map<string, number>();
+  // Group all payments by tenancy for the running ledger, and tally this
+  // month's rent collection for the KPI.
+  const paymentsByTenancy = new Map<
+    string,
+    { amount: number; paid_on: string; payment_type: string }[]
+  >();
+  let collectedThisMonth = 0;
   for (const pmt of payments.data ?? []) {
-    paidByTenancy.set(
-      pmt.tenancy_id,
-      (paidByTenancy.get(pmt.tenancy_id) ?? 0) + Number(pmt.amount),
-    );
+    const list = paymentsByTenancy.get(pmt.tenancy_id);
+    if (list) list.push(pmt);
+    else paymentsByTenancy.set(pmt.tenancy_id, [pmt]);
+    if (
+      pmt.payment_type === "rent" &&
+      pmt.paid_on >= tm.start &&
+      pmt.paid_on <= tm.end
+    ) {
+      collectedThisMonth += Number(pmt.amount);
+    }
   }
 
+  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+
+  // Rent worklist: active tenancies whose running net balance is positive.
   type RentEntry = {
     tenant_id: string;
     tenant_name: string;
     unit: string;
     room: string;
-    due: number;
-    paid: number;
     outstanding: number;
   };
   type TenancyRow = {
@@ -158,6 +152,7 @@ export default async function Dashboard() {
     tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
     lease_end_date: string | null;
@@ -178,19 +173,14 @@ export default async function Dashboard() {
   };
   const rentWorklist: RentEntry[] = [];
   for (const t of (tenancies.data ?? []) as TenancyRow[]) {
-    const due = dueForMonth(
-      {
-        start_date: t.start_date,
-        move_out_date: t.move_out_date,
-        monthly_rent: t.monthly_rent,
-        first_month_rent: t.first_month_rent,
-      },
-      tm.start,
-      tm.end,
+    const { netBalance } = computeLedger(
+      t,
+      paymentsByTenancy.get(t.id) ?? [],
+      charges.get(t.id) ?? [],
+      allocations.get(t.id) ?? [],
+      today,
     );
-    const paid = paidByTenancy.get(t.id) ?? 0;
-    const outstanding = due - paid;
-    if (outstanding <= 0.01) continue;
+    if (netBalance <= 0.01) continue;
     const room = one(t.rooms);
     const tenant = one(t.tenants);
     rentWorklist.push({
@@ -198,9 +188,7 @@ export default async function Dashboard() {
       tenant_name: tenant?.full_name ?? "—",
       unit: unitLabel(one(room?.properties ?? null)),
       room: room?.room_number ?? "Room",
-      due,
-      paid,
-      outstanding,
+      outstanding: netBalance,
     });
   }
   rentWorklist.sort((a, b) => b.outstanding - a.outstanding);
@@ -269,9 +257,8 @@ export default async function Dashboard() {
   const totals = {
     properties: propertyCountRes.count ?? 0,
     rooms: roomCountRes.count ?? 0,
-    expected: rentWorklist.reduce((s, r) => s + r.due, 0),
-    collected:
-      (payments.data ?? []).reduce((s, p) => s + Number(p.amount), 0),
+    outstanding: rentWorklist.reduce((s, r) => s + r.outstanding, 0),
+    collected: collectedThisMonth,
   };
 
   const dateLabel = new Date(today + "T00:00:00").toLocaleDateString("en-US", {
@@ -329,10 +316,10 @@ export default async function Dashboard() {
         />
         <Stat
           label="Outstanding rent"
-          value={fmtMoney(totals.expected)}
+          value={fmtMoney(totals.outstanding)}
           href="/tenants"
           icon={<IconAlert />}
-          tone={totals.expected > 0 ? "warn" : "default"}
+          tone={totals.outstanding > 0 ? "warn" : "default"}
         />
       </section>
 

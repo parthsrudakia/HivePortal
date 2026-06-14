@@ -5,14 +5,20 @@ import { one } from "@/lib/relations";
 import { formatDate } from "@/lib/date";
 import { TenantInfo } from "./tenant-info";
 import { RecordPayment } from "./record-payment";
+import { RecordCharge } from "./record-charge";
+import { ApplyCredit } from "./apply-credit";
 import {
   EndTenancyForm,
   DeleteTenantButton,
   DeletePaymentButton,
+  DeleteChargeButton,
+  DeleteAllocationButton,
   ReactivateTenancyButton,
 } from "./tenant-actions";
 import { LeaseDownload } from "./lease-download";
 import { LeaseEndEdit } from "./lease-end-edit";
+import { computeLedger } from "@/lib/rent";
+import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +38,7 @@ type RoomRel = {
 type Tenancy = {
   id: string;
   monthly_rent: number;
+  first_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -39,6 +46,29 @@ type Tenancy = {
   status: "active" | "ended" | "upcoming";
   lease_pdf_path: string | null;
   rooms: RoomRel | RoomRel[] | null;
+};
+
+type Charge = {
+  id: string;
+  kind: string;
+  amount: number;
+  charged_on: string;
+  note: string | null;
+};
+type Allocation = {
+  id: string;
+  kind: string;
+  amount: number;
+  note: string | null;
+  created_at: string;
+};
+
+const KIND_LABEL: Record<string, string> = {
+  rent: "Rent",
+  security_deposit: "Security deposit",
+  broker_fee: "Broker fee",
+  late_fee: "Late fee",
+  other: "Other",
 };
 
 type Payment = {
@@ -54,6 +84,22 @@ type Payment = {
 function fmtMoney(n: number | null) {
   if (n === null) return "—";
   return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+// Renders a ledger balance: red when owed, a honey "Credit" badge when the
+// bucket is in credit (overpaid), muted "Settled" when flat.
+function BalanceCell({ n }: { n: number }) {
+  if (n > 0.005) {
+    return <span className="text-red-700">{fmtMoney(n)}</span>;
+  }
+  if (n < -0.005) {
+    return (
+      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text">
+        Credit {fmtMoney(-n)}
+      </span>
+    );
+  }
+  return <span className="text-muted">Settled</span>;
 }
 
 function unitTitle(t: Tenancy) {
@@ -79,7 +125,7 @@ export default async function TenantDetailPage({ params }: PageProps) {
       supabase
         .from("tenancies")
         .select(
-          `id, monthly_rent, security_deposit, start_date, move_out_date, lease_end_date, status,
+          `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, lease_end_date, status,
            lease_pdf_path,
            rooms(id, room_number,
                  properties(id, building_name, street_address, unit_number))`,
@@ -106,6 +152,44 @@ export default async function TenantDetailPage({ params }: PageProps) {
     payments
       ?.filter((p) => p.payment_type === "rent")
       .reduce((sum, p) => sum + Number(p.amount), 0) ?? 0;
+
+  // Running ledger for the active tenancy: rent carry-forward + the deposit /
+  // broker / late-fee buckets, plus any rent overpayment directed into them.
+  let charges: Charge[] = [];
+  let allocations: Allocation[] = [];
+  if (active) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any;
+    const [chargeRes, allocRes] = await Promise.all([
+      sb
+        .from("tenancy_charges")
+        .select("id, kind, amount, charged_on, note")
+        .eq("tenancy_id", active.id)
+        .order("charged_on", { ascending: false }),
+      sb
+        .from("credit_allocations")
+        .select("id, kind, amount, note, created_at")
+        .eq("tenancy_id", active.id)
+        .order("created_at", { ascending: false }),
+    ]);
+    charges = (chargeRes.data ?? []) as Charge[];
+    allocations = (allocRes.data ?? []) as Allocation[];
+  }
+  const activePayments = active
+    ? (payments ?? []).filter((p) => p.tenancy_id === active.id)
+    : [];
+  const ledger = active
+    ? computeLedger(active, activePayments, charges, allocations, todayISO())
+    : null;
+  const ledgerRows = ledger
+    ? [
+        { label: "Rent", owedLabel: "Due", b: ledger.rent },
+        { label: "Security deposit", owedLabel: "Owed", b: ledger.deposit },
+        { label: "Broker fee", owedLabel: "Owed", b: ledger.broker },
+        { label: "Late fees", owedLabel: "Owed", b: ledger.lateFee },
+        { label: "Other", owedLabel: "Owed", b: ledger.other },
+      ].filter((r) => r.label === "Rent" || r.b.owed > 0.005 || r.b.paid > 0.005)
+    : [];
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -218,6 +302,140 @@ export default async function TenantDetailPage({ params }: PageProps) {
           )}
         </div>
       </div>
+
+      {active && ledger && (
+        <section className="mt-10">
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl tracking-tight text-ink">
+                <span className="font-display text-accent-text">Account</span>
+              </h2>
+              <p className="mt-1 text-xs text-muted">
+                Running balance carried across months.
+                {ledger.availableCredit > 0.005
+                  ? ` ${fmtMoney(ledger.availableCredit)} rent credit available to apply.`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {ledger.availableCredit > 0.005 && (
+                <ApplyCredit
+                  tenancyId={active.id}
+                  tenantId={tenant.id}
+                  availableCredit={ledger.availableCredit}
+                  depositOwed={Math.max(0, ledger.deposit.balance)}
+                  brokerOwed={Math.max(0, ledger.broker.balance)}
+                  lateFeeOwed={Math.max(0, ledger.lateFee.balance)}
+                />
+              )}
+              <RecordCharge tenancyId={active.id} tenantId={tenant.id} />
+            </div>
+          </header>
+
+          <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Bucket</th>
+                  <th className="px-5 py-3 text-right font-medium">Owed / Due</th>
+                  <th className="px-5 py-3 text-right font-medium">Paid</th>
+                  <th className="px-5 py-3 text-right font-medium">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledgerRows.map((r) => (
+                  <tr key={r.label} className="border-t border-stone/40">
+                    <td className="px-5 py-3 text-ink">{r.label}</td>
+                    <td className="px-5 py-3 text-right tabular-nums text-ink">
+                      {fmtMoney(r.b.owed)}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-ink">
+                      {fmtMoney(r.b.paid)}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <BalanceCell n={r.b.balance} />
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-stone/60 bg-cream/40">
+                  <td className="px-5 py-3 font-medium text-ink" colSpan={3}>
+                    Net balance
+                  </td>
+                  <td className="px-5 py-3 text-right tabular-nums font-medium">
+                    <BalanceCell n={ledger.netBalance} />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {charges.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
+              <p className="border-b border-stone/40 bg-warm/40 px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted">
+                Charges
+              </p>
+              <ul className="divide-y divide-stone/30">
+                {charges.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 px-5 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-ink">
+                        {KIND_LABEL[c.kind] ?? c.kind}
+                      </span>{" "}
+                      <span className="text-muted">· {formatDate(c.charged_on)}</span>
+                      {c.note && (
+                        <span className="text-muted"> · {c.note}</span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-4">
+                      <span className="tabular-nums text-ink">
+                        {fmtMoney(c.amount)}
+                      </span>
+                      <DeleteChargeButton chargeId={c.id} tenantId={tenant.id} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {allocations.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
+              <p className="border-b border-stone/40 bg-warm/40 px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted">
+                Rent credit applied
+              </p>
+              <ul className="divide-y divide-stone/30">
+                {allocations.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 px-5 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-ink">
+                        → {KIND_LABEL[a.kind] ?? a.kind}
+                      </span>
+                      {a.note && (
+                        <span className="text-muted"> · {a.note}</span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-4">
+                      <span className="tabular-nums text-ink">
+                        {fmtMoney(a.amount)}
+                      </span>
+                      <DeleteAllocationButton
+                        allocationId={a.id}
+                        tenantId={tenant.id}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="mt-10">
         <header className="flex flex-wrap items-end justify-between gap-3">

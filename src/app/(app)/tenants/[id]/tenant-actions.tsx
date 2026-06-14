@@ -5,6 +5,8 @@ import {
   deleteTenant,
   endTenancy,
   deletePayment,
+  deleteCharge,
+  deleteAllocation,
   reactivateTenancy,
 } from "../actions";
 import { todayISO } from "@/lib/date";
@@ -145,6 +147,60 @@ export function DeletePaymentButton({
         }}
       >
         Delete
+      </button>
+    </form>
+  );
+}
+
+export function DeleteChargeButton({
+  chargeId,
+  tenantId,
+}: {
+  chargeId: string;
+  tenantId: string;
+}) {
+  return (
+    <form action={deleteCharge}>
+      <input type="hidden" name="charge_id" value={chargeId} />
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      <button
+        type="submit"
+        className="text-xs uppercase tracking-wide text-muted hover:text-red-700"
+        onClick={(e) => {
+          if (!confirm("Delete this charge? This cannot be undone.")) {
+            e.preventDefault();
+          }
+        }}
+      >
+        Delete
+      </button>
+    </form>
+  );
+}
+
+export function DeleteAllocationButton({
+  allocationId,
+  tenantId,
+}: {
+  allocationId: string;
+  tenantId: string;
+}) {
+  return (
+    <form action={deleteAllocation}>
+      <input type="hidden" name="allocation_id" value={allocationId} />
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      <button
+        type="submit"
+        className="text-xs uppercase tracking-wide text-muted hover:text-red-700"
+        onClick={(e) => {
+          if (
+            !confirm("Reverse this credit allocation? The amount returns to rent credit.")
+          ) {
+            e.preventDefault();
+          }
+        }}
+      >
+        Reverse
       </button>
     </form>
   );

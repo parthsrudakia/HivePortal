@@ -245,6 +245,55 @@ export type Database = {
           },
         ]
       }
+      credit_allocations: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          kind: string
+          note: string | null
+          tenancy_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          kind: string
+          note?: string | null
+          tenancy_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          tenancy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_allocations_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_allocations_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "credit_allocations_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
+          },
+        ]
+      }
       email_log: {
         Row: {
           context: string | null
@@ -1038,13 +1087,13 @@ export type Database = {
       tenancies: {
         Row: {
           created_at: string
-          move_out_date: string | null
           first_month_rent: number | null
           id: string
           lease_end_date: string | null
           lease_end_reminded_at: string | null
           lease_pdf_path: string | null
           monthly_rent: number
+          move_out_date: string | null
           notes: string | null
           room_id: string
           security_deposit: number | null
@@ -1055,13 +1104,13 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          move_out_date?: string | null
           first_month_rent?: number | null
           id?: string
           lease_end_date?: string | null
           lease_end_reminded_at?: string | null
           lease_pdf_path?: string | null
           monthly_rent: number
+          move_out_date?: string | null
           notes?: string | null
           room_id: string
           security_deposit?: number | null
@@ -1072,13 +1121,13 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          move_out_date?: string | null
           first_month_rent?: number | null
           id?: string
           lease_end_date?: string | null
           lease_end_reminded_at?: string | null
           lease_pdf_path?: string | null
           monthly_rent?: number
+          move_out_date?: string | null
           notes?: string | null
           room_id?: string
           security_deposit?: number | null
@@ -1108,6 +1157,58 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenancy_charges: {
+        Row: {
+          amount: number
+          charged_on: string
+          created_at: string
+          id: string
+          kind: string
+          note: string | null
+          tenancy_id: string
+        }
+        Insert: {
+          amount: number
+          charged_on?: string
+          created_at?: string
+          id?: string
+          kind: string
+          note?: string | null
+          tenancy_id: string
+        }
+        Update: {
+          amount?: number
+          charged_on?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          tenancy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenancy_charges_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenancy_charges_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "tenancy_charges_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
           },
         ]
       }
@@ -1202,9 +1303,9 @@ export type Database = {
         Row: {
           available_from: string | null
           building_name: string | null
-          move_out_date: string | null
           has_ac: boolean | null
           has_private_bathroom: boolean | null
+          move_out_date: string | null
           neighborhood: string | null
           property_id: string | null
           property_name: string | null
@@ -1281,6 +1382,7 @@ export type Database = {
         | "utility"
         | "other"
         | "refund"
+        | "broker_fee"
       room_status: "occupied" | "available" | "reserved" | "maintenance"
       tenancy_status: "active" | "ended" | "upcoming"
     }
@@ -1445,6 +1547,7 @@ export const Constants = {
         "utility",
         "other",
         "refund",
+        "broker_fee",
       ],
       room_status: ["occupied", "available", "reserved", "maintenance"],
       tenancy_status: ["active", "ended", "upcoming"],

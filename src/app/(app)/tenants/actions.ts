@@ -8,19 +8,41 @@ import { one } from "@/lib/relations";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 import { sendBalanceReminder } from "@/lib/email";
 import { todayISO } from "@/lib/date";
+import { computeLedger } from "@/lib/rent";
+import { fetchLedgerSidecars } from "@/lib/rent-data";
 
 type PaymentType = Database["public"]["Enums"]["payment_type"];
-const VALID_PAYMENT_TYPES: PaymentType[] = [
+// Typed as string[] (not PaymentType[]) so 'broker_fee' validates even before
+// the generated enum types are regenerated against the ledger migration.
+const VALID_PAYMENT_TYPES: string[] = [
   "rent",
   "security_deposit",
+  "broker_fee",
   "late_fee",
   "utility",
   "other",
   "refund",
 ];
 
+// Buckets that can carry an owed balance outside of rent + the security
+// deposit. Ad-hoc charges (a broker fee, a $50 late fee, misc) are recorded
+// against these. Keep in sync with the tenancy_charges.kind CHECK constraint.
+const VALID_CHARGE_KINDS = ["broker_fee", "late_fee", "other"] as const;
+type ChargeKind = (typeof VALID_CHARGE_KINDS)[number];
+
+// Where a rent overpayment can be directed. Mirrors credit_allocations.kind.
+const VALID_ALLOCATION_KINDS = [
+  "security_deposit",
+  "broker_fee",
+  "late_fee",
+  "other",
+] as const;
+type AllocationKind = (typeof VALID_ALLOCATION_KINDS)[number];
+
 export type TenantFormState = { error?: string } | undefined;
 export type PaymentFormState = { error?: string } | undefined;
+export type ChargeFormState = { error?: string } | undefined;
+export type CreditFormState = { error?: string } | undefined;
 export type ReminderState = { error?: string; success?: string } | undefined;
 
 // Services bundle baked into every room's rent: utilities + wi-fi + maid +
@@ -463,12 +485,151 @@ export async function deletePayment(formData: FormData) {
   if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
 }
 
-// ----- Manually email this month's rent reminder to tenants with a balance -----
-// Computes each active tenant's outstanding balance for the current month
-// (due − rent paid this month, the same way the Tenants & Rent page does) and
-// emails only those who still owe. Meant to be run after the month's
-// reconciliation has posted payments. Records a batch row so the page can show
-// when these last went out.
+// ----- Add an ad-hoc charge (broker fee, late fee, misc) to a tenancy -----
+
+export async function addCharge(
+  tenancyId: string,
+  tenantId: string,
+  _prev: ChargeFormState,
+  formData: FormData,
+): Promise<ChargeFormState> {
+  const kind = String(formData.get("kind") ?? "") as ChargeKind;
+  const amount_str = String(formData.get("amount") ?? "").trim();
+  const charged_on = String(formData.get("charged_on") ?? "").trim() || todayISO();
+  const note = String(formData.get("note") ?? "").trim() || null;
+
+  if (!VALID_CHARGE_KINDS.includes(kind))
+    return { error: "Pick a valid charge type." };
+  const amount = Number(amount_str);
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { error: "Amount must be a positive number." };
+
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("tenancy_charges")
+    .insert({ tenancy_id: tenancyId, kind, amount, charged_on, note });
+  if (error) return { error: error.message };
+
+  revalidatePath("/tenants");
+  revalidatePath(`/tenants/${tenantId}`);
+  return undefined;
+}
+
+export async function deleteCharge(formData: FormData) {
+  const charge_id = String(formData.get("charge_id") ?? "");
+  const tenant_id = String(formData.get("tenant_id") ?? "");
+  if (!charge_id) return;
+
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from("tenancy_charges").delete().eq("id", charge_id);
+
+  revalidatePath("/tenants");
+  if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
+}
+
+// ----- Direct a rent overpayment toward another bucket -----
+// Inserts a credit_allocations row that moves `amount` out of the tenancy's
+// rent credit and into the chosen bucket. Capped server-side at both the
+// available rent credit and what that bucket still owes, so a move can never
+// invent money or overpay a bucket.
+
+export async function applyRentCredit(
+  tenancyId: string,
+  tenantId: string,
+  _prev: CreditFormState,
+  formData: FormData,
+): Promise<CreditFormState> {
+  const kind = String(formData.get("kind") ?? "") as AllocationKind;
+  const amount_str = String(formData.get("amount") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim() || null;
+
+  if (!VALID_ALLOCATION_KINDS.includes(kind))
+    return { error: "Pick where the credit should go." };
+  const amount = Number(amount_str);
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { error: "Amount must be a positive number." };
+
+  const supabase = await createClient();
+  const { data: t, error: tErr } = await supabase
+    .from("tenancies")
+    .select(
+      `start_date, move_out_date, monthly_rent, first_month_rent, security_deposit,
+       payments(amount, paid_on, payment_type)`,
+    )
+    .eq("id", tenancyId)
+    .maybeSingle();
+  if (tErr) return { error: tErr.message };
+  if (!t) return { error: "Tenancy not found." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any;
+  const [{ data: charges }, { data: allocations }] = await Promise.all([
+    sb.from("tenancy_charges").select("kind, amount").eq("tenancy_id", tenancyId),
+    sb
+      .from("credit_allocations")
+      .select("kind, amount")
+      .eq("tenancy_id", tenancyId),
+  ]);
+
+  const ledger = computeLedger(
+    t,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (t as any).payments ?? [],
+    charges ?? [],
+    allocations ?? [],
+  );
+
+  if (amount > ledger.availableCredit + 0.005) {
+    return {
+      error: `Only $${ledger.availableCredit.toFixed(2)} of rent credit is available.`,
+    };
+  }
+  // Don't let an allocation push a bucket past what it owes.
+  const owedFor: Record<AllocationKind, number> = {
+    security_deposit: ledger.deposit.balance,
+    broker_fee: ledger.broker.balance,
+    late_fee: ledger.lateFee.balance,
+    other: ledger.other.balance,
+  };
+  if (amount > owedFor[kind] + 0.005) {
+    return {
+      error: `That bucket only owes $${Math.max(0, owedFor[kind]).toFixed(2)}.`,
+    };
+  }
+
+  const { error } = await sb
+    .from("credit_allocations")
+    .insert({ tenancy_id: tenancyId, kind, amount, note });
+  if (error) return { error: error.message };
+
+  revalidatePath("/tenants");
+  revalidatePath(`/tenants/${tenantId}`);
+  return undefined;
+}
+
+export async function deleteAllocation(formData: FormData) {
+  const allocation_id = String(formData.get("allocation_id") ?? "");
+  const tenant_id = String(formData.get("tenant_id") ?? "");
+  if (!allocation_id) return;
+
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from("credit_allocations")
+    .delete()
+    .eq("id", allocation_id);
+
+  revalidatePath("/tenants");
+  if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
+}
+
+// ----- Manually email tenants with an outstanding balance -----
+// Emails each active tenant whose running ledger balance (rent carry-forward
+// plus any deposit / broker / late-fee amounts owed) is positive. Meant to be
+// run after the month's reconciliation has posted payments. Records a batch row
+// so the page can show when these last went out.
 
 export async function sendBalanceReminders(
   _prev: ReminderState,
@@ -482,7 +643,6 @@ export async function sendBalanceReminders(
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
-  const monthStart = new Date(y, m, 1).toISOString().slice(0, 10);
   const monthEnd = new Date(y, m + 1, 0).toISOString().slice(0, 10);
   const period = `${y}-${String(m + 1).padStart(2, "0")}`;
   const monthLabel = now.toLocaleDateString("en-US", {
@@ -492,8 +652,10 @@ export async function sendBalanceReminders(
   const today = todayISO();
 
   type ReminderTenancy = {
+    id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
     tenants:
@@ -506,7 +668,7 @@ export async function sendBalanceReminders(
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `monthly_rent, first_month_rent, start_date, move_out_date,
+      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date,
        tenants(full_name, email),
        payments(amount, paid_on, payment_type)`,
     )
@@ -514,6 +676,8 @@ export async function sendBalanceReminders(
     .returns<ReminderTenancy[]>();
 
   if (error) return { error: error.message };
+
+  const { charges, allocations } = await fetchLedgerSidecars(supabase);
 
   let sent = 0;
   let failed = 0;
@@ -526,24 +690,16 @@ export async function sendBalanceReminders(
     // Skip tenancies that haven't started yet.
     if (row.start_date > monthEnd) continue;
 
-    const isStartingMonth =
-      row.start_date >= monthStart && row.start_date <= monthEnd;
-    const due =
-      isStartingMonth && row.first_month_rent !== null
-        ? Number(row.first_month_rent)
-        : Number(row.monthly_rent);
-    const paid = (row.payments ?? [])
-      .filter(
-        (p) =>
-          p.payment_type === "rent" &&
-          p.paid_on >= monthStart &&
-          p.paid_on <= monthEnd,
-      )
-      .reduce((s, p) => s + Number(p.amount), 0);
-    const balance = due - paid;
-    if (balance <= 0.01) continue;
+    const { netBalance } = computeLedger(
+      row,
+      row.payments ?? [],
+      charges.get(row.id) ?? [],
+      allocations.get(row.id) ?? [],
+      today,
+    );
+    if (netBalance <= 0.01) continue;
 
-    const res = await sendBalanceReminder(email, balance, monthLabel);
+    const res = await sendBalanceReminder(email, netBalance, monthLabel);
     if (res.ok) sent++;
     else failed++;
   }
