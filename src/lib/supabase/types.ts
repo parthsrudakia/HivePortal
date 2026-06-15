@@ -1091,6 +1091,7 @@ export type Database = {
           id: string
           lease_end_date: string | null
           lease_end_reminded_at: string | null
+          lease_end_reminded_30_at: string | null
           lease_pdf_path: string | null
           monthly_rent: number
           move_out_date: string | null
@@ -1108,6 +1109,7 @@ export type Database = {
           id?: string
           lease_end_date?: string | null
           lease_end_reminded_at?: string | null
+          lease_end_reminded_30_at?: string | null
           lease_pdf_path?: string | null
           monthly_rent: number
           move_out_date?: string | null
@@ -1125,6 +1127,7 @@ export type Database = {
           id?: string
           lease_end_date?: string | null
           lease_end_reminded_at?: string | null
+          lease_end_reminded_30_at?: string | null
           lease_pdf_path?: string | null
           monthly_rent?: number
           move_out_date?: string | null

@@ -269,7 +269,11 @@ export async function setTenancyLeaseEndDate(
   const supabase = await createClient();
   const { error } = await supabase
     .from("tenancies")
-    .update({ lease_end_date: value, lease_end_reminded_at: null })
+    .update({
+      lease_end_date: value,
+      lease_end_reminded_at: null,
+      lease_end_reminded_30_at: null,
+    })
     .eq("id", tenancyId);
   if (error) return { error: error.message };
   revalidatePath("/tenants");

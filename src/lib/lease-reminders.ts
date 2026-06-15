@@ -3,10 +3,12 @@
  * piggy-backed onto the existing daily notification-followups cron (keeping the
  * total cron count within the Vercel Hobby limit).
  *
- * For every active tenancy whose informational `lease_end_date` falls within
- * the next 45 days and hasn't been flagged yet, email the operator a heads-up.
- * `lease_end_reminded_at` is set so it fires once; it's reset to null whenever
- * lease_end_date changes (see setTenancyLeaseEndDate), re-arming the reminder.
+ * For every active tenancy whose informational `lease_end_date` is approaching,
+ * email the operator a heads-up at two milestones — ~45 days out and ~30 days
+ * out. Each milestone has its own flag column so it fires exactly once, and the
+ * windows don't overlap so a single day never sends both. The flags are reset to
+ * null whenever lease_end_date changes (see setTenancyLeaseEndDate), re-arming
+ * both reminders.
  *
  * Purely a notification — it never touches tenancy/room/move-out state.
  */
@@ -16,7 +18,14 @@ import { sendLeaseEndReminder } from "@/lib/email";
 import { todayISO } from "@/lib/date";
 import { one } from "@/lib/relations";
 
-const LEASE_REMINDER_DAYS = 45;
+// Reminder milestones, ordered from furthest out to closest. Each fires once
+// when lease_end_date enters its window. Windows are made non-overlapping below
+// (a milestone's lower bound is the next, closer milestone's threshold) so a
+// freshly-set lease date never triggers two emails on the same run.
+const MILESTONES = [
+  { days: 45, column: "lease_end_reminded_at" },
+  { days: 30, column: "lease_end_reminded_30_at" },
+] as const;
 const REMINDER_TO = process.env.LEASE_REMINDER_TO || "vdutta1485@gmail.com";
 
 function addDaysISO(iso: string, days: number): string {
@@ -42,9 +51,38 @@ export async function runLeaseReminders(
   supabase: SupabaseClient,
 ): Promise<LeaseReminderSummary> {
   const today = todayISO();
-  const windowEnd = addDaysISO(today, LEASE_REMINDER_DAYS);
+  const summary: LeaseReminderSummary = {
+    candidates: 0,
+    sent: 0,
+    failed: 0,
+    errors: [],
+  };
 
-  // Active tenancies entering the 45-day window that haven't been flagged yet.
+  // Process each milestone independently. The window's upper bound is the
+  // milestone's day count; the lower bound is the next (closer) milestone's
+  // threshold, exclusive, so windows never overlap.
+  for (let i = 0; i < MILESTONES.length; i++) {
+    const milestone = MILESTONES[i];
+    const next = MILESTONES[i + 1];
+    const windowEnd = addDaysISO(today, milestone.days);
+    // Closer milestones own the days nearer the end; this one starts just past
+    // the next milestone's threshold (or `today` for the closest milestone).
+    const windowStart = next ? addDaysISO(today, next.days + 1) : today;
+    await runMilestone(supabase, milestone.column, windowStart, windowEnd, today, summary);
+  }
+
+  return summary;
+}
+
+async function runMilestone(
+  supabase: SupabaseClient,
+  column: string,
+  windowStart: string,
+  windowEnd: string,
+  today: string,
+  summary: LeaseReminderSummary,
+): Promise<void> {
+  // Active tenancies entering this milestone's window that haven't been flagged.
   const { data: rows } = await supabase
     .from("tenancies")
     .select(
@@ -53,9 +91,9 @@ export async function runLeaseReminders(
        rooms(room_number, properties(building_name, street_address, unit_number))`,
     )
     .eq("status", "active")
-    .is("lease_end_reminded_at", null)
+    .is(column, null)
     .not("lease_end_date", "is", null)
-    .gte("lease_end_date", today)
+    .gte("lease_end_date", windowStart)
     .lte("lease_end_date", windowEnd);
 
   type Row = {
@@ -78,22 +116,17 @@ export async function runLeaseReminders(
   };
 
   const list = (rows ?? []) as Row[];
-  const summary: LeaseReminderSummary = {
-    candidates: list.length,
-    sent: 0,
-    failed: 0,
-    errors: [],
-  };
+  summary.candidates += list.length;
 
   for (const row of list) {
     // Reserve the slot first so a re-run can't double-send: only proceed if we
-    // flipped reminded_at from null to now().
+    // flipped this milestone's flag from null to now().
     const stamp = new Date().toISOString();
     const { data: reserved } = await supabase
       .from("tenancies")
-      .update({ lease_end_reminded_at: stamp })
+      .update({ [column]: stamp })
       .eq("id", row.id)
-      .is("lease_end_reminded_at", null)
+      .is(column, null)
       .select("id");
     if (!reserved || reserved.length === 0) continue;
 
@@ -126,12 +159,10 @@ export async function runLeaseReminders(
       // Roll back the reservation so it retries on the next run.
       await supabase
         .from("tenancies")
-        .update({ lease_end_reminded_at: null })
+        .update({ [column]: null })
         .eq("id", row.id);
       summary.failed++;
       summary.errors.push({ tenancy_id: row.id, error: result.error });
     }
   }
-
-  return summary;
 }

@@ -92,21 +92,21 @@ export default async function Dashboard() {
     label: string;
     last: string | null;
     next: string | null;
-    sinceLast: number | null; // days between last cleaning and today
+    daysUntilNext: number | null; // days between today and the next cleaning
   };
   const todayMs = new Date(today + "T00:00:00").getTime();
   const cleaningWorklist: CleaningEntry[] = (properties.data ?? []).map((p) => {
     const last = lastByProperty.get(p.id) ?? null;
     const s = cleaningScheduleFor(last, today);
-    const sinceLast = last
-      ? Math.round((todayMs - new Date(last + "T00:00:00").getTime()) / 86400000)
+    const daysUntilNext = s.nextDue
+      ? Math.round((new Date(s.nextDue + "T00:00:00").getTime() - todayMs) / 86400000)
       : null;
     return {
       property_id: p.id,
       label: unitLabel(p),
       last,
       next: s.nextDue,
-      sinceLast,
+      daysUntilNext,
     };
   });
   // Soonest next cleaning first; never-cleaned units (no next date) last.
@@ -471,11 +471,11 @@ export default async function Dashboard() {
                         <td className={`px-2 py-1.5 ${overdue ? "text-red-700" : "text-ink"}`}>
                           {c.next ? formatDate(c.next) : <span className="text-muted">—</span>}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-ink">
-                          {c.sinceLast === null ? (
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${overdue ? "text-red-700" : "text-ink"}`}>
+                          {c.daysUntilNext === null ? (
                             <span className="text-muted">—</span>
                           ) : (
-                            `${c.sinceLast}d`
+                            `${c.daysUntilNext}d`
                           )}
                         </td>
                       </tr>
