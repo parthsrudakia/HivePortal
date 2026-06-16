@@ -55,8 +55,9 @@ Agreements:
   with letterhead, draft created in the Outlook work account. Nothing is sent —
   the draft is staged for the operator to review and send.
 - After it succeeds, tell the operator which mailbox the draft is in (Gmail vs
-  Outlook) and that it's ready to review and send. If the tool returns an error
-  (e.g. a mailbox isn't configured), relay it plainly.`;
+  Outlook) and include the returned draft link so tapping it opens the draft
+  directly in the mail app, ready to review and send. If the tool returns an
+  error (e.g. a mailbox isn't configured), relay it plainly.`;
 
 type ConvoMessage = Anthropic.Beta.BetaMessageParam;
 

@@ -19,9 +19,21 @@ export type SendResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
-// Body copy for the sublease agreement email. The PDF (with or without
-// letterhead) is attached separately; this is just the cover message. Returns
-// subject + text + html so it works for both Gmail and Outlook drafts.
+// Plain, unbranded cover message for the Gmail (New York, no-letterhead) draft.
+// Deliberately no Hive mention and no HTML — kept as simple as possible.
+export function gmailAgreementBody(opts: { tenantName: string }): {
+  subject: string;
+  text: string;
+} {
+  const name = opts.tenantName.trim() || "there";
+  return {
+    subject: "Sublease Agreement",
+    text: `Hello ${name},\n\nPlease find attached your Sublease Agreement.`,
+  };
+}
+
+// Branded cover message for the Outlook (non-NY, with-letterhead) draft. The PDF
+// is attached separately; this is just the cover message.
 export function agreementEmailTemplate(opts: { tenantName: string }): {
   subject: string;
   text: string;

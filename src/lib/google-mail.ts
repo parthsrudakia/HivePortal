@@ -15,7 +15,8 @@ const REVIEW_URL = "https://mail.google.com/mail/u/0/#drafts";
 export type DraftInput = {
   to: string;
   subject: string;
-  html: string;
+  /** Optional HTML body. When omitted, a plain text/plain message is built. */
+  html?: string;
   text: string;
   attachment: { filename: string; base64: string; mimeType?: string };
 };
@@ -62,33 +63,49 @@ async function accessToken(): Promise<string> {
   return data.access_token;
 }
 
-/** RFC 2822 multipart/mixed message: HTML+text body + a base64 PDF attachment. */
+/**
+ * RFC 2822 multipart/mixed message + a base64 PDF attachment. When `html` is
+ * provided the body is multipart/alternative (text + html); otherwise it's a
+ * single plain text/plain part. Boundary strings are neutral on purpose.
+ */
 function buildMimeMessage(input: DraftInput): string {
-  const boundary = "hive_mixed_boundary_001";
-  const altBoundary = "hive_alt_boundary_001";
+  const boundary = "mixed_boundary_8a3f";
+  const altBoundary = "alt_boundary_8a3f";
   const mime = input.attachment.mimeType || "application/pdf";
   // Re-wrap the attachment base64 at 76 cols per MIME convention.
   const wrapped = input.attachment.base64.replace(/.{76}/g, "$&\r\n");
+
+  const bodySection = input.html
+    ? [
+        `--${boundary}`,
+        `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+        "",
+        `--${altBoundary}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "",
+        input.text,
+        "",
+        `--${altBoundary}`,
+        "Content-Type: text/html; charset=UTF-8",
+        "",
+        input.html,
+        "",
+        `--${altBoundary}--`,
+      ]
+    : [
+        `--${boundary}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "",
+        input.text,
+      ];
+
   return [
     `To: ${input.to}`,
     `Subject: ${input.subject}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     "",
-    `--${boundary}`,
-    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
-    "",
-    `--${altBoundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "",
-    input.text,
-    "",
-    `--${altBoundary}`,
-    "Content-Type: text/html; charset=UTF-8",
-    "",
-    input.html,
-    "",
-    `--${altBoundary}--`,
+    ...bodySection,
     "",
     `--${boundary}`,
     `Content-Type: ${mime}; name="${input.attachment.filename}"`,
@@ -131,7 +148,18 @@ export async function createGmailDraft(input: DraftInput): Promise<DraftResult> 
         error: `Gmail draft failed (${res.status}): ${detail.slice(0, 200)}`,
       };
     }
-    return { ok: true, draftUrl: REVIEW_URL };
+    // Deep-link straight to this draft so tapping the link opens it in Gmail;
+    // fall back to the drafts list if the id isn't present.
+    const data = (await res.json().catch(() => null)) as {
+      message?: { id?: string };
+    } | null;
+    const msgId = data?.message?.id;
+    return {
+      ok: true,
+      draftUrl: msgId
+        ? `https://mail.google.com/mail/u/0/#drafts/${msgId}`
+        : REVIEW_URL,
+    };
   } catch (e) {
     return {
       ok: false,

@@ -72,7 +72,9 @@ export async function createOutlookDraft(
       },
       body: JSON.stringify({
         subject: input.subject,
-        body: { contentType: "HTML", content: input.html },
+        body: input.html
+          ? { contentType: "HTML", content: input.html }
+          : { contentType: "Text", content: input.text },
         toRecipients: [{ emailAddress: { address: input.to } }],
         isDraft: true,
         attachments: [

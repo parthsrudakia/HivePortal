@@ -14,7 +14,7 @@ import { todayISO } from "@/lib/date";
 import { generateAgreementPdf } from "@/lib/agreements";
 import { createGmailDraft } from "@/lib/google-mail";
 import { createOutlookDraft } from "@/lib/graph-mail";
-import { agreementEmailTemplate } from "@/lib/email";
+import { agreementEmailTemplate, gmailAgreementBody } from "@/lib/email";
 
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -509,25 +509,37 @@ export async function generateAgreementDraft(args: {
     proRateRent: args.pro_rate_rent,
   });
 
-  const { subject, text, html } = agreementEmailTemplate({
-    tenantName: args.tenant_name,
-  });
-  const draftInput = {
-    to: args.recipient_email,
-    subject,
-    text,
-    html,
-    attachment: {
-      filename: pdf.filename,
-      base64: pdf.base64,
-      mimeType: "application/pdf",
-    },
+  const attachment = {
+    filename: pdf.filename,
+    base64: pdf.base64,
+    mimeType: "application/pdf",
   };
 
   const mailbox = args.in_new_york ? "gmail" : "outlook";
-  const result = args.in_new_york
-    ? await createGmailDraft(draftInput)
-    : await createOutlookDraft(draftInput);
+
+  let result;
+  if (args.in_new_york) {
+    // New York: plain, unbranded Gmail draft (no Hive mention, no HTML).
+    const { subject, text } = gmailAgreementBody({ tenantName: args.tenant_name });
+    result = await createGmailDraft({
+      to: args.recipient_email,
+      subject,
+      text,
+      attachment,
+    });
+  } else {
+    // Non-NY: branded Outlook draft from the work account.
+    const { subject, text, html } = agreementEmailTemplate({
+      tenantName: args.tenant_name,
+    });
+    result = await createOutlookDraft({
+      to: args.recipient_email,
+      subject,
+      text,
+      html,
+      attachment,
+    });
+  }
 
   if (!result.ok) {
     return { ok: false, mailbox, error: result.error };
