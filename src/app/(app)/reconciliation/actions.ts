@@ -293,7 +293,10 @@ export async function runReconciliation(
 
 // ----------------------------------------------------------------------------
 // 2. Post payments: write a payments table row for each matched tenancy.
-//    Idempotent — deletes any prior payments for this run first.
+//    Idempotent — re-posting upserts on external_ref (ON CONFLICT DO NOTHING)
+//    and re-links deposits, so it never duplicates. If ANY deposit fails to
+//    post, the run is NOT marked posted and the action throws, so the UI can
+//    surface the failure instead of falsely reporting success.
 // ----------------------------------------------------------------------------
 
 export async function postPayments(formData: FormData) {
@@ -332,6 +335,9 @@ export async function postPayments(formData: FormData) {
   //      prior overlapping bank statement run, ON CONFLICT short-circuits
   //      and we just re-link this deposit to the existing payment.
   //   2) update the deposit row with payment_id so future Unpost knows.
+  // Failures are collected, not swallowed: a single failed upsert must not
+  // let the run be marked posted while payments are missing.
+  const failures: string[] = [];
   for (const d of deposits) {
     if (!d.tenancy_id) continue;
     const { data: ins, error: pErr } = await supabase
@@ -353,6 +359,7 @@ export async function postPayments(formData: FormData) {
       .maybeSingle();
     if (pErr) {
       console.error("[recon] upsert payment failed:", pErr, d.external_ref);
+      failures.push(`${d.external_ref}: ${pErr.message}`);
       continue;
     }
     let paymentId: string | null = ins?.id ?? null;
@@ -366,11 +373,27 @@ export async function postPayments(formData: FormData) {
       paymentId = existing?.id ?? null;
     }
     if (paymentId) {
-      await supabase
+      const { error: linkErr } = await supabase
         .from("reconciliation_deposits")
         .update({ payment_id: paymentId })
         .eq("id", d.id);
+      if (linkErr) {
+        console.error("[recon] link deposit failed:", linkErr, d.external_ref);
+        failures.push(`${d.external_ref}: ${linkErr.message}`);
+      }
+    } else {
+      failures.push(`${d.external_ref}: no payment row written or found`);
     }
+  }
+
+  // Don't mark the run posted if anything failed — surface it instead, so
+  // the user isn't told "posted" while Tenants & Rent stays empty.
+  if (failures.length > 0) {
+    revalidatePath(`/reconciliation/${runId}`);
+    throw new Error(
+      `Posted ${deposits.length - failures.length}/${deposits.length} payments; ` +
+        `${failures.length} failed. First error — ${failures[0]}`,
+    );
   }
 
   await supabase
