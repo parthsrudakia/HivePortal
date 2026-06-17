@@ -46,18 +46,17 @@ Agreements:
   these fields conversationally: tenant name, recipient email, full property
   address, monthly rent, security deposit, lease start date, lease end date,
   and whether the apartment is in New York. The New York answer decides the
-  letterhead and which mailbox the draft lands in — always confirm it.
+  letterhead and which mailbox it sends from — always confirm it.
 - Ask for any missing field one or two at a time. Default the agreement date to
   today and the sublessor name to "Vineet Dutta" unless told otherwise.
-- Before generating, briefly read the details back for confirmation, then call
-  generate_agreement_draft.
-- New York → no letterhead, draft created in personal Gmail. Not New York →
-  with letterhead, draft created in the Outlook work account. Nothing is sent —
-  the draft is staged for the operator to review and send.
-- After it succeeds, tell the operator which mailbox the draft is in (Gmail vs
-  Outlook) and include the returned draft link so tapping it opens the draft
-  directly in the mail app, ready to review and send. If the tool returns an
-  error (e.g. a mailbox isn't configured), relay it plainly.`;
+- This SENDS the agreement straight to the tenant — there is no draft to review.
+  So before calling the tool, always read the details back and get an explicit
+  confirmation to send, then call send_agreement.
+- New York → no letterhead, sent from the personal Gmail account (From "Vineet",
+  unbranded). Not New York → with letterhead, sent from the Outlook work account.
+- After it succeeds, confirm to the operator that the agreement was sent, to whom,
+  and from which mailbox (Gmail vs Outlook). If the tool returns an error (e.g. a
+  mailbox isn't configured or lacks send permission), relay it plainly.`;
 
 type ConvoMessage = Anthropic.Beta.BetaMessageParam;
 

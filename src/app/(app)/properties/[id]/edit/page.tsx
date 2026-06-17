@@ -19,6 +19,7 @@ type PropertyRecord = {
   unit_number: string;
   cross_street: string | null;
   neighborhood: string | null;
+  is_new_york: boolean;
   bedrooms: number | null;
   bathrooms: number | null;
   has_gym: boolean;
@@ -48,7 +49,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
       .from("properties")
       .select(
         `id, building_name, street_address, unit_number, cross_street,
-           neighborhood, bedrooms, bathrooms,
+           neighborhood, is_new_york, bedrooms, bathrooms,
            has_gym, has_elevator, has_parking, has_doorman, has_rooftop, has_lounge,
            laundry_in_building, in_unit_laundry,
            amenities_notes, notes,
@@ -118,6 +119,7 @@ export default async function EditPropertyPage({ params }: PageProps) {
             unit_number: property.unit_number,
             cross_street: property.cross_street,
             neighborhood: property.neighborhood,
+            is_new_york: property.is_new_york,
             bedrooms: property.bedrooms,
             bathrooms: property.bathrooms,
             has_gym: property.has_gym,

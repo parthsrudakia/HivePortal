@@ -9,6 +9,7 @@ type InitialValues = {
   unit_number: string;
   cross_street: string | null;
   neighborhood: string | null;
+  is_new_york: boolean;
   bedrooms: number | null;
   bathrooms: number | null;
   has_gym: boolean;
@@ -137,6 +138,21 @@ export function PropertyForm({
                 <option key={n} value={n} />
               ))}
             </datalist>
+          </label>
+          <label className={`${checkboxLabel} sm:col-span-2`}>
+            <input
+              type="checkbox"
+              name="is_new_york"
+              defaultChecked={v.is_new_york ?? false}
+              className="accent-accent"
+            />
+            <span className="flex flex-col">
+              New York apartment
+              <span className="text-xs font-normal text-muted">
+                Reminders &amp; agreements to these tenants come from Vineet&apos;s
+                personal email — plain text, unbranded.
+              </span>
+            </span>
           </label>
         </div>
       </section>

@@ -9,7 +9,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendRentReminder } from "@/lib/email";
+import { sendRentReminder, sendRentReminderGmail } from "@/lib/email";
 import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
     .from("tenancies")
     .select(
       `id, tenant_id, move_out_date, status,
-       tenants!inner(id, email)`,
+       tenants!inner(id, email),
+       rooms!inner(properties!inner(is_new_york))`,
     )
     .eq("status", "active");
 
@@ -54,11 +55,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  type PropertyRel = { is_new_york: boolean };
+  type RoomRel = { properties: PropertyRel | PropertyRel[] | null };
   type Row = {
     id: string;
     tenant_id: string;
     move_out_date: string | null;
     tenants: { id: string; email: string | null } | { id: string; email: string | null }[] | null;
+    rooms: RoomRel | RoomRel[] | null;
+  };
+
+  const isNewYork = (row: Row): boolean => {
+    const room = Array.isArray(row.rooms) ? row.rooms[0] : row.rooms;
+    const property = Array.isArray(room?.properties)
+      ? room?.properties[0]
+      : room?.properties;
+    return property?.is_new_york ?? false;
   };
 
   const rows = (tenancies ?? []) as Row[];
@@ -100,7 +112,11 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const result = await sendRentReminder(email);
+    // New York tenants get a plain, unbranded reminder from Vineet's personal
+    // Gmail; everyone else goes through the default Resend sender.
+    const result = isNewYork(row)
+      ? await sendRentReminderGmail(email)
+      : await sendRentReminder(email);
 
     await supabase
       .from("rent_reminder_emails")

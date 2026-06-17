@@ -12,8 +12,8 @@ import { z } from "zod";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 import { todayISO } from "@/lib/date";
 import { generateAgreementPdf } from "@/lib/agreements";
-import { createGmailDraft } from "@/lib/google-mail";
-import { createOutlookDraft } from "@/lib/graph-mail";
+import { sendGmailMessage } from "@/lib/google-mail";
+import { sendOutlookMessage } from "@/lib/graph-mail";
 import { agreementEmailTemplate, gmailAgreementBody } from "@/lib/email";
 
 function admin() {
@@ -479,11 +479,11 @@ export async function setRoomStatus(args: {
   return { ok: true };
 }
 
-// Generate a sublease agreement PDF and stage it as an email draft in the right
-// mailbox. New York → no letterhead, draft from personal Gmail. Otherwise →
-// with letterhead, draft from the M365 (Outlook) work account. Never sends; the
-// operator reviews and sends the draft himself.
-export async function generateAgreementDraft(args: {
+// Generate a sublease agreement PDF and send it from the right mailbox. New York
+// → no letterhead, sent from personal Gmail (From "Vineet", unbranded). Otherwise
+// → with letterhead, sent from the M365 (Outlook) work account. Sends straight
+// to the tenant — no draft step.
+export async function sendAgreement(args: {
   tenant_name: string;
   recipient_email: string;
   property_address: string;
@@ -519,20 +519,20 @@ export async function generateAgreementDraft(args: {
 
   let result;
   if (args.in_new_york) {
-    // New York: plain, unbranded Gmail draft (no Hive mention, no HTML).
+    // New York: plain, unbranded email from Vineet's personal Gmail (no Hive, no HTML).
     const { subject, text } = gmailAgreementBody({ tenantName: args.tenant_name });
-    result = await createGmailDraft({
+    result = await sendGmailMessage({
       to: args.recipient_email,
       subject,
       text,
       attachment,
     });
   } else {
-    // Non-NY: branded Outlook draft from the work account.
+    // Non-NY: branded email sent from the Outlook work account.
     const { subject, text, html } = agreementEmailTemplate({
       tenantName: args.tenant_name,
     });
-    result = await createOutlookDraft({
+    result = await sendOutlookMessage({
       to: args.recipient_email,
       subject,
       text,
@@ -548,7 +548,8 @@ export async function generateAgreementDraft(args: {
     ok: true,
     mailbox,
     letterhead: !args.in_new_york,
-    draft_url: result.draftUrl,
+    sent: true,
+    recipient: args.recipient_email,
   };
 }
 
@@ -700,16 +701,17 @@ export const tools = [
     run: async (args) => JSON.stringify(await setRoomStatus(args)),
   }),
   betaZodTool({
-    name: "generate_agreement_draft",
+    name: "send_agreement",
     description:
-      "Generate a sublease agreement PDF and stage it as a ready-to-review email " +
-      "draft (does NOT send). New York apartments → no letterhead, draft created " +
-      "in the personal Gmail account. Non-New-York → with letterhead, draft created " +
-      "in the Outlook/M365 work account. Only call this once you have all required " +
-      "fields; ask the operator for anything missing first.",
+      "Generate a sublease agreement PDF and SEND it straight to the tenant. New " +
+      "York apartments → no letterhead, sent from the personal Gmail account (From " +
+      "\"Vineet\", unbranded). Non-New-York → with letterhead, sent from the " +
+      "Outlook/M365 work account. This sends immediately — there is no draft to " +
+      "review. Only call this once you have all required fields and the operator " +
+      "has confirmed; ask for anything missing first.",
     inputSchema: z.object({
       tenant_name: z.string().describe("Tenant's full name"),
-      recipient_email: z.string().describe("Email address to send the draft to"),
+      recipient_email: z.string().describe("Tenant email address to send the agreement to"),
       property_address: z
         .string()
         .describe("Full property address (include city/state for non-NY units)"),
@@ -736,7 +738,7 @@ export const tools = [
         .optional()
         .describe('Agreement date "YYYY-MM-DD"; defaults to today'),
     }),
-    run: async (args) => JSON.stringify(await generateAgreementDraft(args)),
+    run: async (args) => JSON.stringify(await sendAgreement(args)),
   }),
   betaZodTool({
     name: "get_collection_summary",

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
 import { updateRoomsWithNotification } from "@/lib/notifications";
-import { sendBalanceReminder } from "@/lib/email";
+import { sendBalanceReminder, sendBalanceReminderGmail } from "@/lib/email";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
@@ -570,6 +570,10 @@ export async function sendBalanceReminders(
       | { full_name: string; email: string | null }
       | { full_name: string; email: string | null }[]
       | null;
+    rooms:
+      | { properties: { is_new_york: boolean } | { is_new_york: boolean }[] | null }
+      | { properties: { is_new_york: boolean } | { is_new_york: boolean }[] | null }[]
+      | null;
     payments: { amount: number; paid_on: string; payment_type: string }[];
   };
 
@@ -578,6 +582,7 @@ export async function sendBalanceReminders(
     .select(
       `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date,
        tenants(full_name, email),
+       rooms(properties(is_new_york)),
        payments(amount, paid_on, payment_type)`,
     )
     .eq("status", "active")
@@ -607,7 +612,12 @@ export async function sendBalanceReminders(
     );
     if (netBalance <= 0.01) continue;
 
-    const res = await sendBalanceReminder(email, netBalance, monthLabel);
+    // New York tenants get a plain, unbranded reminder from Vineet's personal
+    // Gmail; everyone else goes through the default Resend sender.
+    const isNewYork = one(one(row.rooms)?.properties)?.is_new_york ?? false;
+    const res = isNewYork
+      ? await sendBalanceReminderGmail(email, netBalance, monthLabel)
+      : await sendBalanceReminder(email, netBalance, monthLabel);
     if (res.ok) sent++;
     else failed++;
   }

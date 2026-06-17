@@ -533,6 +533,7 @@ export type Database = {
           has_rooftop: boolean
           id: string
           in_unit_laundry: boolean
+          is_new_york: boolean
           laundry_in_building: boolean
           leaseholder_id: string | null
           neighborhood: string | null
@@ -556,6 +557,7 @@ export type Database = {
           has_rooftop?: boolean
           id?: string
           in_unit_laundry?: boolean
+          is_new_york?: boolean
           laundry_in_building?: boolean
           leaseholder_id?: string | null
           neighborhood?: string | null
@@ -579,6 +581,7 @@ export type Database = {
           has_rooftop?: boolean
           id?: string
           in_unit_laundry?: boolean
+          is_new_york?: boolean
           laundry_in_building?: boolean
           leaseholder_id?: string | null
           neighborhood?: string | null

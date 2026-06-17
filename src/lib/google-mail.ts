@@ -10,7 +10,16 @@
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
+const SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 const REVIEW_URL = "https://mail.google.com/mail/u/0/#drafts";
+
+// All New York correspondence goes out under this personal identity — display
+// name "Vineet", no Hive branding. Address overridable via env; defaults to the
+// personal account this client authenticates as.
+const FROM = (() => {
+  const address = process.env.GMAIL_SENDER || "vdutta1485@gmail.com";
+  return `Vineet <${address}>`;
+})();
 
 export type DraftInput = {
   to: string;
@@ -18,11 +27,16 @@ export type DraftInput = {
   /** Optional HTML body. When omitted, a plain text/plain message is built. */
   html?: string;
   text: string;
-  attachment: { filename: string; base64: string; mimeType?: string };
+  /** Optional PDF (or other) attachment. Omit for a body-only message. */
+  attachment?: { filename: string; base64: string; mimeType?: string };
 };
 
 export type DraftResult =
   | { ok: true; draftUrl: string }
+  | { ok: false; error: string };
+
+export type SendResult =
+  | { ok: true; id: string }
   | { ok: false; error: string };
 
 function config() {
@@ -64,13 +78,51 @@ async function accessToken(): Promise<string> {
 }
 
 /**
- * RFC 2822 multipart/mixed message + a base64 PDF attachment. When `html` is
+ * RFC 2822 message, optionally with a base64 attachment. When `html` is
  * provided the body is multipart/alternative (text + html); otherwise it's a
- * single plain text/plain part. Boundary strings are neutral on purpose.
+ * single plain text/plain part. With an attachment the whole thing is wrapped
+ * in multipart/mixed; without one (e.g. a reminder), the body is sent directly.
+ * Boundary strings are neutral on purpose.
  */
 function buildMimeMessage(input: DraftInput): string {
-  const boundary = "mixed_boundary_8a3f";
   const altBoundary = "alt_boundary_8a3f";
+
+  const headers = [
+    `From: ${FROM}`,
+    `To: ${input.to}`,
+    `Subject: ${input.subject}`,
+    "MIME-Version: 1.0",
+  ];
+
+  // Body-only message (no attachment): emit the body headers inline.
+  if (!input.attachment) {
+    if (input.html) {
+      return [
+        ...headers,
+        `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+        "",
+        `--${altBoundary}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "",
+        input.text,
+        "",
+        `--${altBoundary}`,
+        "Content-Type: text/html; charset=UTF-8",
+        "",
+        input.html,
+        "",
+        `--${altBoundary}--`,
+      ].join("\r\n");
+    }
+    return [
+      ...headers,
+      "Content-Type: text/plain; charset=UTF-8",
+      "",
+      input.text,
+    ].join("\r\n");
+  }
+
+  const boundary = "mixed_boundary_8a3f";
   const mime = input.attachment.mimeType || "application/pdf";
   // Re-wrap the attachment base64 at 76 cols per MIME convention.
   const wrapped = input.attachment.base64.replace(/.{76}/g, "$&\r\n");
@@ -100,9 +152,7 @@ function buildMimeMessage(input: DraftInput): string {
       ];
 
   return [
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
-    "MIME-Version: 1.0",
+    ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     "",
     ...bodySection,
@@ -160,6 +210,43 @@ export async function createGmailDraft(input: DraftInput): Promise<DraftResult> 
         ? `https://mail.google.com/mail/u/0/#drafts/${msgId}`
         : REVIEW_URL,
     };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Unknown Gmail error",
+    };
+  }
+}
+
+/**
+ * Send a message immediately as the personal account (From "Vineet"), rather
+ * than staging a draft. Used for New York tenant reminders, which are automated
+ * and have no human to send the draft. Shares the same MIME builder and creds.
+ */
+export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
+  if (!gmailConfigured()) {
+    return { ok: false, error: "Gmail is not configured (missing GMAIL_* env)." };
+  }
+  try {
+    const token = await accessToken();
+    const raw = base64UrlEncode(buildMimeMessage(input));
+    const res = await fetch(SEND_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return {
+        ok: false,
+        error: `Gmail send failed (${res.status}): ${detail.slice(0, 200)}`,
+      };
+    }
+    const data = (await res.json().catch(() => null)) as { id?: string } | null;
+    return { ok: true, id: data?.id || "" };
   } catch (e) {
     return {
       ok: false,

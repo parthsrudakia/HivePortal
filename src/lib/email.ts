@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { logEmail } from "./email-log";
+import { sendGmailMessage } from "./google-mail";
 
 const REMINDER_SUBJECT = "Rent Reminder";
 
@@ -93,6 +94,56 @@ export async function sendRentReminder(to: string): Promise<SendResult> {
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id : null,
+  });
+  return result;
+}
+
+// ----- New York variants -----
+// New York tenants get personal, unbranded correspondence: sent from Vineet's
+// personal Gmail (From "Vineet", no Hive mention), plain text only — no HTML.
+// The reminder copy below is intentionally identical to the Resend versions,
+// which already carry no branding; only the channel and format differ.
+
+export async function sendRentReminderGmail(to: string): Promise<SendResult> {
+  const result = await sendGmailMessage({
+    to,
+    subject: REMINDER_SUBJECT,
+    text: REMINDER_TEXT,
+  });
+  await logEmail({
+    type: "rent_reminder",
+    recipient: to,
+    subject: REMINDER_SUBJECT,
+    context: "new_york_gmail",
+    status: result.ok ? "sent" : "failed",
+    error: result.ok ? null : result.error,
+    resend_id: result.ok ? result.id || null : null,
+  });
+  return result;
+}
+
+export async function sendBalanceReminderGmail(
+  to: string,
+  amountDue: number,
+  monthLabel: string,
+): Promise<SendResult> {
+  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const subject = `Rent balance due — ${monthLabel}`;
+  const text = `Hi,
+
+My records show an outstanding rent balance of ${amount} for ${monthLabel}. Please submit payment as soon as possible to avoid a $50 late fee.
+
+Thanks
+Vinny`;
+  const result = await sendGmailMessage({ to, subject, text });
+  await logEmail({
+    type: "rent_balance",
+    recipient: to,
+    subject,
+    context: `${monthLabel} · new_york_gmail`,
+    status: result.ok ? "sent" : "failed",
+    error: result.ok ? null : result.error,
+    resend_id: result.ok ? result.id || null : null,
   });
   return result;
 }

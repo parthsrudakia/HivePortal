@@ -12,6 +12,7 @@ type ParsedForm = {
   unit_number: string;
   cross_street: string | null;
   neighborhood: string | null;
+  is_new_york: boolean;
   bedrooms: number | null;
   bathrooms: number | null;
   has_gym: boolean;
@@ -52,6 +53,7 @@ function parseForm(formData: FormData): ParsedForm | { error: string } {
     unit_number,
     cross_street: strOrNull("cross_street"),
     neighborhood: strOrNull("neighborhood"),
+    is_new_york: formData.get("is_new_york") === "on",
     bedrooms: numOrNull("bedrooms"),
     bathrooms: numOrNull("bathrooms"),
     has_gym: formData.get("has_gym") === "on",
