@@ -51,6 +51,28 @@ export function gmailConfigured(): boolean {
   return config() !== null;
 }
 
+/**
+ * Verify the Gmail account can mint an access token (i.e. sending will work)
+ * WITHOUT sending anything. Used by the Telegram /diag command.
+ */
+export async function checkGmailAuth(): Promise<{
+  configured: boolean;
+  ok: boolean;
+  error?: string;
+}> {
+  if (!gmailConfigured()) return { configured: false, ok: false };
+  try {
+    await accessToken();
+    return { configured: true, ok: true };
+  } catch (e) {
+    return {
+      configured: true,
+      ok: false,
+      error: e instanceof Error ? e.message : "Unknown Gmail error",
+    };
+  }
+}
+
 async function accessToken(): Promise<string> {
   const cfg = config();
   if (!cfg) throw new Error("Gmail is not configured (missing GMAIL_* env).");

@@ -15,6 +15,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { runWithToolContext, tools } from "@/lib/portal-tools";
 import { allowedUserIds, sendChatAction, sendMessage } from "@/lib/telegram";
+import { checkOutlookSendAuth } from "@/lib/graph-mail";
+import { checkGmailAuth } from "@/lib/google-mail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Vercel: allow long agent loops
@@ -158,7 +160,31 @@ export async function POST(req: Request) {
         "• What's the ClickPay password for 90 Washington?\n" +
         "• Record a $2000 rent payment for Tom today, Zelle\n" +
         "• End John's tenancy on July 31\n\n" +
+        "/diag to check mail (Outlook/Gmail) auth.\n" +
         "/reset to clear our chat history.",
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  if (userText === "/diag") {
+    await sendChatAction(msg.chat.id, "typing");
+    const [outlook, gmail] = await Promise.all([
+      checkOutlookSendAuth(),
+      checkGmailAuth(),
+    ]);
+    const line = (
+      label: string,
+      r: { configured: boolean; ok: boolean; error?: string },
+    ) => {
+      if (!r.configured) return `${label}: ⚪️ not configured`;
+      if (r.ok) return `${label}: ✅ OK`;
+      return `${label}: ❌ ${r.error ?? "auth failed"}`;
+    };
+    await sendMessage(
+      msg.chat.id,
+      "Mail diagnostics (no email sent):\n\n" +
+        `${line("Outlook (Mail.Send)", outlook)}\n` +
+        `${line("Gmail", gmail)}`,
     );
     return NextResponse.json({ ok: true });
   }

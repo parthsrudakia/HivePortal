@@ -38,6 +38,29 @@ export function outlookConfigured(): boolean {
   return config() !== null;
 }
 
+/**
+ * Verify the work mailbox can mint a Mail.Send access token — i.e. that sending
+ * (sendOutlookMessage, non-NY agreements) will work — WITHOUT sending anything.
+ * Used by the Telegram /diag command to confirm a re-consent took effect.
+ */
+export async function checkOutlookSendAuth(): Promise<{
+  configured: boolean;
+  ok: boolean;
+  error?: string;
+}> {
+  if (!outlookConfigured()) return { configured: false, ok: false };
+  try {
+    await accessToken(SCOPE_SEND);
+    return { configured: true, ok: true };
+  } catch (e) {
+    return {
+      configured: true,
+      ok: false,
+      error: e instanceof Error ? e.message : "Unknown Outlook error",
+    };
+  }
+}
+
 async function accessToken(scope: string = SCOPE_READWRITE): Promise<string> {
   const cfg = config();
   if (!cfg) throw new Error("Outlook is not configured (missing MS_* env).");
