@@ -67,35 +67,24 @@ Hive`;
   return { subject, text, html };
 }
 
-// Branded cover message for emailing the public inventory "Shareable Sheet".
-// The .xlsx is attached separately; this is just the cover note. Sent from the
-// Outlook work account, so it carries Hive branding.
+// Plain, unbranded cover message for emailing the public inventory "Shareable
+// Sheet". The .xlsx is attached separately; this is just the cover note. Sent
+// from the personal Gmail, so NO Hive branding or name anywhere — plain text
+// only, no HTML.
 export function inventorySheetEmailTemplate(opts: { roomCount: number }): {
   subject: string;
   text: string;
-  html: string;
 } {
   const n = opts.roomCount;
   const roomsLabel = `${n} room${n === 1 ? "" : "s"}`;
   const subject = "Current room availability";
   const text = `Hi,
 
-Attached is our current list of available rooms (${roomsLabel}), including neighborhood, pricing, availability and amenities. Reply to this email if anything looks like a fit and we'll set up a viewing.
+Attached is the current list of available rooms (${roomsLabel}), including neighborhood, pricing, availability and amenities. Reply to this email if anything looks like a fit and we'll set up a viewing.
 
 Best,
-Vineet
-Hive`;
-  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
-  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
-    <div style="height:6px; background:#d4920b;"></div>
-    <div style="padding:24px 20px; color:#1a1a18; line-height:1.55; font-size:15px;">
-      <p style="margin:0 0 14px;">Hi,</p>
-      <p style="margin:0 0 14px;">Attached is our current list of available rooms (${roomsLabel}), including neighborhood, pricing, availability and amenities. Reply to this email if anything looks like a fit and we&rsquo;ll set up a viewing.</p>
-      <p style="margin:18px 0 0;">Best,<br/>Vineet<br/><span style="color:#8a8378;">Hive</span></p>
-    </div>
-  </div>
-</div>`;
-  return { subject, text, html };
+Vineet`;
+  return { subject, text };
 }
 
 export async function sendRentReminder(to: string): Promise<SendResult> {

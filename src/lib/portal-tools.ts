@@ -609,14 +609,11 @@ export async function emailInventorySheet(args: { recipient_email: string }) {
   if (!to) return { ok: false, error: "No recipient email address provided." };
 
   const { buffer, filename, count } = await buildInventorySheet(admin());
-  const { subject, text, html } = inventorySheetEmailTemplate({
-    roomCount: count,
-  });
+  const { subject, text } = inventorySheetEmailTemplate({ roomCount: count });
   const result = await sendGmailMessage({
     to,
     subject,
     text,
-    html,
     attachment: { filename, base64: buffer.toString("base64"), mimeType: SHEET_MIME },
   });
 
