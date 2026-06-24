@@ -188,17 +188,21 @@ export async function POST(req: Request) {
   let finalMessage: Anthropic.Beta.BetaMessage;
   try {
     // Run inside the chat context so tools that deliver files (e.g.
-    // share_inventory_sheet) know which chat to send the document to.
-    finalMessage = await runWithToolContext({ chatId: msg.chat.id }, () =>
-      client.beta.messages.toolRunner({
-        model: "claude-opus-4-7",
-        max_tokens: 16000,
-        system: SYSTEM_PROMPT,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "high" },
-        tools,
-        messages,
-      }),
+    // share_inventory_sheet) know which chat to send the document to. The
+    // toolRunner is awaited *inside* the callback so the AsyncLocalStorage store
+    // stays active for the whole tool-execution loop, not just construction.
+    finalMessage = await runWithToolContext(
+      { chatId: msg.chat.id },
+      async () =>
+        await client.beta.messages.toolRunner({
+          model: "claude-opus-4-7",
+          max_tokens: 16000,
+          system: SYSTEM_PROMPT,
+          thinking: { type: "adaptive" },
+          output_config: { effort: "high" },
+          tools,
+          messages,
+        }),
     );
   } catch (e) {
     console.error("Anthropic tool runner failed:", e);
