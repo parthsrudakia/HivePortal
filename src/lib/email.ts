@@ -77,7 +77,7 @@ export function inventorySheetEmailTemplate(opts: { roomCount: number }): {
 } {
   const n = opts.roomCount;
   const roomsLabel = `${n} room${n === 1 ? "" : "s"}`;
-  const subject = "Hive — current room availability";
+  const subject = "Current room availability";
   const text = `Hi,
 
 Attached is our current list of available rooms (${roomsLabel}), including neighborhood, pricing, availability and amenities. Reply to this email if anything looks like a fit and we'll set up a viewing.
