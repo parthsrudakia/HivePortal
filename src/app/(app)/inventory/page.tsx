@@ -431,7 +431,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       {filtered.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
           <table className="w-full min-w-[1400px] text-sm">
-            <thead className="sticky top-0 z-10 bg-warm/60 text-left text-[11px] uppercase tracking-wide text-muted">
+            <thead className="sticky top-0 z-10 bg-warm/60 text-center text-[11px] uppercase tracking-wide text-muted">
               <tr className="divide-x divide-stone/40">
                 <th className="w-10" />
                 <th className="w-1.5" />
@@ -463,7 +463,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  align="right"
                 />
                 <SortHeader
                   label="Services"
@@ -471,7 +470,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  align="right"
                 />
                 <SortHeader
                   label="Total"
@@ -479,7 +477,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  align="right"
                 />
                 <th className="px-3 py-2 font-medium">Amenities</th>
                 <th className="px-3 py-2 font-medium">Photos</th>
@@ -488,7 +485,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                 <th className="px-3 py-2 font-medium">Ad</th>
                 <th className="px-3 py-2 font-medium">Ad Posted</th>
                 <th className="px-3 py-2 font-medium">Roommates</th>
-                <th className="px-3 py-2 text-right font-medium" />
+                <th className="px-3 py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -513,14 +510,12 @@ function SortHeader({
   activeSort,
   dir,
   poster,
-  align = "left",
 }: {
   label: string;
   sortKey: SortKey;
   activeSort: SortKey;
   dir: "asc" | "desc";
   poster: string | null;
-  align?: "left" | "right";
 }) {
   const isActive = activeSort === sortKey;
   // Clicking the active column flips direction; a fresh column starts ascending.
@@ -530,13 +525,13 @@ function SortHeader({
   const arrow = isActive ? (dir === "asc" ? "↑" : "↓") : "↕";
 
   return (
-    <th className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : ""}`}>
+    <th className="px-3 py-2 font-medium text-center">
       <Link
         href={href}
         scroll={false}
         className={`group inline-flex items-center gap-1 ${
-          align === "right" ? "flex-row-reverse" : ""
-        } ${isActive ? "text-ink" : "hover:text-ink"}`}
+          isActive ? "text-ink" : "hover:text-ink"
+        }`}
       >
         {label}
         <span
