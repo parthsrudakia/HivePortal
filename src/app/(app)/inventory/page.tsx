@@ -143,8 +143,25 @@ type PageProps = {
   searchParams: Promise<{
     sort?: string;
     dir?: string;
+    poster?: string;
   }>;
 };
+
+// Build an /inventory URL preserving the current sort while toggling the
+// ad-poster filter. Keeps the URL clean when everything is at its default.
+function inventoryHref(
+  sortKey: SortKey,
+  sortDir: "asc" | "desc",
+  poster: string | null,
+): string {
+  const qs = new URLSearchParams();
+  if (!(sortKey === DEFAULT_SORT && sortDir === DEFAULT_DIR)) {
+    qs.set("sort", sortKey);
+    qs.set("dir", sortDir);
+  }
+  if (poster) qs.set("poster", poster);
+  return qs.toString() ? `/inventory?${qs.toString()}` : "/inventory";
+}
 
 export default async function InventoryPage({ searchParams }: PageProps) {
   await processExpiredTenancies();
@@ -152,6 +169,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const sortKey = isSortKey(params.sort) ? params.sort : DEFAULT_SORT;
   const sortDir = params.dir === "desc" ? "desc" : "asc";
+  const posterFilter = params.poster?.trim() || null;
 
   const supabase = await createClient();
   const today = todayStr();
@@ -262,7 +280,12 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     else adCountByPoster.set(key, { name: raw, count: 1 });
   }
 
-  const recipientAdCounts: { id: string; name: string; count: number }[] = [];
+  const recipientAdCounts: {
+    id: string;
+    name: string;
+    count: number;
+    keys: string[];
+  }[] = [];
   const usedKeys = new Set<string>();
   for (const rec of recipientData ?? []) {
     const label = rec.label?.trim() || null;
@@ -275,18 +298,29 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       count += adCountByPoster.get(k)?.count ?? 0;
       usedKeys.add(k);
     }
-    recipientAdCounts.push({ id: rec.id, name: label ?? email, count });
+    recipientAdCounts.push({ id: rec.id, name: label ?? email, count, keys });
   }
   // Anyone who posted an ad but isn't on the recipients list.
   for (const [key, { name, count }] of adCountByPoster) {
     if (usedKeys.has(key)) continue;
-    recipientAdCounts.push({ id: `poster:${key}`, name, count });
+    recipientAdCounts.push({ id: `poster:${key}`, name, count, keys: [key] });
   }
   recipientAdCounts.sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name),
   );
 
-  const filtered = rooms.slice();
+  // When a poster pill is selected, narrow the table to that person's ads.
+  const selectedPoster = posterFilter
+    ? recipientAdCounts.find((r) => r.id === posterFilter) ?? null
+    : null;
+  const posterKeys = selectedPoster ? new Set(selectedPoster.keys) : null;
+
+  const filtered = posterKeys
+    ? rooms.filter((r) => {
+        const key = r.ad_posted_by?.trim().toLowerCase();
+        return !!key && posterKeys.has(key);
+      })
+    : rooms.slice();
   filtered.sort((a, b) => {
     const base = compareRooms(a, b, sortKey);
     // Stable tiebreak on the date so equal sort keys keep a sensible order.
@@ -326,21 +360,47 @@ export default async function InventoryPage({ searchParams }: PageProps) {
 
       {recipientAdCounts.length > 0 && (
         <section className="mt-4 rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone/40">
-          <h2 className="text-[11px] uppercase tracking-wide text-muted">
-            Ads posted by user
-          </h2>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {recipientAdCounts.map((r) => (
-              <li
-                key={r.id}
-                className="inline-flex items-center gap-2 rounded-full border border-stone bg-cream/60 px-3 py-1 text-[12px] text-ink"
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[11px] uppercase tracking-wide text-muted">
+              Ads posted by user
+            </h2>
+            {selectedPoster && (
+              <Link
+                href={inventoryHref(sortKey, sortDir, null)}
+                scroll={false}
+                className="text-[11px] uppercase tracking-wide text-accent-text hover:text-accent-dark"
               >
-                <span className="font-medium">{r.name}</span>
-                <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">
-                  {r.count}
-                </span>
-              </li>
-            ))}
+                Clear filter
+              </Link>
+            )}
+          </div>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {recipientAdCounts.map((r) => {
+              const active = selectedPoster?.id === r.id;
+              return (
+                <li key={r.id}>
+                  <Link
+                    href={inventoryHref(
+                      sortKey,
+                      sortDir,
+                      active ? null : r.id,
+                    )}
+                    scroll={false}
+                    aria-pressed={active}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] transition ${
+                      active
+                        ? "border-accent bg-accent/15 text-ink"
+                        : "border-stone bg-cream/60 text-ink hover:border-accent"
+                    }`}
+                  >
+                    <span className="font-medium">{r.name}</span>
+                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">
+                      {r.count}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -351,6 +411,20 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         <p className="mt-10 rounded-xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
           No rooms to list right now. A room appears here when its status is
           <em> Available </em>or when an active tenancy is scheduled to end.
+        </p>
+      )}
+
+      {rooms.length > 0 && filtered.length === 0 && selectedPoster && (
+        <p className="mt-10 rounded-xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
+          No currently-listed rooms were posted by{" "}
+          <span className="font-medium text-ink">{selectedPoster.name}</span>.{" "}
+          <Link
+            href={inventoryHref(sortKey, sortDir, null)}
+            scroll={false}
+            className="text-accent-text underline hover:text-accent-dark"
+          >
+            Clear filter
+          </Link>
         </p>
       )}
 
@@ -366,12 +440,14 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   sortKey="unit"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                 />
                 <SortHeader
                   label="Neighborhood"
                   sortKey="neighborhood"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                 />
                 <th className="px-3 py-2 font-medium">Room</th>
                 <SortHeader
@@ -379,12 +455,14 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   sortKey="available"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                 />
                 <SortHeader
                   label="Rent"
                   sortKey="rent"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                   align="right"
                 />
                 <SortHeader
@@ -392,6 +470,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   sortKey="services"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                   align="right"
                 />
                 <SortHeader
@@ -399,6 +478,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   sortKey="total"
                   activeSort={sortKey}
                   dir={sortDir}
+                  poster={posterFilter}
                   align="right"
                 />
                 <th className="px-3 py-2 font-medium">Amenities</th>
@@ -432,25 +512,21 @@ function SortHeader({
   sortKey,
   activeSort,
   dir,
+  poster,
   align = "left",
 }: {
   label: string;
   sortKey: SortKey;
   activeSort: SortKey;
   dir: "asc" | "desc";
+  poster: string | null;
   align?: "left" | "right";
 }) {
   const isActive = activeSort === sortKey;
   // Clicking the active column flips direction; a fresh column starts ascending.
   const nextDir = isActive && dir === "asc" ? "desc" : "asc";
 
-  const qs = new URLSearchParams();
-  // Keep the URL clean when it lands on the default sort.
-  if (!(sortKey === DEFAULT_SORT && nextDir === DEFAULT_DIR)) {
-    qs.set("sort", sortKey);
-    qs.set("dir", nextDir);
-  }
-  const href = qs.toString() ? `/inventory?${qs.toString()}` : "/inventory";
+  const href = inventoryHref(sortKey, nextDir, poster);
   const arrow = isActive ? (dir === "asc" ? "↑" : "↓") : "↕";
 
   return (
