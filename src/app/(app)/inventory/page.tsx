@@ -15,6 +15,7 @@ import {
 import { InlineAmenitiesEdit } from "./amenities-edit";
 import { AddInventory, type AddableRoom } from "./add-inventory";
 import { DeleteListingButton } from "./delete-listing";
+import { NeighborhoodFilter } from "./filters";
 import {
   ACTION_BORDER,
   ACTION_LABELS,
@@ -122,8 +123,81 @@ function matchesFilter(r: Row, filter: FilterKey, today: string) {
   }
 }
 
+type SortKey =
+  | "unit"
+  | "neighborhood"
+  | "available"
+  | "rent"
+  | "services"
+  | "total";
+
+const DEFAULT_SORT: SortKey = "available";
+const DEFAULT_DIR: "asc" | "desc" = "asc";
+
+function isSortKey(v: string | undefined): v is SortKey {
+  return (
+    v === "unit" ||
+    v === "neighborhood" ||
+    v === "available" ||
+    v === "rent" ||
+    v === "services" ||
+    v === "total"
+  );
+}
+
+function unitTitleOf(r: Row): string {
+  const p = one(r.properties);
+  if (!p) return "";
+  return `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`;
+}
+
+// Numbers: nulls sort last (ascending). Dates: a null `available_from` means
+// "available now", so it sorts earliest. Strings: natural/numeric compare.
+function cmpNum(a: number | null, b: number | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a - b;
+}
+
+function cmpDate(a: string | null, b: string | null): number {
+  const av = a ?? "";
+  const bv = b ?? "";
+  return av < bv ? -1 : av > bv ? 1 : 0;
+}
+
+function cmpStr(a: string | null, b: string | null): number {
+  return (a ?? "").localeCompare(b ?? "", undefined, { numeric: true });
+}
+
+function compareRooms(a: Row, b: Row, sort: SortKey): number {
+  switch (sort) {
+    case "unit":
+      return cmpStr(unitTitleOf(a), unitTitleOf(b));
+    case "neighborhood":
+      return cmpStr(
+        one(a.properties)?.neighborhood ?? null,
+        one(b.properties)?.neighborhood ?? null,
+      );
+    case "rent":
+      return cmpNum(a.base_rent, b.base_rent);
+    case "services":
+      return cmpNum(a.bundle_fee, b.bundle_fee);
+    case "total":
+      return cmpNum(a.total_rent, b.total_rent);
+    case "available":
+    default:
+      return cmpDate(a.available_from, b.available_from);
+  }
+}
+
 type PageProps = {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{
+    filter?: string;
+    sort?: string;
+    dir?: string;
+    hood?: string;
+  }>;
 };
 
 export default async function InventoryPage({ searchParams }: PageProps) {
@@ -131,6 +205,9 @@ export default async function InventoryPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const activeFilter = isFilterKey(params.filter) ? params.filter : null;
+  const sortKey = isSortKey(params.sort) ? params.sort : DEFAULT_SORT;
+  const sortDir = params.dir === "desc" ? "desc" : "asc";
+  const hood = params.hood?.trim() || null;
 
   const supabase = await createClient();
   const today = todayStr();
@@ -226,9 +303,28 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     ) as Record<Action, number>,
   };
 
-  const filtered = activeFilter
+  // Neighborhood options come from the full inventory, so the dropdown stays
+  // stable regardless of the active filter.
+  const neighborhoods = Array.from(
+    new Set(
+      rooms
+        .map((r) => one(r.properties)?.neighborhood)
+        .filter((n): n is string => !!n),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
+  let filtered = activeFilter
     ? rooms.filter((r) => matchesFilter(r, activeFilter, today))
-    : rooms;
+    : rooms.slice();
+  if (hood) {
+    filtered = filtered.filter((r) => one(r.properties)?.neighborhood === hood);
+  }
+  filtered.sort((a, b) => {
+    const base = compareRooms(a, b, sortKey);
+    // Stable tiebreak on the date so equal sort keys keep a sensible order.
+    const cmp = base !== 0 ? base : cmpDate(a.available_from, b.available_from);
+    return sortDir === "desc" ? -cmp : cmp;
+  });
 
   return (
     <div className="mx-auto w-full max-w-7xl">
@@ -330,6 +426,16 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         })}
       </ul>
 
+      {neighborhoods.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <NeighborhoodFilter neighborhoods={neighborhoods} />
+          <p className="text-[12px] text-muted">
+            {filtered.length} of {rooms.length} rooms
+            {hood ? ` · ${hood}` : ""}
+          </p>
+        </div>
+      )}
+
       {error && <p className="mt-6 text-sm text-red-700">{error.message}</p>}
 
       {rooms.length === 0 && (
@@ -356,13 +462,58 @@ export default async function InventoryPage({ searchParams }: PageProps) {
               <tr className="divide-x divide-stone/40">
                 <th className="w-10" />
                 <th className="w-1.5" />
-                <th className="px-3 py-2 font-medium">Unit</th>
-                <th className="px-3 py-2 font-medium">Neighborhood</th>
+                <SortHeader
+                  label="Unit"
+                  sortKey="unit"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                />
+                <SortHeader
+                  label="Neighborhood"
+                  sortKey="neighborhood"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                />
                 <th className="px-3 py-2 font-medium">Room</th>
-                <th className="px-3 py-2 font-medium">Available</th>
-                <th className="px-3 py-2 text-right font-medium">Rent</th>
-                <th className="px-3 py-2 text-right font-medium">Services</th>
-                <th className="px-3 py-2 text-right font-medium">Total</th>
+                <SortHeader
+                  label="Available"
+                  sortKey="available"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                />
+                <SortHeader
+                  label="Rent"
+                  sortKey="rent"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                  align="right"
+                />
+                <SortHeader
+                  label="Services"
+                  sortKey="services"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                  align="right"
+                />
+                <SortHeader
+                  label="Total"
+                  sortKey="total"
+                  activeSort={sortKey}
+                  dir={sortDir}
+                  filter={activeFilter}
+                  hood={hood}
+                  align="right"
+                />
                 <th className="px-3 py-2 font-medium">Amenities</th>
                 <th className="px-3 py-2 font-medium">Photos</th>
                 <th className="px-3 py-2 font-medium">Tenant</th>
@@ -426,6 +577,58 @@ function KpiTile({
         {value}
       </p>
     </Link>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeSort,
+  dir,
+  filter,
+  hood,
+  align = "left",
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeSort: SortKey;
+  dir: "asc" | "desc";
+  filter: FilterKey | null;
+  hood: string | null;
+  align?: "left" | "right";
+}) {
+  const isActive = activeSort === sortKey;
+  // Clicking the active column flips direction; a fresh column starts ascending.
+  const nextDir = isActive && dir === "asc" ? "desc" : "asc";
+
+  const qs = new URLSearchParams();
+  if (filter) qs.set("filter", filter);
+  if (hood) qs.set("hood", hood);
+  // Keep the URL clean when it lands on the default sort.
+  if (!(sortKey === DEFAULT_SORT && nextDir === DEFAULT_DIR)) {
+    qs.set("sort", sortKey);
+    qs.set("dir", nextDir);
+  }
+  const href = qs.toString() ? `/inventory?${qs.toString()}` : "/inventory";
+  const arrow = isActive ? (dir === "asc" ? "↑" : "↓") : "↕";
+
+  return (
+    <th className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : ""}`}>
+      <Link
+        href={href}
+        scroll={false}
+        className={`group inline-flex items-center gap-1 ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${isActive ? "text-ink" : "hover:text-ink"}`}
+      >
+        {label}
+        <span
+          className={`text-[10px] ${isActive ? "text-accent-text" : "text-stone group-hover:text-muted"}`}
+        >
+          {arrow}
+        </span>
+      </Link>
+    </th>
   );
 }
 

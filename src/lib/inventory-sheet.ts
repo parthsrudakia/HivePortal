@@ -139,7 +139,8 @@ export async function buildInventorySheet(
   // Legend — explains the "Services" bundle for recipients of the shared sheet.
   ws.addRow({});
   const legend = ws.addRow({
-    cross_street: "Services = Wifi + Electricity + Gas + Cleaning Services",
+    cross_street:
+      "Services = Wifi + Electricity + Gas + Cleaning Services + Amenity Fees",
   });
   ws.mergeCells(`A${legend.number}:E${legend.number}`);
   legend.getCell("cross_street").font = {
