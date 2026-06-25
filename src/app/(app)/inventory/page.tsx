@@ -45,6 +45,7 @@ type PropertyRel = {
 
 type TenantRel = { id: string; full_name: string };
 type TenancyRel = {
+  id: string;
   status: "active" | "ended" | "upcoming";
   start_date: string;
   move_out_date: string | null;
@@ -221,7 +222,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
        properties(id, building_name, street_address, unit_number, neighborhood,
                   has_gym, has_elevator, has_parking, has_doorman, has_rooftop, has_lounge,
                   laundry_in_building, in_unit_laundry),
-       tenancies(status, start_date, move_out_date, tenants(id, full_name))`,
+       tenancies(id, status, start_date, move_out_date, tenants(id, full_name))`,
     )
     .or(
       `status.eq.available,and(status.eq.occupied,available_from.gte.${today})`,
@@ -522,7 +523,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                 <th className="px-3 py-2 font-medium">Ad</th>
                 <th className="px-3 py-2 font-medium">Ad Posted</th>
                 <th className="px-3 py-2 font-medium">Roommates</th>
-                <th className="px-3 py-2 font-medium">Add tenant</th>
                 <th className="px-3 py-2 text-right font-medium" />
               </tr>
             </thead>
@@ -666,7 +666,11 @@ function InventoryRow({
       } hover:bg-warm/30`}
     >
       <td className="px-2 py-2.5 text-center align-middle">
-        <DeleteListingButton roomId={room.id} label={unitTitle} />
+        <DeleteListingButton
+          roomId={room.id}
+          label={unitTitle}
+          tenancyId={activeOutgoing?.id ?? null}
+        />
       </td>
       <td className={`w-1.5 p-0 ${ACTION_BORDER[room.listing_action].replace("border-l-", "bg-")}`} />
       <td className="px-3 py-2.5">
@@ -762,25 +766,11 @@ function InventoryRow({
           <span className="text-muted">—</span>
         )}
       </td>
-      <td className="px-3 py-2.5">
-        <Link
-          href={`/tenants/new?room_id=${room.id}`}
-          className="inline-block whitespace-nowrap rounded-full bg-ink px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white hover:bg-accent-dark"
-        >
-          + Tenant
-        </Link>
-      </td>
       <td className="px-3 py-2.5 text-right">
         <div className="flex items-center justify-end gap-2">
           {room.marketing_description && (
             <CopyListing text={room.marketing_description} />
           )}
-          <Link
-            href={`/inventory/${room.id}`}
-            className="text-[11px] uppercase tracking-wide text-muted hover:text-accent-text"
-          >
-            Open →
-          </Link>
         </div>
       </td>
     </tr>

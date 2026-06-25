@@ -305,6 +305,41 @@ export async function restoreListing(
   return { ok: true };
 }
 
+/**
+ * Cancel a scheduled move-out: the outgoing tenant is staying. Clears the
+ * tenancy's move_out_date (keeps it active) and returns the room to occupied
+ * with no available_from, so the listing drops off Inventory. Mirror-image of
+ * endTenancy.
+ */
+export async function cancelMoveOut(
+  tenancyId: string,
+  roomId: string,
+): Promise<{ ok: true } | { error: string }> {
+  if (!tenancyId || !roomId) return { error: "Missing tenancy or room." };
+  const supabase = await createClient();
+
+  const { error: tenancyErr } = await supabase
+    .from("tenancies")
+    .update({ move_out_date: null, status: "active" })
+    .eq("id", tenancyId);
+  if (tenancyErr) return { error: tenancyErr.message };
+
+  const { error: roomErr } = await updateRoomsWithNotification(
+    supabase,
+    roomId,
+    {
+      status: "occupied",
+      available_from: null,
+      listing_action: "no_action",
+    },
+  );
+  if (roomErr) return { error: roomErr.message };
+
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/${roomId}`);
+  return { ok: true };
+}
+
 /** Set rooms.available_from. Pass null/empty to clear. */
 export async function setRoomAvailableFrom(
   roomId: string,
