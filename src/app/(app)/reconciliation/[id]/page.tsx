@@ -4,8 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/date";
 import { DeleteRunButton } from "./delete-run";
 import { postPayments, unpostPayments } from "../actions";
-import { RentReminderButton } from "../../tenants/rent-reminder-button";
-import { getReminderInfo } from "../../tenants/reminder-info";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +82,7 @@ export default async function ReconciliationRunPage({
 
   const supabase = await createClient();
 
-  const [{ data: run }, { data: matches }, reminderInfo] = await Promise.all([
+  const [{ data: run }, { data: matches }] = await Promise.all([
     supabase
       .from("reconciliation_runs")
       .select(
@@ -106,7 +104,6 @@ export default async function ReconciliationRunPage({
       .order("status", { ascending: true })
       .order("tenant_name", { ascending: true })
       .returns<Match[]>(),
-    getReminderInfo(supabase),
   ]);
 
   if (!run) notFound();
@@ -147,7 +144,7 @@ export default async function ReconciliationRunPage({
                 type="submit"
                 className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50"
               >
-                Unpost payments
+                Unpost from Ledger
               </button>
             </form>
           ) : (
@@ -157,19 +154,12 @@ export default async function ReconciliationRunPage({
                 type="submit"
                 className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-dark"
               >
-                Post payments
+                Post to Ledger
               </button>
             </form>
           )}
         </div>
       </header>
-
-      {run.notes && (
-        <section className="mt-6 rounded-2xl bg-cream/60 p-4 text-xs text-muted">
-          <p className="font-medium uppercase tracking-wide">Run diagnostics</p>
-          <p className="mt-1">{run.notes}</p>
-        </section>
-      )}
 
       <section
         className={`mt-6 rounded-2xl p-4 text-sm ${
@@ -180,26 +170,14 @@ export default async function ReconciliationRunPage({
       >
         {run.posted_at ? (
           <p>
-            <strong>Posted</strong> on {formatDate(run.posted_at)}. Each
-            matched tenancy has a corresponding row in the payments table.
-            Click <em>Unpost payments</em> above to remove them (you can
-            re-post afterward).
+            <strong>Posted</strong> on {formatDate(run.posted_at)}.
           </p>
         ) : (
           <p>
-            <strong>Preview</strong> — payments are <em>not</em> recorded
-            yet. Review the matches and unmatched deposits below, then click{" "}
-            <em>Post payments</em> to write a payment row for every match
-            with <code>$ &gt; 0</code>.
+            <strong>Preview</strong> — payments are <em>not</em> recorded yet.
           </p>
         )}
       </section>
-
-      <RentReminderButton
-        outstandingCount={reminderInfo.outstandingCount}
-        lastGeneralText={reminderInfo.lastGeneralText}
-        lastBalanceText={reminderInfo.lastBalanceText}
-      />
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard

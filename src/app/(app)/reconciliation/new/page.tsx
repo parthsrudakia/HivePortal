@@ -4,11 +4,9 @@ import { RunReconciliationForm } from "./upload-form";
 export const dynamic = "force-dynamic";
 
 export default function NewReconciliationPage() {
-  // Default to last month (most common use case for monthly reconciliation).
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
-  const defaultMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  // Default to the current month.
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   return (
     <div className="mx-auto w-full max-w-3xl">

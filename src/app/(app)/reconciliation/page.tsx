@@ -48,8 +48,7 @@ export default async function ReconciliationListPage() {
             <span className="font-display text-accent-text">Reconciliation</span>
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Monthly rent reconciliation. Upload a bank statement + optional other-payments
-            file, and HivePortal records each tenant&apos;s paid amount.
+            Monthly rent reconciliation.
           </p>
         </div>
         <Link
@@ -78,7 +77,7 @@ export default async function ReconciliationListPage() {
                 <th className="px-5 py-3 text-right font-medium">Expected</th>
                 <th className="px-5 py-3 text-right font-medium">Collected</th>
                 <th className="px-5 py-3 text-right font-medium">Match / Mismatch / Missing</th>
-                <th className="px-5 py-3 font-medium">Ran</th>
+                <th className="px-5 py-3 font-medium">Ran on</th>
                 <th />
               </tr>
             </thead>
@@ -102,9 +101,7 @@ export default async function ReconciliationListPage() {
                   <td className="px-5 py-4 text-xs text-muted">
                     {formatDate(r.created_at)}
                   </td>
-                  <td className="px-5 py-4 text-right text-xs uppercase tracking-wide text-muted">
-                    Open →
-                  </td>
+                  <td className="px-5 py-4 text-right text-xs uppercase tracking-wide text-muted" />
                 </RunRow>
               ))}
             </tbody>

@@ -52,7 +52,7 @@ export default async function AppLayout({
         : "";
 
   return (
-    <div className="flex min-h-full flex-col md:flex-row">
+    <div className="flex min-h-screen flex-col md:flex-row">
       {!displayName && <NamePrompt />}
       <MobileNav
         items={navItems}
