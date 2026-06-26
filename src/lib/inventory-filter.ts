@@ -3,9 +3,9 @@
  *
  * The two download routes (`/inventory/export-full`, `/inventory/export`) and
  * the table on `/inventory` all run rooms through {@link filterAndSortRooms}
- * with the same view state (poster filter, New-York filter, sort column +
- * direction), so a downloaded sheet matches exactly what the table shows at the
- * moment of download.
+ * with the same view state (poster filter, sort column + direction), so a
+ * downloaded sheet matches exactly what the table shows at the moment of
+ * download.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -19,8 +19,6 @@ export type SortKey =
   | "services"
   | "total";
 export type SortDir = "asc" | "desc";
-export type LocFilter = "ny" | "non" | null;
-
 export const DEFAULT_SORT: SortKey = "available";
 export const DEFAULT_DIR: SortDir = "asc";
 
@@ -38,7 +36,6 @@ export function isSortKey(v: string | undefined): v is SortKey {
 export type InventoryView = {
   sort: SortKey;
   dir: SortDir;
-  loc: LocFilter;
   /** Resolved set of lowercased ad-poster keys, or null for "no poster filter". */
   posterKeys: Set<string> | null;
 };
@@ -46,7 +43,6 @@ export type InventoryView = {
 export const DEFAULT_VIEW: InventoryView = {
   sort: DEFAULT_SORT,
   dir: DEFAULT_DIR,
-  loc: null,
   posterKeys: null,
 };
 
@@ -57,16 +53,13 @@ export const DEFAULT_VIEW: InventoryView = {
 export function parseInventoryParams(sp: URLSearchParams): {
   sort: SortKey;
   dir: SortDir;
-  loc: LocFilter;
   poster: string | null;
 } {
   const sortRaw = sp.get("sort") ?? undefined;
   const sort = isSortKey(sortRaw) ? sortRaw : DEFAULT_SORT;
   const dir: SortDir = sp.get("dir") === "desc" ? "desc" : "asc";
-  const locRaw = sp.get("loc");
-  const loc: LocFilter = locRaw === "ny" || locRaw === "non" ? locRaw : null;
   const poster = sp.get("poster")?.trim() || null;
-  return { sort, dir, loc, poster };
+  return { sort, dir, poster };
 }
 
 /**
@@ -127,7 +120,6 @@ function cmpStr(a: string | null, b: string | null): number {
 /** Minimal property shape the filter/sort needs (a superset is fine). */
 export type SortableProperty = {
   neighborhood: string | null;
-  is_new_york: boolean;
   building_name: string | null;
   street_address: string;
   unit_number: string;
@@ -171,23 +163,19 @@ function compareRooms(a: SortableRoom, b: SortableRoom, sort: SortKey): number {
 }
 
 /**
- * Apply the table's poster + New-York filters and sort to a list of rooms,
- * returning a new array. This is the single source of truth shared by the
- * inventory table and the sheet downloads.
+ * Apply the table's poster filter and sort to a list of rooms, returning a new
+ * array. This is the single source of truth shared by the inventory table and
+ * the sheet downloads.
  */
 export function filterAndSortRooms<T extends SortableRoom>(
   rooms: T[],
   view: InventoryView,
 ): T[] {
-  const { sort, dir, loc, posterKeys } = view;
+  const { sort, dir, posterKeys } = view;
   const filtered = rooms.filter((r) => {
     if (posterKeys) {
       const key = r.ad_posted_by?.trim().toLowerCase();
       if (!(key && posterKeys.has(key))) return false;
-    }
-    if (loc) {
-      const ny = one(r.properties)?.is_new_york ?? false;
-      if (loc === "ny" ? !ny : ny) return false;
     }
     return true;
   });

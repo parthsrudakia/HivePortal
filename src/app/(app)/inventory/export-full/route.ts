@@ -17,7 +17,6 @@ type PropertyRel = {
   street_address: string;
   unit_number: string;
   neighborhood: string | null;
-  is_new_york: boolean;
   has_gym: boolean;
   has_elevator: boolean;
   has_parking: boolean;
@@ -87,7 +86,7 @@ export async function GET(request: Request) {
   const today = todayISO();
 
   // Mirror the table's current filter/sort so the sheet matches what's on screen.
-  const { sort, dir, loc, poster } = parseInventoryParams(
+  const { sort, dir, poster } = parseInventoryParams(
     new URL(request.url).searchParams,
   );
   const posterKeys = await resolvePosterKeys(supabase, poster);
@@ -98,7 +97,7 @@ export async function GET(request: Request) {
       `id, room_number, status, available_from, base_rent, bundle_fee, total_rent,
        photos_url, has_ac, has_private_bathroom, listing_action, ad_url,
        ad_boosted, ad_posted_by,
-       properties(building_name, street_address, unit_number, neighborhood, is_new_york,
+       properties(building_name, street_address, unit_number, neighborhood,
                   has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
                   has_lounge, laundry_in_building, in_unit_laundry),
        tenancies(status, start_date, move_out_date, tenants(full_name))`,
@@ -109,7 +108,7 @@ export async function GET(request: Request) {
     .eq("pending_tenant", false)
     .returns<Row[]>();
 
-  const rooms = filterAndSortRooms(data ?? [], { sort, dir, loc, posterKeys });
+  const rooms = filterAndSortRooms(data ?? [], { sort, dir, posterKeys });
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Inventory");

@@ -12,14 +12,13 @@ export async function GET(request: Request) {
   const supabase = await createClient();
 
   // Mirror the table's current filter/sort so the sheet matches what's on screen.
-  const { sort, dir, loc, poster } = parseInventoryParams(
+  const { sort, dir, poster } = parseInventoryParams(
     new URL(request.url).searchParams,
   );
   const posterKeys = await resolvePosterKeys(supabase, poster);
   const { buffer, filename } = await buildInventorySheet(supabase, {
     sort,
     dir,
-    loc,
     posterKeys,
   });
 

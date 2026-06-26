@@ -14,16 +14,21 @@ import {
 } from "./inline-edit";
 import { InlineAmenitiesEdit } from "./amenities-edit";
 import { AddInventory, type AddableRoom } from "./add-inventory";
-import { LocationFilter } from "./filters";
 import { DeleteListingButton } from "./delete-listing";
-import { ACTION_BORDER, ACTION_TINT, type Action } from "./constants";
+import {
+  ACTION_BORDER,
+  ACTION_TINT,
+  ACTION_SWATCH,
+  ACTION_LABELS,
+  ACTION_ORDER,
+  type Action,
+} from "./constants";
 import {
   DEFAULT_SORT,
   DEFAULT_DIR,
   isSortKey,
   filterAndSortRooms,
   type SortKey,
-  type LocFilter,
 } from "@/lib/inventory-filter";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +39,6 @@ type PropertyRel = {
   street_address: string;
   unit_number: string;
   neighborhood: string | null;
-  is_new_york: boolean;
   has_gym: boolean;
   has_elevator: boolean;
   has_parking: boolean;
@@ -86,18 +90,15 @@ type PageProps = {
     sort?: string;
     dir?: string;
     poster?: string;
-    loc?: string;
   }>;
 };
 
-// Build an /inventory URL preserving the current sort + location filter while
-// toggling the ad-poster filter. Keeps the URL clean when everything is at its
-// default.
+// Build an /inventory URL preserving the current sort while toggling the
+// ad-poster filter. Keeps the URL clean when everything is at its default.
 function inventoryHref(
   sortKey: SortKey,
   sortDir: "asc" | "desc",
   poster: string | null,
-  loc: LocFilter,
 ): string {
   const qs = new URLSearchParams();
   if (!(sortKey === DEFAULT_SORT && sortDir === DEFAULT_DIR)) {
@@ -105,7 +106,6 @@ function inventoryHref(
     qs.set("dir", sortDir);
   }
   if (poster) qs.set("poster", poster);
-  if (loc) qs.set("loc", loc);
   return qs.toString() ? `/inventory?${qs.toString()}` : "/inventory";
 }
 
@@ -116,8 +116,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
   const sortKey = isSortKey(params.sort) ? params.sort : DEFAULT_SORT;
   const sortDir = params.dir === "desc" ? "desc" : "asc";
   const posterFilter = params.poster?.trim() || null;
-  const locFilter: LocFilter =
-    params.loc === "ny" || params.loc === "non" ? params.loc : null;
 
   const supabase = await createClient();
   const today = todayStr();
@@ -127,7 +125,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       `id, room_number, base_rent, bundle_fee, total_rent, available_from, status,
        marketing_description, photos_url, has_ac, has_private_bathroom,
        listing_action, ad_url, ad_boosted, ad_posted_by,
-       properties(id, building_name, street_address, unit_number, neighborhood, is_new_york,
+       properties(id, building_name, street_address, unit_number, neighborhood,
                   has_gym, has_elevator, has_parking, has_doorman, has_rooftop, has_lounge,
                   laundry_in_building, in_unit_laundry),
        tenancies(id, status, start_date, move_out_date, tenants(id, full_name))`,
@@ -266,7 +264,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
   const filtered = filterAndSortRooms(rooms, {
     sort: sortKey,
     dir: sortDir,
-    loc: locFilter,
     posterKeys,
   });
 
@@ -279,7 +276,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       qs.set("dir", sortDir);
     }
     if (posterFilter) qs.set("poster", posterFilter);
-    if (locFilter) qs.set("loc", locFilter);
     const s = qs.toString();
     return s ? `?${s}` : "";
   })();
@@ -314,8 +310,19 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone/40">
-        <LocationFilter />
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone/40">
+        <span className="text-[11px] uppercase tracking-wide text-muted">
+          Listing action
+        </span>
+        {ACTION_ORDER.map((a) => (
+          <span key={a} className="inline-flex items-center gap-1.5 text-xs text-ink">
+            <span
+              className={`h-3 w-3 shrink-0 rounded-sm ${ACTION_SWATCH[a]}`}
+              aria-hidden
+            />
+            {ACTION_LABELS[a]}
+          </span>
+        ))}
       </div>
 
       {recipientAdCounts.length > 0 && (
@@ -326,7 +333,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
             </h2>
             {selectedPoster && (
               <Link
-                href={inventoryHref(sortKey, sortDir, null, locFilter)}
+                href={inventoryHref(sortKey, sortDir, null)}
                 scroll={false}
                 className="text-[11px] uppercase tracking-wide text-accent-text hover:text-accent-dark"
               >
@@ -344,7 +351,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                       sortKey,
                       sortDir,
                       active ? null : r.id,
-                      locFilter,
                     )}
                     scroll={false}
                     aria-pressed={active}
@@ -380,7 +386,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           No currently-listed rooms were posted by{" "}
           <span className="font-medium text-ink">{selectedPoster.name}</span>.{" "}
           <Link
-            href={inventoryHref(sortKey, sortDir, null, locFilter)}
+            href={inventoryHref(sortKey, sortDir, null)}
             scroll={false}
             className="text-accent-text underline hover:text-accent-dark"
           >
@@ -402,7 +408,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <SortHeader
                   label="Neighborhood"
@@ -410,7 +415,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <th className="px-3 py-2 font-medium">Room</th>
                 <SortHeader
@@ -419,7 +423,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <SortHeader
                   label="Rent"
@@ -427,7 +430,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <SortHeader
                   label="Services"
@@ -435,7 +437,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <SortHeader
                   label="Total"
@@ -443,7 +444,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   activeSort={sortKey}
                   dir={sortDir}
                   poster={posterFilter}
-                  loc={locFilter}
                 />
                 <th className="px-3 py-2 font-medium">Amenities</th>
                 <th className="px-3 py-2 font-medium">Photos</th>
@@ -477,20 +477,18 @@ function SortHeader({
   activeSort,
   dir,
   poster,
-  loc,
 }: {
   label: string;
   sortKey: SortKey;
   activeSort: SortKey;
   dir: "asc" | "desc";
   poster: string | null;
-  loc: LocFilter;
 }) {
   const isActive = activeSort === sortKey;
   // Clicking the active column flips direction; a fresh column starts ascending.
   const nextDir = isActive && dir === "asc" ? "desc" : "asc";
 
-  const href = inventoryHref(sortKey, nextDir, poster, loc);
+  const href = inventoryHref(sortKey, nextDir, poster);
   const arrow = isActive ? (dir === "asc" ? "↑" : "↓") : "↕";
 
   return (

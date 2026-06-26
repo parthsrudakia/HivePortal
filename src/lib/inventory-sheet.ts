@@ -24,7 +24,6 @@ type PropertyRel = {
   building_name: string | null;
   street_address: string;
   unit_number: string;
-  is_new_york: boolean;
   has_gym: boolean;
   has_elevator: boolean;
   has_parking: boolean;
@@ -96,7 +95,7 @@ export async function buildInventorySheet(
       `id, status, available_from, base_rent, bundle_fee, total_rent,
        photos_url, has_ac, has_private_bathroom, ad_posted_by,
        properties(cross_street, neighborhood, bedrooms, bathrooms,
-                  building_name, street_address, unit_number, is_new_york,
+                  building_name, street_address, unit_number,
                   has_gym, has_elevator, has_parking, has_doorman, has_rooftop,
                   has_lounge, laundry_in_building, in_unit_laundry)`,
     )
