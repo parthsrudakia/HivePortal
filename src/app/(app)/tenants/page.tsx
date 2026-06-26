@@ -256,7 +256,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
             href="/tenants/history"
             className="text-xs uppercase tracking-wide text-ink hover:text-accent-text"
           >
-            Past tenants →
+            Past tenants
           </Link>
           <Link
             href="/properties/new"
@@ -371,7 +371,15 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         </p>
       )}
 
-      {visibleRows.length > 0 && <TenantGroups groups={groups} />}
+      {visibleRows.length > 0 && (
+        // key forces a remount when the filter toggles so the expand/collapse
+        // state re-initializes (collapsed by default, expanded when owing-only).
+        <TenantGroups
+          key={owingOnly ? "owing" : "all"}
+          groups={groups}
+          defaultExpanded={owingOnly}
+        />
+      )}
     </div>
   );
 }

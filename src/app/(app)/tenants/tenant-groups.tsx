@@ -47,9 +47,20 @@ function BalanceBadge({ n }: { n: number }) {
   );
 }
 
-export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
-  // Track collapsed groups by label; empty = everything expanded.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+export function TenantGroups({
+  groups,
+  defaultExpanded = false,
+}: {
+  groups: DisplayGroup[];
+  defaultExpanded?: boolean;
+}) {
+  // Track collapsed groups by label; empty = everything expanded. Start with
+  // every property collapsed each time the page opens — unless defaultExpanded
+  // (e.g. the "Balance due only" filter is active), where we expand all so the
+  // owing tenants are visible immediately.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() =>
+    defaultExpanded ? new Set() : new Set(groups.map((g) => g.label)),
+  );
 
   const collapseAll = () => setCollapsed(new Set(groups.map((g) => g.label)));
   const expandAll = () => setCollapsed(new Set());
@@ -92,7 +103,7 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
             </tr>
           </thead>
           <tbody>
-            {groups.map((g) => {
+            {groups.map((g, i) => {
               const isCollapsed = collapsed.has(g.label);
               return (
                 <Fragment key={g.label}>
@@ -125,6 +136,9 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
                             <polyline points="6 9 12 15 18 9" />
                           </svg>
                         </button>
+                        <span className="text-xs font-semibold tabular-nums text-muted">
+                          {i + 1}.
+                        </span>
                         {g.propertyId ? (
                           <Link
                             href={`/properties/${g.propertyId}`}
@@ -176,7 +190,7 @@ export function TenantGroups({ groups }: { groups: DisplayGroup[] }) {
                             )}
                             {r.move_out_date && (
                               <p className="mt-1 text-sm text-accent-text">
-                                Ending {formatDate(r.move_out_date)}
+                                Moving out {formatDate(r.move_out_date)}
                               </p>
                             )}
                           </td>
