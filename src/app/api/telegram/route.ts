@@ -35,7 +35,8 @@ Style:
 - Format money as $1,234.
 - Dates as MM/DD/YY.
 - When you take a destructive action (record_payment, end_tenancy,
-  update_room_rent, set_listing_action, set_room_status, log_cleaning),
+  update_room_rent, set_listing_action, set_room_status, log_cleaning,
+  add_tenant),
   confirm the action in your reply ("Recorded $2,000 payment for John on 5/13/26.").
 - If a user asks for something that requires destructive action but is ambiguous,
   briefly summarize what you're about to do and ask for confirmation before
@@ -66,7 +67,26 @@ Agreements:
   unbranded). Not New York → with letterhead, sent from the Outlook work account.
 - After it succeeds, confirm to the operator that the agreement was sent, to whom,
   and from which mailbox (Gmail vs Outlook). If the tool returns an error (e.g. a
-  mailbox isn't configured or lacks send permission), relay it plainly.`;
+  mailbox isn't configured or lacks send permission), relay it plainly.
+
+Adding tenants:
+- add_tenant creates the tenant AND places them in a room (an active tenancy).
+  Use it when the operator asks to add / onboard a tenant — often right after an
+  agreement, by re-sending the same details.
+- Required fields: full name, email, phone, monthly rent, lease start date, lease
+  end date, and which room. Ask for any that are missing — don't guess.
+- You must resolve the room yourself. If the operator named the unit/room, call
+  list_properties to find the unit by address, then get_property to see its rooms
+  and pick the vacant one; if more than one room could match, ask which one.
+- If the message does NOT specify a unit + room, call list_inventory to pull the
+  inventory tab (the available / opening-soon rooms) and ask the operator which
+  room to place the tenant in. Show the options (unit, room, rent) — never guess
+  a room.
+- This writes to the database. Read the details back — name, email, phone, room,
+  rent, lease start/end — and get an explicit confirmation before calling
+  add_tenant. After it succeeds, confirm the tenant was added and to which room.
+- add_tenant does NOT send an agreement, and send_agreement does NOT add a
+  tenant — they're separate steps.`;
 
 type ConvoMessage = Anthropic.Beta.BetaMessageParam;
 

@@ -508,6 +508,118 @@ export async function setRoomStatus(args: {
   return { ok: true };
 }
 
+// Create a tenant and place them in a room (an active tenancy) in one shot —
+// the Telegram counterpart of the /tenants/new form. Mirrors createTenant():
+// inserts the tenant, opens the tenancy, then flips the room to occupied. The
+// tenant insert is rolled back if the tenancy fails so we never leave an
+// orphaned, room-less tenant behind.
+export async function addTenant(args: {
+  full_name: string;
+  email: string;
+  phone: string;
+  room_id: string;
+  monthly_rent: number;
+  start_date: string;
+  lease_end_date: string;
+  first_month_rent?: number;
+  pays_as?: string;
+  notes?: string;
+}) {
+  const supabase = admin();
+
+  const full_name = args.full_name.trim();
+  const email = args.email.trim();
+  const phone = args.phone.trim();
+  if (!full_name) throw new Error("Tenant name is required.");
+  if (!email) throw new Error("Tenant email is required.");
+  if (!phone) throw new Error("Tenant phone is required.");
+  if (!args.room_id) throw new Error("A room must be chosen for the tenant.");
+  if (!(args.monthly_rent > 0)) throw new Error("Monthly rent must be greater than 0.");
+  if (!args.start_date) throw new Error("Lease start date is required.");
+  if (!args.lease_end_date) throw new Error("Lease end date is required.");
+  if (args.lease_end_date < args.start_date) {
+    throw new Error("Lease end date cannot be before the start date.");
+  }
+
+  // Guard against double-booking: refuse if the room already has an active
+  // tenancy. Also gives us a friendly room label for the confirmation.
+  const { data: room, error: roomErr } = await supabase
+    .from("rooms")
+    .select(
+      `id, room_number, status,
+       properties(building_name, street_address, unit_number),
+       tenancies!left(id, status, tenants(full_name))`,
+    )
+    .eq("id", args.room_id)
+    .maybeSingle();
+  if (roomErr) throw new Error(roomErr.message);
+  if (!room) throw new Error("Room not found.");
+  const occupant = (room.tenancies ?? []).find(
+    (t: { status: string }) => t.status === "active",
+  );
+  if (occupant) {
+    const who = one(occupant.tenants)?.full_name ?? "another tenant";
+    throw new Error(
+      `That room already has an active tenancy (${who}). End it first, or pick a different room.`,
+    );
+  }
+  const property = one(room.properties);
+  const roomLabel = `${property ? propertyLabel(property) : "room"} room ${room.room_number}`;
+
+  // 1. Insert the tenant record.
+  const { data: tenant, error: tErr } = await supabase
+    .from("tenants")
+    .insert({
+      full_name,
+      email,
+      phone,
+      pays_as: args.pays_as?.trim() || null,
+      notes: args.notes?.trim() || null,
+    })
+    .select("id")
+    .single();
+  if (tErr) throw new Error(tErr.message);
+
+  // 2. Open the tenancy. Roll the tenant back if this fails so we don't leave
+  //    an orphaned contact with no room.
+  const { data: tenancy, error: leErr } = await supabase
+    .from("tenancies")
+    .insert({
+      room_id: args.room_id,
+      tenant_id: tenant.id,
+      start_date: args.start_date,
+      lease_end_date: args.lease_end_date,
+      monthly_rent: args.monthly_rent,
+      // Security deposit is intentionally never recorded here, even if the
+      // operator's message includes one — left null on the tenancy.
+      security_deposit: null,
+      first_month_rent: args.first_month_rent ?? null,
+      status: "active",
+    })
+    .select("id")
+    .single();
+  if (leErr) {
+    await supabase.from("tenants").delete().eq("id", tenant.id);
+    throw new Error(leErr.message);
+  }
+
+  // 3. Mark the room occupied and clear any "pending tenant" listing flag.
+  await updateRoomsWithNotification(supabase, args.room_id, {
+    status: "occupied",
+    pending_tenant: false,
+  });
+
+  return {
+    ok: true,
+    tenant_id: tenant.id,
+    tenancy_id: tenancy.id,
+    full_name,
+    room: roomLabel,
+    monthly_rent: args.monthly_rent,
+    lease: { start: args.start_date, end: args.lease_end_date },
+  };
+}
+
 // Generate a sublease agreement PDF and send it from the right mailbox. New York
 // → no letterhead, sent from personal Gmail (From "Vineet", unbranded). Otherwise
 // → with letterhead, sent from the M365 (Outlook) work account. Sends straight
@@ -809,6 +921,49 @@ export const tools = [
         .describe('Agreement date "YYYY-MM-DD"; defaults to today'),
     }),
     run: async (args) => JSON.stringify(await sendAgreement(args)),
+  }),
+  betaZodTool({
+    name: "add_tenant",
+    description:
+      "Add a new tenant and place them in a room (creates the tenant record AND " +
+      "an active tenancy). Use this when the operator asks to add / create / " +
+      "onboard a tenant — typically right after sending their agreement, by " +
+      "re-sending the agreement details. Required: full name, email, phone, " +
+      "monthly rent, lease start date, lease end date, and the room to place " +
+      "them in. You must resolve room_id first. If the operator named the unit/" +
+      "room, call list_properties to find the unit by address, then get_property " +
+      "to list its rooms and pick the vacant one (ask which room if ambiguous). " +
+      "If no unit + room is given, call list_inventory and ask the operator which " +
+      "room to use — never guess. ALWAYS confirm the " +
+      "full details — name, email, phone, room, rent, and lease dates — with the " +
+      "operator before calling this. Ask for any missing required field; do not " +
+      "guess. Do NOT collect or record a security deposit here, even if the " +
+      "message includes one. This does not send an agreement (use send_agreement " +
+      "for that).",
+    inputSchema: z.object({
+      full_name: z.string().describe("Tenant's full name"),
+      email: z.string().describe("Tenant email address"),
+      phone: z.string().describe("Tenant phone number"),
+      room_id: z
+        .string()
+        .describe(
+          "UUID of the room to place the tenant in. Resolve via list_properties → get_property.",
+        ),
+      monthly_rent: z.number().positive().describe("Monthly rent amount"),
+      start_date: z.string().describe('Lease start date "YYYY-MM-DD"'),
+      lease_end_date: z.string().describe('Lease end date "YYYY-MM-DD"'),
+      first_month_rent: z
+        .number()
+        .nonnegative()
+        .optional()
+        .describe("Prorated first-month rent, if different from monthly rent"),
+      pays_as: z
+        .string()
+        .optional()
+        .describe("Name the tenant's payments arrive under, if different"),
+      notes: z.string().optional().describe("Free-form notes about the tenant"),
+    }),
+    run: async (args) => JSON.stringify(await addTenant(args)),
   }),
   betaZodTool({
     name: "share_inventory_sheet",
