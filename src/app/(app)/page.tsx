@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
-import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
+import { todayISO } from "@/lib/cleaning";
+import { EditableDate } from "./cleaning/editable-date";
 import { formatDate, currentRentCycle } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
@@ -63,7 +64,7 @@ export default async function Dashboard() {
       ),
     supabase
       .from("cleaning_records")
-      .select("property_id, cleaning_date, kind")
+      .select("id, property_id, cleaning_date, kind")
       .order("cleaning_date", { ascending: false }),
     supabase
       .from("tenancies")
@@ -94,11 +95,15 @@ export default async function Dashboard() {
     adPostersByRoom.set(a.room_id, list);
   }
 
-  // Last past cleaning per property (skip future-dated move-out rows).
+  // Last past cleaning + soonest upcoming (editable) per property. Cleanings are
+  // ordered newest-first, so the first past row per unit is the most recent,
+  // and the last future row iterated is the soonest upcoming.
   const lastByProperty = new Map<string, string>();
+  const nextByProperty = new Map<string, { id: string; date: string }>();
   for (const c of cleanings.data ?? []) {
-    if (c.cleaning_date > today) continue;
-    if (!lastByProperty.has(c.property_id)) {
+    if (c.cleaning_date >= today) {
+      nextByProperty.set(c.property_id, { id: c.id, date: c.cleaning_date });
+    } else if (!lastByProperty.has(c.property_id)) {
       lastByProperty.set(c.property_id, c.cleaning_date);
     }
   }
@@ -107,30 +112,29 @@ export default async function Dashboard() {
     property_id: string;
     label: string;
     last: string | null;
-    next: string | null;
+    next: { id: string; date: string } | null;
     daysUntilNext: number | null; // days between today and the next cleaning
   };
   const todayMs = new Date(today + "T00:00:00").getTime();
   const cleaningWorklist: CleaningEntry[] = (properties.data ?? []).map((p) => {
-    const last = lastByProperty.get(p.id) ?? null;
-    const s = cleaningScheduleFor(last, today);
-    const daysUntilNext = s.nextDue
-      ? Math.round((new Date(s.nextDue + "T00:00:00").getTime() - todayMs) / 86400000)
+    const next = nextByProperty.get(p.id) ?? null;
+    const daysUntilNext = next
+      ? Math.round((new Date(next.date + "T00:00:00").getTime() - todayMs) / 86400000)
       : null;
     return {
       property_id: p.id,
       label: unitLabel(p),
-      last,
-      next: s.nextDue,
+      last: lastByProperty.get(p.id) ?? null,
+      next,
       daysUntilNext,
     };
   });
-  // Soonest next cleaning first; never-cleaned units (no next date) last.
+  // Unscheduled first, then soonest upcoming; alphabetical within ties.
   cleaningWorklist.sort((a, b) => {
-    if (a.next === b.next) return 0;
-    if (!a.next) return 1;
-    if (!b.next) return -1;
-    return a.next < b.next ? -1 : 1;
+    const ad = a.next?.date ?? "0000";
+    const bd = b.next?.date ?? "0000";
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return a.label.localeCompare(b.label, undefined, { numeric: true });
   });
 
   // Group all payments by tenancy for the running ledger, and tally this
@@ -472,7 +476,8 @@ export default async function Dashboard() {
                 </thead>
                 <tbody className="text-center">
                   {cleaningWorklist.slice(0, 12).map((c) => {
-                    const overdue = c.next !== null && c.next < today;
+                    const overdue =
+                      c.next !== null && c.next.date < today;
                     return (
                       <tr
                         key={c.property_id}
@@ -489,8 +494,13 @@ export default async function Dashboard() {
                         <td className="px-3 py-2 text-ink">
                           {c.last ? formatDate(c.last) : <span className="text-muted">—</span>}
                         </td>
-                        <td className={`px-3 py-2 ${overdue ? "text-red-700" : "text-ink"}`}>
-                          {c.next ? formatDate(c.next) : <span className="text-muted">—</span>}
+                        <td className="px-3 py-2">
+                          <EditableDate
+                            propertyId={c.property_id}
+                            recordId={c.next?.id ?? null}
+                            date={c.next?.date ?? null}
+                            assignedTo={null}
+                          />
                         </td>
                         <td className={`px-3 py-2 tabular-nums ${overdue ? "text-red-700" : "text-ink"}`}>
                           {c.daysUntilNext === null ? (
