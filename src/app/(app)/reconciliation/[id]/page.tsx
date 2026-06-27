@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isMaster } from "@/lib/access";
 import { formatDate } from "@/lib/date";
 import { DeleteRunButton } from "./delete-run";
+import { AssignDepositForm, type AssignTenantOption } from "./assign-deposit-form";
+import { one } from "@/lib/relations";
 import { postPayments, unpostPayments } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +120,51 @@ export default async function ReconciliationRunPage({
   const filtered = activeFilter
     ? (matches ?? []).filter((m) => m.status === activeFilter)
     : matches ?? [];
+
+  // Active tenancies to choose from when assigning an unmatched deposit.
+  const hasUnmatched =
+    !!run.unmatched_deposits && run.unmatched_deposits.length > 0;
+  let assignTenants: AssignTenantOption[] = [];
+  if (hasUnmatched) {
+    type PropRel = {
+      building_name: string | null;
+      street_address: string;
+      unit_number: string;
+    };
+    type Row = {
+      id: string;
+      tenants: { full_name: string } | { full_name: string }[] | null;
+      rooms:
+        | { room_number: string | null; properties: PropRel | PropRel[] | null }
+        | {
+            room_number: string | null;
+            properties: PropRel | PropRel[] | null;
+          }[]
+        | null;
+    };
+    const { data: ten } = await supabase
+      .from("tenancies")
+      .select(
+        `id, tenants(full_name),
+         rooms(room_number, properties(building_name, street_address, unit_number))`,
+      )
+      .eq("status", "active")
+      .returns<Row[]>();
+    assignTenants = (ten ?? [])
+      .map((t) => {
+        const tenant = one(t.tenants);
+        const room = one(t.rooms);
+        const property = one(room?.properties ?? null);
+        const unit = property
+          ? `${property.building_name?.trim() || property.street_address} Apt ${property.unit_number}`
+          : "";
+        const parts = [tenant?.full_name ?? "—", unit, room?.room_number ?? ""]
+          .filter(Boolean)
+          .join(" · ");
+        return { tenancyId: t.id, label: parts };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -315,25 +362,21 @@ export default async function ReconciliationRunPage({
           </h2>
           <p className="mt-1 text-xs text-muted">
             Payments in the bank statement / other-payments file that didn&apos;t
-            match any tenant&apos;s <code>pays as</code>. Set the <code>pays as</code>{" "}
-            field on the tenant or update their name to match the deposit, then re-run.
+            match any tenant&apos;s <code>pays as</code>. Assign one to a tenant and
+            we&apos;ll save the bank&apos;s payer name as their <code>pays as</code>{" "}
+            alias — crediting it now and matching it automatically next time.
           </p>
           <ul className="mt-4 flex flex-col gap-1.5">
             {run.unmatched_deposits.map((d, i) => (
-              <li
+              <AssignDepositForm
                 key={i}
-                className="flex items-center justify-between gap-3 rounded-lg bg-cream/60 px-3 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-ink">{d.raw ?? d.description}</p>
-                  {d.date && (
-                    <p className="text-xs text-muted">{formatDate(d.date)}</p>
-                  )}
-                </div>
-                <span className="shrink-0 font-medium text-ink tabular-nums">
-                  {fmtMoney(d.amount)}
-                </span>
-              </li>
+                runId={run.id}
+                payerKey={d.description}
+                label={d.raw ?? d.description}
+                amount={d.amount}
+                date={d.date ?? null}
+                tenants={assignTenants}
+              />
             ))}
           </ul>
         </section>

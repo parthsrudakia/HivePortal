@@ -47,7 +47,7 @@ function toIsoDate(v: unknown): string | null {
   if (!s) return null;
   const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
   if (m) {
-    let [, mm, dd, yy] = m;
+    const [, mm, dd, yy] = m;
     let year = parseInt(yy, 10);
     if (year < 100) year += 2000;
     return `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
@@ -73,6 +73,21 @@ function bankPayerKey(raw: string): string | null {
   s = s.split(/Ref#/i)[0];
   s = s.split(/;/)[0];
   return normalizeName(s);
+}
+
+/** The payer's name in its ORIGINAL case (for display / storing as pays_as),
+ *  stripped of the Zelle prefix and trailing "for …"/Conf#/Ref# suffixes.
+ *  Falls back to the trimmed raw for non-Zelle ("other") rows. */
+export function bankPayerNameDisplay(raw: string): string {
+  let s = raw;
+  if (ZELLE_FROM_RE.test(raw)) {
+    s = raw.replace(ZELLE_FROM_RE, "");
+    s = s.split(/ for /i)[0];
+    s = s.split(/Conf#/i)[0];
+    s = s.split(/Ref#/i)[0];
+    s = s.split(/;/)[0];
+  }
+  return s.trim().replace(/\s+/g, " ");
 }
 
 /** Pull a Zelle Conf# (or Ref#) out of the description. Used as the
