@@ -23,6 +23,39 @@ export function todayISO(): string {
 }
 
 /**
+ * The rent billing cycle that contains today, as ISO "YYYY-MM-DD" bounds.
+ *
+ * Tenants pay from the 27th, so a month's rent is collected from the 27th of
+ * the prior month through the 26th of that month. This returns the window for
+ * the cycle we're currently in: on/after the 27th we're in the cycle that ends
+ * the 26th of next month; before the 27th, the one that ends the 26th of this
+ * month. Used for "expected / collected this month" on the Rent Tracker.
+ */
+export function currentRentCycle(): { start: string; end: string } {
+  const [y, m, d] = todayISO().split("-").map(Number); // m is 1-based
+  // Base month = the month whose 27th opened the current cycle.
+  const baseMonth0 = (d < 27 ? m - 1 : m) - 1; // 0-based month index
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  return {
+    start: iso(new Date(Date.UTC(y, baseMonth0, 27))),
+    end: iso(new Date(Date.UTC(y, baseMonth0 + 1, 26))),
+  };
+}
+
+/**
+ * The rent cycle for a given "YYYY-MM" rent month: the 27th of the previous
+ * month through the 26th of that month (e.g. "2026-07" → Jun 27 – Jul 26).
+ */
+export function rentCycleForMonth(yyyymm: string): { start: string; end: string } {
+  const [y, m] = yyyymm.split("-").map(Number); // m is 1-based
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  return {
+    start: iso(new Date(Date.UTC(y, m - 2, 27))), // 27th of the prior month
+    end: iso(new Date(Date.UTC(y, m - 1, 26))), // 26th of this month
+  };
+}
+
+/**
  * Display format for all dates in the app: MM/DD/YY.
  * Input is an ISO date string from Postgres ("YYYY-MM-DD") or a timestamptz.
  * Returns "—" for null/empty input.

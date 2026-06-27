@@ -11,7 +11,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { updateRoomsWithNotification } from "@/lib/notifications";
-import { todayISO } from "@/lib/date";
+import { todayISO, currentRentCycle, rentCycleForMonth } from "@/lib/date";
 import { generateAgreementPdf } from "@/lib/agreements";
 import { sendGmailMessage } from "@/lib/google-mail";
 import { sendOutlookMessage } from "@/lib/graph-mail";
@@ -59,15 +59,6 @@ function admin() {
   });
 }
 
-function monthBounds(yyyymm: string): { start: string; end: string } {
-  const [y, m] = yyyymm.slice(0, 7).split("-").map(Number);
-  const start = new Date(Date.UTC(y, m - 1, 1));
-  const end = new Date(Date.UTC(y, m, 0));
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  };
-}
 
 function one<T>(rel: T | T[] | null | undefined): T | null {
   if (!rel) return null;
@@ -243,8 +234,12 @@ export async function listActiveTenants(args: {
   unpaid_only?: boolean;
 }) {
   const supabase = admin();
-  const yyyymm = args.month ?? todayISO().slice(0, 7);
-  const { start, end } = monthBounds(yyyymm);
+  // Rent is collected on a 27th→26th cycle. With an explicit month, use that
+  // month's cycle; otherwise the cycle containing today (rolls on the 27th).
+  const { start, end } = args.month
+    ? rentCycleForMonth(args.month)
+    : currentRentCycle();
+  const yyyymm = end.slice(0, 7); // rent month (the cycle's 26th)
 
   const { data, error } = await supabase
     .from("tenancies")
@@ -924,22 +919,25 @@ export const tools = [
   betaZodTool({
     name: "list_active_tenants",
     description:
-      "Active tenants with monthly rent, paid-this-month amount (by payment " +
-      "transaction date), and balance for a given month. Defaults to current " +
-      "month. Pass only_overdue: true to filter to balance_due > 0. Pass " +
-      "unpaid_only: true to list tenants who have made NO rent payment dated in " +
-      "the month (paid_this_month = 0) — i.e. who hasn't paid anything this " +
-      "month, regardless of whether they're paid ahead.",
+      "Active tenants with monthly rent, paid-this-cycle amount (by payment " +
+      "transaction date), and balance. Rent is collected on a 27th→26th cycle " +
+      "(tenants pay from the 27th), so 'this month' = the 27th of the prior " +
+      "month through the 26th. Defaults to the current cycle. Pass only_overdue: " +
+      "true to filter to balance_due > 0. Pass unpaid_only: true to list tenants " +
+      "who have made NO rent payment dated in the cycle (paid = 0) — i.e. who " +
+      "hasn't paid anything this month, regardless of whether they're paid ahead.",
     inputSchema: z.object({
       month: z
         .string()
         .optional()
-        .describe('Month as "YYYY-MM"; defaults to the current month'),
+        .describe(
+          'Rent month as "YYYY-MM" (its 27th→26th cycle); defaults to the current cycle',
+        ),
       only_overdue: z.boolean().optional(),
       unpaid_only: z
         .boolean()
         .optional()
-        .describe("Only tenants with $0 paid this month (by transaction date)."),
+        .describe("Only tenants with $0 paid this cycle (by transaction date)."),
     }),
     run: async (args) => JSON.stringify(await listActiveTenants(args)),
   }),

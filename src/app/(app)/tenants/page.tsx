@@ -13,7 +13,7 @@ import {
 } from "./tenant-groups";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
-import { todayISO } from "@/lib/date";
+import { todayISO, currentRentCycle } from "@/lib/date";
 import { isMaster } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
@@ -59,20 +59,8 @@ function fmtMoney(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-function startOfMonth() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-}
-
-function endOfMonth() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
-    .toISOString()
-    .slice(0, 10);
-}
-
 /**
- * What's owed for a single tenancy in the given calendar month.
+ * What's owed for a single tenancy in the given rent cycle.
  *  • Tenancy starts after this month → 0 (shouldn't happen here since we
  *    only fetch active tenancies, but defensive).
  *  • Starting month AND tenancy has first_month_rent set → use that.
@@ -110,8 +98,9 @@ export default async function TenantsPage({ searchParams }: PageProps) {
   // Only admins see the aggregate collection totals and per-tenant "paid"
   // amounts. Everyone else still sees each tenant's rent and pending balance.
   const admin = isMaster(user?.email);
-  const monthStart = startOfMonth();
-  const monthEnd = endOfMonth();
+  // Rent is collected on a 27th→26th cycle (tenants pay from the 27th), so
+  // "this month" runs from the 27th of the prior month to the 26th.
+  const { start: monthStart, end: monthEnd } = currentRentCycle();
 
   const { data, error } = await supabase
     .from("tenancies")

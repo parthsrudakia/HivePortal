@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, todayISO } from "@/lib/date";
+import { formatDate, todayISO, currentRentCycle } from "@/lib/date";
 import { one } from "@/lib/relations";
 import { RunRow } from "./run-row";
 import { BulkPaymentForm, type BulkTenant } from "./bulk-payment-form";
@@ -50,8 +50,8 @@ export default async function ReconciliationListPage() {
   const runs = data ?? [];
 
   // Active tenancies for the bulk "Record payments" form, with how much rent
-  // they've already paid this month (by payment transaction date).
-  const ym = todayISO().slice(0, 7);
+  // they've already paid this cycle (27th → 26th, by transaction date).
+  const cycle = currentRentCycle();
   type PropRel = {
     building_name: string | null;
     street_address: string;
@@ -87,7 +87,12 @@ export default async function ReconciliationListPage() {
         ? `${property.building_name?.trim() || property.street_address} Apt ${property.unit_number}`
         : "—";
       const paid = (t.payments ?? [])
-        .filter((p) => p.payment_type === "rent" && p.paid_on.slice(0, 7) === ym)
+        .filter(
+          (p) =>
+            p.payment_type === "rent" &&
+            p.paid_on >= cycle.start &&
+            p.paid_on <= cycle.end,
+        )
         .reduce((s, p) => s + Number(p.amount), 0);
       return {
         tenancy_id: t.id,

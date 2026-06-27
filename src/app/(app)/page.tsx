@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
-import { formatDate } from "@/lib/date";
+import { formatDate, currentRentCycle } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { isMaster } from "@/lib/access";
@@ -25,15 +25,6 @@ function fmtMoney(n: number) {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
-function monthBounds(monthIso: string): { start: string; end: string } {
-  const [y, m] = monthIso.split("-").map(Number);
-  const start = new Date(Date.UTC(y, m - 1, 1));
-  const end = new Date(Date.UTC(y, m, 0));
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  };
-}
 
 export default async function Dashboard() {
   const supabase = await createClient();
@@ -44,8 +35,9 @@ export default async function Dashboard() {
   // (pending balances) stay visible to everyone.
   const admin = isMaster(user?.email);
   const today = todayISO();
-  const thisMonth = today.slice(0, 7);
-  const tm = monthBounds(thisMonth);
+  // "Collected this month" follows the rent cycle (27th → 26th), since tenants
+  // pay from the 27th.
+  const tm = currentRentCycle();
 
   const [
     propertyCountRes,
