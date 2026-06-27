@@ -14,6 +14,7 @@ import {
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
+import { isMaster } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,12 @@ export default async function TenantsPage({ searchParams }: PageProps) {
   await processExpiredTenancies();
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Only the admin/master operator sees dollar figures (portfolio totals and
+  // per-tenant balances). Everyone else sees paid/balance/credit status only.
+  const admin = isMaster(user?.email);
   const monthStart = startOfMonth();
   const monthEnd = endOfMonth();
 
@@ -277,7 +284,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      {rows.length > 0 && (
+      {admin && rows.length > 0 && (
         <section className="mt-6 grid items-start gap-4 sm:grid-cols-3">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
             <p className="flex flex-wrap items-baseline gap-x-2">
@@ -323,7 +330,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
         </section>
       )}
 
-      {rows.length > 0 && (() => {
+      {admin && rows.length > 0 && (() => {
         const pct =
           expectedTotal > 0
             ? Math.min(100, Math.round((paidTotal / expectedTotal) * 100))
@@ -392,6 +399,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
           key={owingOnly ? "owing" : "all"}
           groups={groups}
           defaultExpanded={owingOnly}
+          admin={admin}
         />
       )}
     </div>

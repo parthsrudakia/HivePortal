@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { formatDate } from "@/lib/date";
+import { isMaster } from "@/lib/access";
 import { SearchInput } from "@/components/search-input";
 import { processExpiredTenancies } from "../actions";
 
@@ -72,6 +73,10 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
   const query = (q ?? "").trim().toLowerCase();
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const admin = isMaster(user?.email); // gate the "Total paid" $ column
   const { data, error } = await supabase
     .from("tenancies")
     .select(
@@ -172,7 +177,9 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
                 <th className="px-3 py-2 font-medium">Move-out</th>
                 <th className="px-3 py-2 font-medium">Stay</th>
                 <th className="px-3 py-2 text-right font-medium">Monthly</th>
-                <th className="px-3 py-2 text-right font-medium">Total paid</th>
+                {admin && (
+                  <th className="px-3 py-2 text-right font-medium">Total paid</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -208,9 +215,11 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
                   <td className="px-3 py-2.5 text-right tabular-nums text-ink">
                     {fmtMoney(r.monthly_rent)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-ink">
-                    {fmtMoney(r.total_paid)}
-                  </td>
+                  {admin && (
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">
+                      {fmtMoney(r.total_paid)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

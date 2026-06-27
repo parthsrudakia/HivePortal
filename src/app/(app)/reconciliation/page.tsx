@@ -4,6 +4,7 @@ import { formatDate, todayISO } from "@/lib/date";
 import { one } from "@/lib/relations";
 import { RunRow } from "./run-row";
 import { BulkPaymentForm, type BulkTenant } from "./bulk-payment-form";
+import { isMaster } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,13 @@ function monthLabel(monthIso: string) {
 
 export default async function ReconciliationListPage() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Reconciliation stays open to everyone (for the bulk payment form), but the
+  // financial figures — run Expected/Collected, run details, "paid this month" —
+  // are admin-only.
+  const admin = isMaster(user?.email);
   const { data, error } = await supabase
     .from("reconciliation_runs")
     .select(
@@ -108,26 +116,34 @@ export default async function ReconciliationListPage() {
             Monthly rent reconciliation.
           </p>
         </div>
-        <Link
-          href="/reconciliation/new"
-          className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
-        >
-          New run
-        </Link>
+        {admin && (
+          <Link
+            href="/reconciliation/new"
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
+          >
+            New run
+          </Link>
+        )}
       </header>
 
-      <BulkPaymentForm tenants={bulkTenants} defaultDate={todayISO()} />
+      <BulkPaymentForm
+        tenants={bulkTenants}
+        defaultDate={todayISO()}
+        admin={admin}
+      />
 
-      {error && <p className="mt-6 text-sm text-red-700">{error.message}</p>}
+      {admin && error && (
+        <p className="mt-6 text-sm text-red-700">{error.message}</p>
+      )}
 
-      {runs.length === 0 && (
+      {admin && runs.length === 0 && (
         <p className="mt-10 rounded-2xl bg-white px-6 py-12 text-center text-sm text-muted shadow-sm">
           No reconciliation runs yet. Click <em>New run</em> to upload a month&apos;s
           bank statement.
         </p>
       )}
 
-      {runs.length > 0 && (
+      {admin && runs.length > 0 && (
         <section className="mt-8 overflow-hidden rounded-2xl bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">

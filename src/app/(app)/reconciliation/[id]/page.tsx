@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import { formatDate } from "@/lib/date";
 import { DeleteRunButton } from "./delete-run";
 import { postPayments, unpostPayments } from "../actions";
@@ -81,6 +82,11 @@ export default async function ReconciliationRunPage({
   const activeFilter = isFilterKey(sp.filter) ? sp.filter : null;
 
   const supabase = await createClient();
+  // Run details are financial — admins only.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!isMaster(user?.email)) redirect("/reconciliation");
 
   const [{ data: run }, { data: matches }] = await Promise.all([
     supabase

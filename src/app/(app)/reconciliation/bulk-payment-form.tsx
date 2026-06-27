@@ -16,9 +16,12 @@ export type BulkTenant = {
 export function BulkPaymentForm({
   tenants,
   defaultDate,
+  admin = false,
 }: {
   tenants: BulkTenant[];
   defaultDate: string;
+  // Only admins see the "paid this month" figure; everyone else just records.
+  admin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(defaultDate);
@@ -121,7 +124,7 @@ export function BulkPaymentForm({
                       {t.unit}
                       {t.room ? ` · ${t.room}` : ""} · rent{" "}
                       {fmtMoney(t.monthly_rent)}
-                      {t.paid_this_month > 0
+                      {admin && t.paid_this_month > 0
                         ? ` · paid ${fmtMoney(t.paid_this_month)} this month`
                         : ""}
                     </p>

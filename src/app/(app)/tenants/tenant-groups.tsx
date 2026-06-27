@@ -48,12 +48,37 @@ function BalanceBadge({ n }: { n: number }) {
   );
 }
 
+// Number-free status for non-admins: only paid / has a balance / in credit.
+function StatusBadge({ n }: { n: number }) {
+  if (n > 0.005)
+    return (
+      <span className="rounded-full bg-red-100 px-2 py-0.5 text-sm uppercase tracking-wide text-red-800">
+        Balance due
+      </span>
+    );
+  if (n < -0.005)
+    return (
+      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-sm uppercase tracking-wide text-accent-text">
+        Credit
+      </span>
+    );
+  return (
+    <span className="rounded-full bg-green-100 px-2 py-0.5 text-sm uppercase tracking-wide text-green-800">
+      Paid
+    </span>
+  );
+}
+
 export function TenantGroups({
   groups,
   defaultExpanded = false,
+  admin = false,
 }: {
   groups: DisplayGroup[];
   defaultExpanded?: boolean;
+  // Admins see the dollar amounts (Due / Paid / Balance). Everyone else sees
+  // only a paid / balance / credit status — no numbers.
+  admin?: boolean;
 }) {
   // Track collapsed groups by label; empty = everything expanded. Start with
   // every property collapsed each time the page opens — unless defaultExpanded
@@ -98,9 +123,15 @@ export function TenantGroups({
             <tr>
               <th className="px-5 py-3 font-medium">Tenant</th>
               <th className="px-5 py-3 font-medium">Room</th>
-              <th className="px-5 py-3 text-right font-medium">Due</th>
-              <th className="px-5 py-3 text-right font-medium">Paid</th>
-              <th className="px-5 py-3 text-right font-medium">Balance</th>
+              {admin ? (
+                <>
+                  <th className="px-5 py-3 text-right font-medium">Due</th>
+                  <th className="px-5 py-3 text-right font-medium">Paid</th>
+                  <th className="px-5 py-3 text-right font-medium">Balance</th>
+                </>
+              ) : (
+                <th className="px-5 py-3 text-right font-medium">Status</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -157,15 +188,23 @@ export function TenantGroups({
                         </span>
                       </div>
                     </td>
-                    <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
-                      {fmtMoney(g.subDue)}
-                    </td>
-                    <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
-                      {fmtMoney(g.subPaid)}
-                    </td>
-                    <td className="px-5 py-2 text-right tabular-nums text-sm font-medium">
-                      <BalanceBadge n={g.subBalance} />
-                    </td>
+                    {admin ? (
+                      <>
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
+                          {fmtMoney(g.subDue)}
+                        </td>
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
+                          {fmtMoney(g.subPaid)}
+                        </td>
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium">
+                          <BalanceBadge n={g.subBalance} />
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-5 py-2 text-right text-sm font-medium">
+                        <StatusBadge n={g.subBalance} />
+                      </td>
+                    )}
                   </tr>
 
                   {!isCollapsed &&
@@ -200,15 +239,23 @@ export function TenantGroups({
                           <td className="px-5 py-3 text-ink">
                             {r.room_number ?? "—"}
                           </td>
-                          <td className="px-5 py-3 text-right tabular-nums text-ink">
-                            {fmtMoney(r.due)}
-                          </td>
-                          <td className="px-5 py-3 text-right tabular-nums text-ink">
-                            {fmtMoney(r.paid)}
-                          </td>
-                          <td className="px-5 py-3 text-right tabular-nums">
-                            <BalanceBadge n={r.balance} />
-                          </td>
+                          {admin ? (
+                            <>
+                              <td className="px-5 py-3 text-right tabular-nums text-ink">
+                                {fmtMoney(r.due)}
+                              </td>
+                              <td className="px-5 py-3 text-right tabular-nums text-ink">
+                                {fmtMoney(r.paid)}
+                              </td>
+                              <td className="px-5 py-3 text-right tabular-nums">
+                                <BalanceBadge n={r.balance} />
+                              </td>
+                            </>
+                          ) : (
+                            <td className="px-5 py-3 text-right">
+                              <StatusBadge n={r.balance} />
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

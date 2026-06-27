@@ -17,6 +17,7 @@ import { LeaseDownload } from "./lease-download";
 import { LeaseEndEdit } from "./lease-end-edit";
 import { computeLedger, buildLedgerEntries } from "@/lib/rent";
 import { todayISO } from "@/lib/date";
+import { isMaster } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,11 @@ function unitTitle(t: Tenancy) {
 export default async function TenantDetailPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Only admins see ledger amounts; others see paid/balance/credit status only.
+  const admin = isMaster(user?.email);
 
   const [{ data: tenant }, { data: tenancies }, { data: payments }] =
     await Promise.all([
@@ -295,19 +301,24 @@ export default async function TenantDetailPage({ params }: PageProps) {
                 <span className="font-display text-accent-text">Ledger</span>
               </h2>
               <p className="mt-1 text-xs text-muted">
-                Every rent charge, fee, and payment in one running balance.
-                {ledger.availableCredit > 0.005
-                  ? ` ${fmtMoney(ledger.availableCredit)} in credit.`
-                  : ""}
+                {admin
+                  ? `Every rent charge, fee, and payment in one running balance.${
+                      ledger.availableCredit > 0.005
+                        ? ` ${fmtMoney(ledger.availableCredit)} in credit.`
+                        : ""
+                    }`
+                  : "Payment status."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <a
-                href={`/tenants/${tenant.id}/ledger/export`}
-                className="rounded-full border border-stone bg-white px-3 py-1.5 text-xs uppercase tracking-wide text-ink hover:bg-warm"
-              >
-                Download ledger ↓
-              </a>
+              {admin && (
+                <a
+                  href={`/tenants/${tenant.id}/ledger/export`}
+                  className="rounded-full border border-stone bg-white px-3 py-1.5 text-xs uppercase tracking-wide text-ink hover:bg-warm"
+                >
+                  Download ledger ↓
+                </a>
+              )}
               <RecordCharge tenancyId={active.id} tenantId={tenant.id} />
               <RecordPayment
                 tenancyId={active.id}
@@ -317,6 +328,8 @@ export default async function TenantDetailPage({ params }: PageProps) {
             </div>
           </header>
 
+          {admin ? (
+          <>
           {/* Summary — fee totals charged so far, plus the overall balance/credit. */}
           <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
             <table className="w-full text-sm">
@@ -392,6 +405,27 @@ export default async function TenantDetailPage({ params }: PageProps) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          </>
+          ) : (
+            <div className="mt-4 rounded-2xl bg-white p-6 shadow-sm">
+              {ledger.netBalance > 0.005 ? (
+                <span className="rounded-full bg-red-100 px-3 py-1 text-sm uppercase tracking-wide text-red-800">
+                  Balance due
+                </span>
+              ) : ledger.netBalance < -0.005 ? (
+                <span className="rounded-full bg-accent/15 px-3 py-1 text-sm uppercase tracking-wide text-accent-text">
+                  Credit
+                </span>
+              ) : (
+                <span className="rounded-full bg-green-100 px-3 py-1 text-sm uppercase tracking-wide text-green-800">
+                  Paid
+                </span>
+              )}
+              <p className="mt-3 text-xs text-muted">
+                Detailed balances are restricted to admins.
+              </p>
             </div>
           )}
         </section>

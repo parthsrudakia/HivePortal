@@ -5,6 +5,7 @@ import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
 import { formatDate } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { isMaster } from "@/lib/access";
 import { NavIcon } from "./nav-icons";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,12 @@ function monthBounds(monthIso: string): { start: string; end: string } {
 
 export default async function Dashboard() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Only admins see rent dollar figures (collected / outstanding totals and
+  // per-tenant amounts). Others still see who's unpaid, just not the numbers.
+  const admin = isMaster(user?.email);
   const today = todayISO();
   const thisMonth = today.slice(0, 7);
   const tm = monthBounds(thisMonth);
@@ -326,19 +333,23 @@ export default async function Dashboard() {
           href="/properties"
           icon={<NavIcon name="inventory" />}
         />
-        <Stat
-          label="Collected this month"
-          value={fmtMoney(totals.collected)}
-          href="/tenants"
-          icon={<IconMoney />}
-        />
-        <Stat
-          label="Outstanding rent"
-          value={fmtMoney(totals.outstanding)}
-          href="/tenants"
-          icon={<IconAlert />}
-          tone={totals.outstanding > 0 ? "warn" : "default"}
-        />
+        {admin && (
+          <Stat
+            label="Collected this month"
+            value={fmtMoney(totals.collected)}
+            href="/tenants"
+            icon={<IconMoney />}
+          />
+        )}
+        {admin && (
+          <Stat
+            label="Outstanding rent"
+            value={fmtMoney(totals.outstanding)}
+            href="/tenants"
+            icon={<IconAlert />}
+            tone={totals.outstanding > 0 ? "warn" : "default"}
+          />
+        )}
       </section>
 
       <section className="mt-8 grid gap-5 lg:grid-cols-2">
@@ -355,7 +366,7 @@ export default async function Dashboard() {
               href={`/tenants/${r.tenant_id}`}
               primary={r.tenant_name}
               secondary={`${r.unit} · ${r.room}`}
-              right={fmtMoney(r.outstanding)}
+              right={admin ? fmtMoney(r.outstanding) : undefined}
               rightTone="warn"
             />
           ))}
@@ -714,7 +725,7 @@ function WorklistRow({
   href: string;
   primary: string;
   secondary?: string;
-  right: string;
+  right?: string;
   rightTone?: "muted" | "warn" | "accent";
 }) {
   const pill =
@@ -735,11 +746,13 @@ function WorklistRow({
             <p className="truncate text-xs text-muted">{secondary}</p>
           )}
         </div>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${pill}`}
-        >
-          {right}
-        </span>
+        {right !== undefined && (
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${pill}`}
+          >
+            {right}
+          </span>
+        )}
       </Link>
     </li>
   );
