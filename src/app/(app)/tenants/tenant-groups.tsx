@@ -77,6 +77,11 @@ export function TenantGroups({
       return next;
     });
 
+  // When every group is collapsed there are no tenant rows showing, so the
+  // "Room" column header has nothing under it — drop the label.
+  const allCollapsed =
+    groups.length > 0 && groups.every((g) => collapsed.has(g.label));
+
   return (
     <section className="mt-8">
       <div className="mb-3 flex items-center justify-end gap-2">
@@ -101,7 +106,7 @@ export function TenantGroups({
           <thead className="bg-warm/60 text-left text-sm uppercase tracking-wide text-muted">
             <tr>
               <th className="px-5 py-3 font-medium">Tenant</th>
-              <th className="px-5 py-3 font-medium">Room</th>
+              <th className="px-5 py-3 font-medium">{allCollapsed ? "" : "Room"}</th>
               <th className="px-5 py-3 text-right font-medium">Due</th>
               {admin && (
                 <th className="px-5 py-3 text-right font-medium">Paid</th>
