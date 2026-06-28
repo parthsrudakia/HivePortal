@@ -176,9 +176,9 @@ export default async function CleaningPage({ searchParams }: PageProps) {
                   </th>
                   <th className="bg-warm px-4 py-2 font-medium">Cleaner</th>
                   <th className="bg-warm px-4 py-2 font-medium">Last cleaned</th>
-                  <th className="bg-warm px-4 py-2 font-medium">Next cleaning</th>
+                  <th className="bg-warm px-4 py-2 font-medium">Upcoming Date</th>
                   <th className="rounded-tr-2xl bg-warm px-4 py-2 font-medium">
-                    Following
+                    Next Date
                   </th>
                 </tr>
               </thead>
