@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import { one } from "@/lib/relations";
 import { SearchInput } from "@/components/search-input";
 import { AddCredential } from "./add-credential";
-import {
-  CredentialRow,
-  type CredentialRowData,
-} from "./credential-row";
+import { type CredentialRowData } from "./credential-row";
+import { CredentialGroups } from "./credential-groups";
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
@@ -56,6 +55,11 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
   const activeCategory = isCategory(params.category) ? params.category : null;
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Only admins receive plaintext passwords and the reveal/copy controls.
+  const admin = isMaster(user?.email);
 
   const [{ data: credentials }, { data: properties }] = await Promise.all([
     supabase
@@ -88,7 +92,8 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
       property_id: c.property_id,
       property_label: p ? propertyLabel(p) : null,
       username: c.username,
-      password: c.password,
+      password: admin ? c.password : null,
+      hasPassword: !!c.password,
       login_url: c.login_url,
       account_number: c.account_number,
       owner_label: c.owner_label,
@@ -218,66 +223,13 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
           }));
 
         return (
-          <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead className="sticky top-0 z-10 bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Category</th>
-                  <th className="px-3 py-2 font-medium">Service</th>
-                  <th className="px-3 py-2 font-medium">Owner</th>
-                  <th className="px-3 py-2 font-medium">Username</th>
-                  <th className="px-3 py-2 font-medium">Password</th>
-                  <th className="px-3 py-2 font-medium">Account #</th>
-                  <th className="px-3 py-2 font-medium">Link</th>
-                  <th className="px-3 py-2 text-right font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g) => (
-                  <GroupBlock
-                    key={g.label}
-                    label={g.label}
-                    items={g.items}
-                    properties={propertyOptions}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CredentialGroups
+            groups={groups}
+            properties={propertyOptions}
+            canReveal={admin}
+          />
         );
       })()}
     </div>
-  );
-}
-
-function GroupBlock({
-  label,
-  items,
-  properties,
-}: {
-  label: string;
-  items: CredentialRowData[];
-  properties: PropertyOption[];
-}) {
-  return (
-    <>
-      <tr className="border-t border-stone/40 bg-warm/40">
-        <td
-          colSpan={8}
-          className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-ink/80"
-        >
-          {label}{" "}
-          <span className="text-muted">({items.length})</span>
-        </td>
-      </tr>
-      {items.map((c, i) => (
-        <CredentialRow
-          key={c.id}
-          credential={c}
-          properties={properties}
-          striped={i % 2 === 1}
-        />
-      ))}
-    </>
   );
 }

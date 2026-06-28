@@ -28,9 +28,13 @@ const fieldInput =
 export function CredentialFields({
   initial,
   properties,
+  hidePassword = false,
 }: {
   initial?: Initial;
   properties: PropertyOption[];
+  // Non-admins can edit other fields but must not see (or overwrite) the
+  // password. The server also strips it from their updates as a backstop.
+  hidePassword?: boolean;
 }) {
   const v = initial ?? {};
   return (
@@ -88,13 +92,22 @@ export function CredentialFields({
       </label>
       <label className="flex flex-col gap-1.5">
         <span className={fieldLabel}>Password</span>
-        <input
-          type="text"
-          name="password"
-          defaultValue={v.password ?? ""}
-          autoComplete="off"
-          className={fieldInput}
-        />
+        {hidePassword ? (
+          <input
+            type="text"
+            value="•••••••• (admin only)"
+            disabled
+            className={`${fieldInput} cursor-not-allowed text-muted`}
+          />
+        ) : (
+          <input
+            type="text"
+            name="password"
+            defaultValue={v.password ?? ""}
+            autoComplete="off"
+            className={fieldInput}
+          />
+        )}
       </label>
       <label className="flex flex-col gap-1.5">
         <span className={fieldLabel}>Login URL</span>

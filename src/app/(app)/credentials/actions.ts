@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import type { Database } from "@/lib/supabase/types";
 
 type Category = Database["public"]["Enums"]["credential_category"];
@@ -11,8 +12,6 @@ const VALID_CATEGORIES: Category[] = [
   "utility",
   "internet",
   "building_login",
-  "tool_login",
-  "marketing",
   "other",
 ];
 
@@ -81,9 +80,21 @@ export async function updateCredential(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Only admins may set or change a password. For everyone else, drop it from
+  // the update so a non-admin edit can never read, overwrite, or clear it.
+  let update: Partial<CredentialValues> = parsed;
+  if (!isMaster(user?.email)) {
+    update = { ...parsed };
+    delete update.password;
+  }
+
   const { error } = await supabase
     .from("credentials")
-    .update(parsed)
+    .update(update)
     .eq("id", id);
 
   if (error) return { error: error.message };

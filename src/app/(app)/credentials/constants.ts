@@ -8,8 +8,6 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   utility: "Utility",
   internet: "Internet",
   building_login: "Building login",
-  tool_login: "Tool login",
-  marketing: "Marketing",
   other: "Other",
 };
 
@@ -19,8 +17,6 @@ export const CATEGORY_ORDER: Category[] = [
   "utility",
   "internet",
   "building_login",
-  "tool_login",
-  "marketing",
   "other",
 ];
 

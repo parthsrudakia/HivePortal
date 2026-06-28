@@ -20,12 +20,17 @@ export type CredentialRowData = {
   property_id: string | null;
   property_label: string | null;
   username: string | null;
+  // Plaintext password — only populated for admins. For everyone else it's null
+  // (never sent to the client); `hasPassword` still tells the UI to show dots.
   password: string | null;
+  hasPassword: boolean;
   login_url: string | null;
   account_number: string | null;
   owner_label: string | null;
   notes: string | null;
 };
+
+const PASSWORD_MASK = "••••••••";
 
 const CATEGORY_PILL: Record<Category, string> = {
   payment_portal: "bg-accent/15 text-accent-text",
@@ -33,24 +38,21 @@ const CATEGORY_PILL: Record<Category, string> = {
   utility: "bg-stone/40 text-ink/70",
   internet: "bg-accent/10 text-accent-text",
   building_login: "bg-warm text-ink/70",
-  tool_login: "bg-stone/40 text-ink/70",
-  marketing: "bg-accent/15 text-accent-text",
   other: "bg-warm text-ink/70",
 };
-
-function maskPassword(p: string | null) {
-  if (!p) return "—";
-  return "•".repeat(Math.min(p.length, 12));
-}
 
 export function CredentialRow({
   credential,
   properties,
   striped,
+  canReveal = false,
 }: {
   credential: CredentialRowData;
   properties: PropertyOption[];
   striped: boolean;
+  // Only admins may reveal/copy the password. Defaults to false so a missing
+  // prop fails closed.
+  canReveal?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -104,7 +106,11 @@ export function CredentialRow({
               Editing {credential.service_name}
             </p>
             <div className="mt-3">
-              <CredentialFields initial={credential} properties={properties} />
+              <CredentialFields
+                initial={credential}
+                properties={properties}
+                hidePassword={!canReveal}
+              />
             </div>
             {state?.error && (
               <p className="mt-3 text-sm text-red-700">{state.error}</p>
@@ -148,7 +154,7 @@ export function CredentialRow({
       </td>
       <td className="px-3 py-2">
         {credential.username ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full items-center justify-between gap-3">
             <span className="break-all text-ink">{credential.username}</span>
             <CopyChip
               onClick={() => copy("username", credential.username)}
@@ -160,22 +166,28 @@ export function CredentialRow({
         )}
       </td>
       <td className="px-3 py-2">
-        {credential.password ? (
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-xs text-ink">
-              {revealed ? credential.password : maskPassword(credential.password)}
+        {credential.hasPassword ? (
+          <div className="flex w-full items-center justify-between gap-3">
+            <span className="break-all font-mono text-xs text-ink">
+              {revealed && credential.password
+                ? credential.password
+                : PASSWORD_MASK}
             </span>
-            <button
-              type="button"
-              onClick={toggleReveal}
-              className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
-            >
-              {revealed ? "Hide" : "Reveal"}
-            </button>
-            <CopyChip
-              onClick={() => copy("password", credential.password)}
-              copied={copied === "password"}
-            />
+            {canReveal && (
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleReveal}
+                  className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
+                >
+                  {revealed ? "Hide" : "Reveal"}
+                </button>
+                <CopyChip
+                  onClick={() => copy("password", credential.password)}
+                  copied={copied === "password"}
+                />
+              </div>
+            )}
           </div>
         ) : (
           <span className="text-muted">—</span>
@@ -183,7 +195,7 @@ export function CredentialRow({
       </td>
       <td className="px-3 py-2">
         {credential.account_number ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full items-center justify-between gap-3">
             <span className="break-all text-ink">
               {credential.account_number}
             </span>
@@ -256,7 +268,7 @@ function CopyChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-1.5 py-0.5 text-xs uppercase tracking-wide transition ${
+      className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs uppercase tracking-wide transition ${
         copied
           ? "bg-accent/15 text-accent-text"
           : "text-muted hover:text-accent-text"

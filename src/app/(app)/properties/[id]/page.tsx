@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isMaster } from "@/lib/access";
 import { one } from "@/lib/relations";
 import { formatDate } from "@/lib/date";
 import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
@@ -13,10 +14,7 @@ import {
   CredentialRow,
   type CredentialRowData,
 } from "../../credentials/credential-row";
-import {
-  CATEGORY_LABELS,
-  CATEGORY_ORDER,
-} from "../../credentials/constants";
+import { CATEGORY_ORDER } from "../../credentials/constants";
 import type { Database } from "@/lib/supabase/types";
 
 type CredentialCategory =
@@ -31,6 +29,11 @@ type PageProps = {
 export default async function PropertyDetailPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Only admins receive plaintext passwords and the reveal/copy controls.
+  const admin = isMaster(user?.email);
 
   const [
     { data: property },
@@ -136,7 +139,8 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     property_id: c.property_id,
     property_label: propertyLabel,
     username: c.username,
-    password: c.password,
+    password: admin ? c.password : null,
+    hasPassword: !!c.password,
     login_url: c.login_url,
     account_number: c.account_number,
     owner_label: c.owner_label,
@@ -362,6 +366,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                     credential={c}
                     properties={propertyOptions}
                     striped={i % 2 === 1}
+                    canReveal={admin}
                   />
                 ))}
               </tbody>

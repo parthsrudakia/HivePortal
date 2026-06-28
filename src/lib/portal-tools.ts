@@ -355,8 +355,6 @@ const CREDENTIAL_CATEGORIES = [
   "utility",
   "internet",
   "building_login",
-  "tool_login",
-  "marketing",
   "other",
 ] as const;
 type CredentialCategory = (typeof CREDENTIAL_CATEGORIES)[number];
@@ -956,7 +954,7 @@ export const tools = [
     description:
       "Fetch credentials filtered by property and/or category. " +
       "Categories: payment_portal, maintenance_portal, utility, internet, " +
-      "building_login, tool_login, marketing, other.",
+      "building_login, other.",
     inputSchema: z.object({
       property_id: z.string().optional(),
       category: z.enum(CREDENTIAL_CATEGORIES).optional(),

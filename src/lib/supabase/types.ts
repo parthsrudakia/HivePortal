@@ -1159,6 +1159,42 @@ export type Database = {
           },
         ]
       }
+      sms_log: {
+        Row: {
+          body: string | null
+          channel: string
+          context: string | null
+          created_at: string
+          error: string | null
+          id: string
+          recipient: string
+          status: string
+          type: string
+        }
+        Insert: {
+          body?: string | null
+          channel?: string
+          context?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          recipient: string
+          status: string
+          type: string
+        }
+        Update: {
+          body?: string | null
+          channel?: string
+          context?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          recipient?: string
+          status?: string
+          type?: string
+        }
+        Relationships: []
+      }
       telegram_chat_messages: {
         Row: {
           chat_id: number
@@ -1461,8 +1497,6 @@ export type Database = {
         | "utility"
         | "internet"
         | "building_login"
-        | "tool_login"
-        | "marketing"
         | "other"
       listing_action:
         | "no_action"
@@ -1623,8 +1657,6 @@ export const Constants = {
         "utility",
         "internet",
         "building_login",
-        "tool_login",
-        "marketing",
         "other",
       ],
       listing_action: [
