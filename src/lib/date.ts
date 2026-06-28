@@ -22,6 +22,37 @@ export function todayISO(): string {
   );
 }
 
+/** Add `days` to an ISO "YYYY-MM-DD" date, returning ISO (date-only, UTC math). */
+export function addDaysISO(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Day of week for an ISO date: 0 = Sunday … 6 = Saturday. */
+export function isoDayOfWeek(iso: string): number {
+  return new Date(iso + "T00:00:00Z").getUTCDay();
+}
+
+/** True when today (Eastern) is Sunday — when the weekly digest goes out. */
+export function isSundayET(): boolean {
+  return isoDayOfWeek(todayISO()) === 0;
+}
+
+/** The Sunday that opens the week containing the given ISO date. */
+export function weekStartFor(iso: string): string {
+  return addDaysISO(iso, -isoDayOfWeek(iso));
+}
+
+/**
+ * The current cleaning week (Sunday → Saturday) in Eastern Time, as ISO bounds.
+ * Cleaner schedules and change notices are scoped to this window.
+ */
+export function currentWeek(): { start: string; end: string } {
+  const start = weekStartFor(todayISO());
+  return { start, end: addDaysISO(start, 6) };
+}
+
 /**
  * The rent billing cycle that contains today, as ISO "YYYY-MM-DD" bounds.
  *

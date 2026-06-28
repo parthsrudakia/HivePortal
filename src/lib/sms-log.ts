@@ -4,12 +4,16 @@ export type SmsType =
   | "rent_reminder"
   | "rent_balance"
   | "cleaning_reminder"
+  | "cleaner_weekly"
+  | "cleaner_update"
   | "manual";
 
 export const SMS_TYPE_LABELS: Record<SmsType, string> = {
   rent_reminder: "Rent reminder (monthly)",
   rent_balance: "Rent balance reminder",
   cleaning_reminder: "Cleaning reminder",
+  cleaner_weekly: "Cleaner weekly schedule",
+  cleaner_update: "Cleaner schedule update",
   manual: "Manual / other",
 };
 

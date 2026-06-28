@@ -6,6 +6,8 @@ export type EmailType =
   | "room_change"
   | "cleaning_moveout"
   | "cleaning_reminder"
+  | "cleaner_weekly"
+  | "cleaner_update"
   | "lease_end";
 
 export const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
@@ -14,6 +16,8 @@ export const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
   room_change: "Room change notice",
   cleaning_moveout: "Move-out cleaning",
   cleaning_reminder: "Cleaning reminder",
+  cleaner_weekly: "Cleaner weekly schedule",
+  cleaner_update: "Cleaner schedule update",
   lease_end: "Lease ending (45-day heads-up)",
 };
 

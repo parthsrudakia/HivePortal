@@ -78,6 +78,41 @@ export type Database = {
         }
         Relationships: []
       }
+      cleaner_schedule_change_queue: {
+        Row: {
+          cleaner_id: string
+          created_at: string
+          id: string
+          reason: string | null
+          sent_at: string | null
+          week_start: string
+        }
+        Insert: {
+          cleaner_id: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          sent_at?: string | null
+          week_start: string
+        }
+        Update: {
+          cleaner_id?: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          sent_at?: string | null
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cleaner_schedule_change_queue_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "cleaners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cleaners: {
         Row: {
           created_at: string
@@ -86,6 +121,7 @@ export type Database = {
           id: string
           name: string
           phone: string | null
+          schedule_token: string
         }
         Insert: {
           created_at?: string
@@ -94,6 +130,7 @@ export type Database = {
           id?: string
           name: string
           phone?: string | null
+          schedule_token?: string
         }
         Update: {
           created_at?: string
@@ -102,6 +139,7 @@ export type Database = {
           id?: string
           name?: string
           phone?: string | null
+          schedule_token?: string
         }
         Relationships: []
       }

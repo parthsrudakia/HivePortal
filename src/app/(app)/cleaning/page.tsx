@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, todayISO } from "@/lib/date";
 import { CLEANING_CADENCE_DAYS } from "@/lib/cleaning";
+import { scheduleUrl } from "@/lib/cleaner-schedule";
 import { SearchInput } from "@/components/search-input";
 import { AddCleanerForm } from "./add-cleaner";
 import { toggleCleaner, deleteCleaner } from "./cleaners-actions";
@@ -58,7 +59,7 @@ export default async function CleaningPage({ searchParams }: PageProps) {
       .order("street_address", { ascending: true }),
     supabase
       .from("cleaners")
-      .select("id, name, email, phone, enabled, created_at")
+      .select("id, name, email, phone, enabled, created_at, schedule_token")
       .order("enabled", { ascending: false })
       .order("created_at", { ascending: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -258,6 +259,7 @@ type CleanerRow = {
   phone: string | null;
   enabled: boolean;
   created_at: string;
+  schedule_token: string;
   properties_count: number;
 };
 
@@ -306,6 +308,14 @@ function CleanersTable({ cleaners }: { cleaners: CleanerRow[] }) {
             </td>
             <td className="px-4 py-2.5 text-right">
               <div className="flex items-center justify-end gap-2">
+                <a
+                  href={scheduleUrl(c.schedule_token)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-stone bg-white px-2.5 py-0.5 text-xs uppercase tracking-wide text-ink hover:bg-warm"
+                >
+                  Schedule ↗
+                </a>
                 <form action={toggleCleaner}>
                   <input type="hidden" name="id" value={c.id} />
                   <input type="hidden" name="enabled" value={String(c.enabled)} />

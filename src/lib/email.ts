@@ -2,118 +2,143 @@ import { logEmail } from "./email-log";
 import { sendGmailMessage } from "./google-mail";
 import { sendViaResend, type SendResult } from "./resend-quota";
 import { formatDate } from "./date";
+import type { CleanerCleaning } from "./cleaner-schedule";
 
 export type { SendResult };
 
-// Full context every cleaner message carries — the unit, the date, whether it's
-// a move-out (and which room), and all tenant + leaseholder contacts.
-export type CleaningContext = {
-  unitLabel: string;
-  date: string; // ISO
-  isMoveOut: boolean;
-  roomLabel?: string | null;
-  leaseholderName?: string | null;
-  occupants?: {
-    room_number: string | null;
-    full_name: string;
-    email: string | null;
-    phone: string | null;
-    vacated: boolean;
-  }[];
+// ----------------------------------------------------------------------------
+// Cleaner weekly schedule digest + change notice. Both carry only a link to the
+// cleaner's live schedule page (which holds the per-unit tenant/leaseholder/
+// move-out details); the messages themselves stay short.
+// ----------------------------------------------------------------------------
+
+export type CleanerDigest = {
+  cleanerName: string | null;
+  weekStart: string; // ISO
+  weekEnd: string; // ISO
+  url: string;
+  cleanings: CleanerCleaning[];
 };
 
-function cleaningContactLines(ctx: CleaningContext): string[] {
-  const lines: string[] = [`Leaseholder: ${ctx.leaseholderName ?? "—"}`];
-  if (!ctx.occupants || ctx.occupants.length === 0) {
-    lines.push("Tenants: none on record");
-  } else {
-    lines.push("Tenants:");
-    for (const o of ctx.occupants) {
-      const contact =
-        [o.email, o.phone].filter(Boolean).join(" · ") || "no contact on file";
-      const room = o.room_number ? ` (${o.room_number})` : "";
-      const tag = o.vacated ? " — VACATED" : "";
-      lines.push(`- ${o.full_name}${room}: ${contact}${tag}`);
-    }
-  }
-  return lines;
+function weekRange(weekStart: string, weekEnd: string): string {
+  return `${formatDate(weekStart)} – ${formatDate(weekEnd)}`;
 }
 
-// Plain-text body (used verbatim by the SMS channel) — carries the full payload.
-export function cleaningReminderText(ctx: CleaningContext): string {
-  const head = ctx.isMoveOut
-    ? `MOVE-OUT cleaning${ctx.roomLabel ? ` — Room ${ctx.roomLabel}` : ""} at ${ctx.unitLabel} on ${formatDate(ctx.date)}.`
-    : `Cleaning at ${ctx.unitLabel} on ${formatDate(ctx.date)}.`;
-  return ["Hi,", "", head, "", ...cleaningContactLines(ctx), "", "Thanks"].join(
-    "\n",
-  );
+function digestLineText(c: CleanerCleaning): string {
+  const tag = c.isMoveOut
+    ? ` (MOVE-OUT${c.roomLabel ? ` · Room ${c.roomLabel}` : ""})`
+    : "";
+  return `• ${formatDate(c.date)} — ${c.unitLabel}${tag}`;
 }
 
-function cleaningContactsHtml(ctx: CleaningContext): string {
-  if (!ctx.occupants || ctx.occupants.length === 0) {
-    return `<p style="margin:0; font-size:15px; color:#8a8378;">No tenants on record.</p>`;
+/** Plain-text weekly digest (used verbatim by the SMS channel). */
+export function cleanerWeeklyText(d: CleanerDigest): string {
+  const hi = d.cleanerName ? `Hi ${d.cleanerName.split(/\s+/)[0]},` : "Hi,";
+  const body =
+    d.cleanings.length === 0
+      ? "No cleanings scheduled for the rest of this week."
+      : d.cleanings.map(digestLineText).join("\n");
+  return [
+    hi,
+    "",
+    `Your cleaning schedule for ${weekRange(d.weekStart, d.weekEnd)}:`,
+    "",
+    body,
+    "",
+    `Full schedule + unit contacts: ${d.url}`,
+    "",
+    "Thanks",
+  ].join("\n");
+}
+
+/** Plain-text "schedule updated" notice (used verbatim by the SMS channel). */
+export function cleanerUpdateText(d: CleanerDigest): string {
+  const hi = d.cleanerName ? `Hi ${d.cleanerName.split(/\s+/)[0]},` : "Hi,";
+  return [
+    hi,
+    "",
+    `Your cleaning schedule for this week (${weekRange(d.weekStart, d.weekEnd)}) has been updated.`,
+    "",
+    `See the latest: ${d.url}`,
+    "",
+    "Thanks",
+  ].join("\n");
+}
+
+function digestLinesHtml(cleanings: CleanerCleaning[]): string {
+  if (cleanings.length === 0) {
+    return `<p style="margin:0; font-size:15px; color:#8a8378;">No cleanings scheduled for the rest of this week.</p>`;
   }
-  return ctx.occupants
-    .map((o) => {
-      const room = o.room_number
-        ? ` <span style="font-weight:400; color:#8a8378;">· ${o.room_number}</span>`
+  return cleanings
+    .map((c) => {
+      const badge = c.isMoveOut
+        ? ` <span style="display:inline-block; background:#fbeccc; color:#9a6f08; font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px;">Move-out${c.roomLabel ? ` · ${c.roomLabel}` : ""}</span>`
         : "";
-      const badge = o.vacated
-        ? ` <span style="display:inline-block; background:#fbeccc; color:#9a6f08; font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px;">Vacated</span>`
-        : "";
-      const links: string[] = [];
-      if (o.phone)
-        links.push(
-          `<a href="tel:${o.phone.replace(/[^\d+]/g, "")}" style="display:inline-block; color:#9a6f08; text-decoration:none; font-weight:600; padding:8px 20px 8px 0;">📞 ${o.phone}</a>`,
-        );
-      if (o.email)
-        links.push(
-          `<a href="mailto:${o.email}" style="display:inline-block; color:#9a6f08; text-decoration:none; font-weight:600; padding:8px 0; word-break:break-all;">✉️ ${o.email}</a>`,
-        );
-      const contact = links.length
-        ? `<div style="margin-top:2px; font-size:15px; line-height:1.4;">${links.join("")}</div>`
-        : `<div style="margin-top:2px; font-size:14px; color:#8a8378;">No contact on file</div>`;
-      return `<div style="padding:12px 0; border-bottom:1px solid #e8e3db;">
-        <div style="font-size:16px; font-weight:600; color:#1a1a18;">${o.full_name}${room}${badge}</div>
-        ${contact}
+      return `<div style="padding:10px 0; border-bottom:1px solid #e8e3db;">
+        <div style="font-size:13px; text-transform:uppercase; letter-spacing:0.05em; color:#8a8378;">${formatDate(c.date)}</div>
+        <div style="font-size:16px; font-weight:600; color:#1a1a18;">${c.unitLabel}${badge}</div>
       </div>`;
     })
     .join("");
 }
 
-export async function sendCleaningReminder(
+function ctaButton(url: string, label: string): string {
+  return `<a href="${url}" style="display:inline-block; background:#d4920b; color:#fefdfb; text-decoration:none; font-weight:600; font-size:15px; padding:12px 22px; border-radius:999px;">${label}</a>`;
+}
+
+/** Sunday weekly digest: the week's cleanings + a link to the live page. */
+export async function sendCleanerWeeklyDigest(
   to: string,
-  ctx: CleaningContext,
+  d: CleanerDigest,
 ): Promise<SendResult> {
-  const heading = ctx.isMoveOut ? "Move-out cleaning" : "Cleaning reminder";
-  const subject = ctx.isMoveOut
-    ? `Move-out cleaning — ${ctx.unitLabel}${ctx.roomLabel ? ` · Room ${ctx.roomLabel}` : ""}`
-    : `Cleaning reminder — ${ctx.unitLabel}`;
-  const sub = ctx.isMoveOut && ctx.roomLabel ? `${ctx.unitLabel} · Room ${ctx.roomLabel}` : ctx.unitLabel;
-  const text = cleaningReminderText(ctx);
+  const subject = `Your cleaning schedule — week of ${formatDate(d.weekStart)}`;
+  const text = cleanerWeeklyText(d);
   const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
   <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
     <div style="height:6px; background:#d4920b;"></div>
     <div style="padding:24px 20px;">
-      ${ctx.isMoveOut ? `<span style="display:inline-block; background:#fbeccc; color:#9a6f08; font-size:12px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; padding:4px 12px; border-radius:999px;">Move-out</span>` : ""}
-      <h1 style="margin:${ctx.isMoveOut ? "14px" : "0"} 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">${heading}</h1>
-      <p style="margin:0; font-size:15px; color:#8a8378;">${sub}</p>
-      <div style="margin:20px 0; background:#f5f2ed; border-radius:12px; padding:16px 18px;">
-        <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Cleaning date</p>
-        <p style="margin:4px 0 0; font-size:20px; font-weight:600; color:#1a1a18;">${formatDate(ctx.date)}</p>
-      </div>
-      <p style="margin:0 0 2px; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Tenant contacts</p>
-      <p style="margin:0 0 6px; font-size:13px; color:#8a8378;">Leaseholder: ${ctx.leaseholderName ?? "—"}</p>
-      ${cleaningContactsHtml(ctx)}
+      <h1 style="margin:0 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">Your cleaning schedule</h1>
+      <p style="margin:0 0 18px; font-size:15px; color:#8a8378;">${weekRange(d.weekStart, d.weekEnd)}</p>
+      ${digestLinesHtml(d.cleanings)}
+      <div style="margin-top:22px;">${ctaButton(d.url, "View schedule & unit contacts")}</div>
+      <p style="margin:14px 0 0; font-size:13px; color:#8a8378;">Open the link any time for the latest schedule. Tap a cleaning to see the unit's tenants, leaseholder, and move-out details.</p>
     </div>
     <div style="padding:14px 20px; background:#f5f2ed; border-top:1px solid #e8e3db;">
-      <p style="margin:0; font-size:12px; color:#8a8378;">Hive Portal · automated cleaning reminder. Tap a phone number to call or an address to email.</p>
+      <p style="margin:0; font-size:12px; color:#8a8378;">Hive Portal · weekly cleaning schedule.</p>
     </div>
   </div>
 </div>`;
   return sendViaResend(
     { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
-    { type: "cleaning_reminder", context: ctx.unitLabel },
+    { type: "cleaner_weekly", context: d.cleanerName ?? to },
+  );
+}
+
+/** Debounced "your schedule changed" notice — points to the live page. */
+export async function sendCleanerScheduleUpdate(
+  to: string,
+  d: CleanerDigest,
+): Promise<SendResult> {
+  const subject = `Schedule updated — week of ${formatDate(d.weekStart)}`;
+  const text = cleanerUpdateText(d);
+  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
+    <div style="height:6px; background:#d4920b;"></div>
+    <div style="padding:24px 20px;">
+      <span style="display:inline-block; background:#fbeccc; color:#9a6f08; font-size:12px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; padding:4px 12px; border-radius:999px;">Updated</span>
+      <h1 style="margin:14px 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">Your schedule changed</h1>
+      <p style="margin:0 0 18px; font-size:15px; color:#8a8378;">This week · ${weekRange(d.weekStart, d.weekEnd)}</p>
+      <p style="margin:0 0 18px; font-size:15px; color:#1a1a18;">Your cleaning schedule for this week has been updated. Open the link below for the latest.</p>
+      <div>${ctaButton(d.url, "View updated schedule")}</div>
+    </div>
+    <div style="padding:14px 20px; background:#f5f2ed; border-top:1px solid #e8e3db;">
+      <p style="margin:0; font-size:12px; color:#8a8378;">Hive Portal · cleaning schedule update.</p>
+    </div>
+  </div>
+</div>`;
+  return sendViaResend(
+    { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
+    { type: "cleaner_update", context: d.cleanerName ?? to },
   );
 }
 

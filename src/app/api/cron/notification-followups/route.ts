@@ -11,7 +11,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendChangeEmail } from "@/lib/notifications";
 import { runLeaseReminders } from "@/lib/lease-reminders";
-import { runCleaningSchedule, runCleaningReminders } from "@/lib/cleaning-reminders";
+import { runCleaningSchedule } from "@/lib/cleaning-reminders";
+import { sendWeeklyCleanerSchedules } from "@/lib/cleaner-reminders";
+import { isSundayET } from "@/lib/date";
 import { flushEmailQueue } from "@/lib/resend-quota";
 
 export const dynamic = "force-dynamic";
@@ -76,9 +78,12 @@ export async function GET(req: NextRequest) {
   const lease = await runLeaseReminders(supabase);
 
   // Roll the 35-day cadence forward (create the next cleaning for any unit whose
-  // upcoming date has passed), THEN send day-before reminders for tomorrow.
+  // upcoming date has passed). On Sundays, send each cleaner their week's
+  // schedule (only cleaners who have at least one cleaning this week).
   const cleaningSchedule = await runCleaningSchedule(supabase);
-  const cleaning = await runCleaningReminders(supabase);
+  const cleanerWeekly = isSundayET()
+    ? await sendWeeklyCleanerSchedules(supabase)
+    : { skipped: "not Sunday" };
 
   const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
@@ -90,12 +95,12 @@ export async function GET(req: NextRequest) {
     .lte("changed_at", cutoff);
 
   if (error) {
-    return NextResponse.json({ error: error.message, lease, cleaningSchedule, cleaning, flush }, { status: 500 });
+    return NextResponse.json({ error: error.message, lease, cleaningSchedule, cleanerWeekly, flush }, { status: 500 });
   }
 
   const rows = (events ?? []) as EventRow[];
   if (rows.length === 0) {
-    return NextResponse.json({ followups_due: 0, sent: 0, failed: 0, lease, cleaningSchedule, cleaning, flush });
+    return NextResponse.json({ followups_due: 0, sent: 0, failed: 0, lease, cleaningSchedule, cleanerWeekly, flush });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,7 +130,7 @@ export async function GET(req: NextRequest) {
       note: "no enabled recipients",
       lease,
       cleaningSchedule,
-      cleaning,
+      cleanerWeekly,
       flush,
     });
   }
@@ -176,5 +181,5 @@ export async function GET(req: NextRequest) {
     else failed++;
   }
 
-  return NextResponse.json({ followups_due: rows.length, sent, failed, lease, cleaningSchedule, cleaning, flush });
+  return NextResponse.json({ followups_due: rows.length, sent, failed, lease, cleaningSchedule, cleanerWeekly, flush });
 }
