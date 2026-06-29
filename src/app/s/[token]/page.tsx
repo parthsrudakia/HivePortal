@@ -1,11 +1,9 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { currentWeek, todayISO, formatDate } from "@/lib/date";
-import { getCleanerWeekSchedule, type CleanerCleaning } from "@/lib/cleaner-schedule";
-import {
-  gatherCleaningContext,
-  type CleaningUnitContext,
-} from "@/lib/cleaning-context";
+import { todayISO, addDaysISO } from "@/lib/date";
+import { getCleanerWeekSchedule } from "@/lib/cleaner-schedule";
+import { gatherCleaningContext } from "@/lib/cleaning-context";
+import { CleanerCalendar, type CalCleaning } from "./cleaner-calendar";
 
 export const dynamic = "force-dynamic";
 // Token in the URL is the only credential; keep these pages out of search.
@@ -22,106 +20,7 @@ function admin() {
   });
 }
 
-/** Full weekday name (Monday, Tuesday…) for a date-only ISO string. */
-function weekdayName(iso: string): string {
-  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", {
-    weekday: "long",
-    timeZone: "UTC",
-  });
-}
-
 type PageProps = { params: Promise<{ token: string }> };
-
-function ContactRow({ c }: { c: CleaningUnitContext["occupants"][number] }) {
-  const phone = c.phone?.replace(/[^\d+]/g, "");
-  return (
-    <div className="border-b border-stone/40 py-2 last:border-b-0">
-      <p className="text-ink">
-        {c.full_name}
-        {c.room_number ? (
-          <span className="text-muted"> · {c.room_number}</span>
-        ) : null}
-        {c.vacated ? (
-          <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-text">
-            Vacated
-          </span>
-        ) : null}
-      </p>
-      <p className="mt-0.5 flex flex-wrap gap-x-4 text-sm">
-        {phone ? (
-          <a href={`tel:${phone}`} className="text-accent-text underline">
-            {c.phone}
-          </a>
-        ) : null}
-        {c.email ? (
-          <a href={`mailto:${c.email}`} className="break-all text-accent-text underline">
-            {c.email}
-          </a>
-        ) : null}
-        {!c.phone && !c.email ? (
-          <span className="text-muted">No contact on file</span>
-        ) : null}
-      </p>
-    </div>
-  );
-}
-
-function CleaningCard({
-  c,
-  ctx,
-}: {
-  c: CleanerCleaning;
-  ctx: CleaningUnitContext | null;
-}) {
-  return (
-    <details className="group rounded-xl bg-white shadow-sm ring-1 ring-stone/30">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-2xl font-semibold text-ink">
-              {formatDate(c.date)}
-            </span>
-            <span className="text-lg text-muted">{weekdayName(c.date)}</span>
-          </p>
-          <p className="mt-1 text-ink">
-            {c.unitLabel}
-            {c.isMoveOut ? (
-              <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-text">
-                Move-out{c.roomLabel ? ` · ${c.roomLabel}` : ""}
-              </span>
-            ) : null}
-          </p>
-        </div>
-        <span className="shrink-0 text-xs uppercase tracking-wide text-accent-text group-open:hidden">
-          Details
-        </span>
-        <span className="hidden shrink-0 text-xs uppercase tracking-wide text-muted group-open:inline">
-          Hide
-        </span>
-      </summary>
-      <div className="border-t border-stone/30 px-4 py-3">
-        <p className="text-xs uppercase tracking-wide text-muted">Leaseholder</p>
-        <p className="mb-3 text-ink">{ctx?.leaseholderName ?? "—"}</p>
-        <p className="text-xs uppercase tracking-wide text-muted">Tenants</p>
-        {ctx && ctx.occupants.length > 0 ? (
-          <div className="mt-1">
-            {ctx.occupants.map((o, i) => (
-              <ContactRow key={i} c={o} />
-            ))}
-          </div>
-        ) : (
-          <p className="mt-1 text-muted">No tenants on record.</p>
-        )}
-        {c.notes ? (
-          <>
-            <p className="mt-3 text-xs uppercase tracking-wide text-muted">Notes</p>
-            <p className="text-ink">{c.notes}</p>
-          </>
-        ) : null}
-      </div>
-    </details>
-  );
-}
 
 export default async function CleanerSchedulePage({ params }: PageProps) {
   const { token } = await params;
@@ -135,10 +34,16 @@ export default async function CleanerSchedulePage({ params }: PageProps) {
   if (!cleaner) notFound();
 
   const today = todayISO();
-  const { end } = currentWeek();
-  const cleanings = await getCleanerWeekSchedule(supabase, cleaner.id, today, end);
+  // Load a generous window so month/range navigation has data: from the start
+  // of two months ago through ~12 months ahead.
+  const [y, m] = today.split("-").map(Number);
+  const from = new Date(Date.UTC(y, m - 1 - 2, 1)).toISOString().slice(0, 10);
+  const to = addDaysISO(today, 365);
 
-  // Gather unit context once per distinct property.
+  const cleanings = await getCleanerWeekSchedule(supabase, cleaner.id, from, to);
+
+  // Gather tenant context once per distinct property, then embed on each cleaning
+  // so the client calendar can show contacts without further round-trips.
   const propertyIds = Array.from(new Set(cleanings.map((c) => c.propertyId)));
   const ctxEntries = await Promise.all(
     propertyIds.map(
@@ -147,41 +52,25 @@ export default async function CleanerSchedulePage({ params }: PageProps) {
   );
   const ctxByProperty = new Map(ctxEntries);
 
-  const firstName = cleaner.name?.split(/\s+/)[0] ?? "there";
+  const items: CalCleaning[] = cleanings.map((c) => {
+    const ctx = ctxByProperty.get(c.propertyId) ?? null;
+    return {
+      id: c.id,
+      date: c.date,
+      unitLabel: c.unitLabel,
+      isMoveOut: c.isMoveOut,
+      roomLabel: c.roomLabel,
+      notes: c.notes,
+      leaseholderName: ctx?.leaseholderName ?? null,
+      occupants: ctx?.occupants ?? [],
+    };
+  });
 
   return (
-    <main className="min-h-screen bg-cream px-4 py-10">
-      <div className="mx-auto w-full max-w-xl">
-        <div className="h-1.5 w-12 rounded-full bg-accent" />
-        <h1 className="mt-4 text-3xl tracking-tight text-ink">
-          Hi {firstName},
-        </h1>
-        <p className="mt-1 text-muted">
-          Your cleaning schedule for {weekdayName(today)} {formatDate(today)} –{" "}
-          {weekdayName(end)} {formatDate(end)}.
-        </p>
-
-        {cleanings.length === 0 ? (
-          <p className="mt-8 rounded-xl bg-white px-6 py-12 text-center text-muted shadow-sm">
-            No cleanings scheduled for the rest of this week.
-          </p>
-        ) : (
-          <div className="mt-6 flex flex-col gap-3">
-            {cleanings.map((c) => (
-              <CleaningCard
-                key={c.id}
-                c={c}
-                ctx={ctxByProperty.get(c.propertyId) ?? null}
-              />
-            ))}
-          </div>
-        )}
-
-        <p className="mt-10 text-center text-xs text-muted">
-          Tap a cleaning to see the unit&apos;s tenants and contacts. This page
-          always shows your latest schedule.
-        </p>
-      </div>
-    </main>
+    <CleanerCalendar
+      cleanerName={cleaner.name}
+      today={today}
+      cleanings={items}
+    />
   );
 }
