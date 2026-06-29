@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setTenancyLeaseEndDate } from "../actions";
+import { setTenancyLeaseEndDate, setTenancyStartDate } from "../actions";
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -15,12 +15,14 @@ function fmtDate(s: string | null): string {
   });
 }
 
-/** Inline editor for a tenancy's informational lease end date. */
-export function LeaseEndEdit({
+/** Inline editor for a tenancy's lease start or end date. */
+export function LeaseDateEdit({
+  field,
   tenancyId,
   tenantId,
   value,
 }: {
+  field: "start" | "end";
   tenancyId: string;
   tenantId: string;
   value: string | null;
@@ -28,10 +30,21 @@ export function LeaseEndEdit({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
+  // The lease start date is required; the lease end date may be cleared.
+  const required = field === "start";
 
   function commit(next: string) {
+    const value = next || null;
+    if (required && !value) {
+      setEditing(false);
+      return;
+    }
     startTransition(async () => {
-      await setTenancyLeaseEndDate(tenancyId, tenantId, next || null);
+      if (field === "start") {
+        await setTenancyStartDate(tenancyId, tenantId, value);
+      } else {
+        await setTenancyLeaseEndDate(tenancyId, tenantId, value);
+      }
       setEditing(false);
       router.refresh();
     });
@@ -42,6 +55,7 @@ export function LeaseEndEdit({
       <input
         type="date"
         autoFocus
+        required={required}
         defaultValue={value ?? ""}
         disabled={pending}
         onBlur={(e) => commit(e.currentTarget.value)}

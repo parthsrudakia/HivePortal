@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { setRoomAmenities, type AmenityValues } from "./actions";
@@ -38,6 +38,19 @@ export function InlineAmenitiesEdit({
   const [pending, startTransition] = useTransition();
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // After the panel renders we know its real height; nudge it up so the Save
+  // button stays on-screen for rows near the bottom of the viewport.
+  useLayoutEffect(() => {
+    if (!open || !pos) return;
+    const h = panelRef.current?.offsetHeight ?? 0;
+    const clamped = Math.max(12, Math.min(pos.top, window.innerHeight - h - 12));
+    if (clamped !== pos.top) {
+      setPos((p) => (p ? { ...p, top: clamped } : p));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function openEditor() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -94,8 +107,13 @@ export function InlineAmenitiesEdit({
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-50 w-64 rounded-xl bg-white p-3 shadow-xl ring-1 ring-stone/40"
-              style={{ top: pos.top, left: pos.left }}
+              ref={panelRef}
+              className="fixed z-50 flex w-64 flex-col overflow-y-auto rounded-xl bg-white p-3 shadow-xl ring-1 ring-stone/40"
+              style={{
+                top: pos.top,
+                left: pos.left,
+                maxHeight: "calc(100vh - 24px)",
+              }}
             >
               <p className="px-1.5 text-xs font-medium uppercase tracking-wide text-muted">
                 Room
@@ -110,7 +128,7 @@ export function InlineAmenitiesEdit({
                 Building amenities apply to every room in this unit.
               </p>
 
-              <div className="mt-3 flex items-center justify-end gap-2 border-t border-stone/40 pt-2">
+              <div className="sticky bottom-0 mt-3 flex items-center justify-end gap-2 border-t border-stone/40 bg-white pt-2">
                 <button
                   type="button"
                   onClick={() => setOpen(false)}

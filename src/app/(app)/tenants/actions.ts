@@ -258,6 +258,24 @@ export async function updateTenant(
 // ----- Informational lease end date (does NOT drive move-out / inventory) -----
 // Stored on the tenancy purely so the profile can show it and a cron can send a
 // 45-day "lease ending" heads-up. Changing it re-arms that reminder.
+export async function setTenancyStartDate(
+  tenancyId: string,
+  tenantId: string,
+  date: string | null,
+): Promise<{ ok: true } | { error: string }> {
+  const value = date && date.trim() ? date.trim() : null;
+  if (!value) return { error: "Lease start date is required." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("tenancies")
+    .update({ start_date: value })
+    .eq("id", tenancyId);
+  if (error) return { error: error.message };
+  revalidatePath("/tenants");
+  if (tenantId) revalidatePath(`/tenants/${tenantId}`);
+  return { ok: true };
+}
+
 export async function setTenancyLeaseEndDate(
   tenancyId: string,
   tenantId: string,

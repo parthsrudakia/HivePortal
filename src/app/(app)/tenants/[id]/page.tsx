@@ -14,7 +14,7 @@ import {
   ReactivateTenancyButton,
 } from "./tenant-actions";
 import { LeaseDownload } from "./lease-download";
-import { LeaseEndEdit } from "./lease-end-edit";
+import { LeaseDateEdit } from "./lease-end-edit";
 import { TenantBackLink } from "./tenant-back-link";
 import { computeLedger, buildLedgerEntries } from "@/lib/rent";
 import { todayISO } from "@/lib/date";
@@ -252,11 +252,19 @@ export default async function TenantDetailPage({
                 <dd className="col-span-2 text-ink">
                   {fmtMoney(active.security_deposit)}
                 </dd>
-                <dt className="text-muted">Started</dt>
-                <dd className="col-span-2 text-ink">{formatDate(active.start_date)}</dd>
-                <dt className="text-muted">Lease ends</dt>
+                <dt className="text-muted">Lease Start Date</dt>
                 <dd className="col-span-2 text-ink">
-                  <LeaseEndEdit
+                  <LeaseDateEdit
+                    field="start"
+                    tenancyId={active.id}
+                    tenantId={tenant.id}
+                    value={active.start_date}
+                  />
+                </dd>
+                <dt className="text-muted">Lease End Date</dt>
+                <dd className="col-span-2 text-ink">
+                  <LeaseDateEdit
+                    field="end"
                     tenancyId={active.id}
                     tenantId={tenant.id}
                     value={active.lease_end_date}
