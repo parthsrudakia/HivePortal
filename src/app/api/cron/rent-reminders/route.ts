@@ -11,7 +11,7 @@
  * date/time gate for manual testing.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   sendRentReminder,
@@ -23,6 +23,17 @@ import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+// Sending is strictly serial (~2s/tenant across the lock write, Resend/Gmail
+// call, row update and Zoom SMS), so a full roster can't finish inside one
+// 60s Vercel invocation. We process for at most this long, then hand the rest
+// to a fresh invocation (see below). Kept well under maxDuration so we always
+// stop *between* tenants and never get hard-killed mid-send, which would leave
+// a reserved-but-unsent lock row behind.
+const BUDGET_MS = 45_000;
+// Safety backstop against a runaway continuation chain; the work terminates on
+// its own once every eligible tenancy has a row for the period.
+const MAX_CONTINUATIONS = 25;
 
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -71,8 +82,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Gate: only send at 11 AM ET on the last day of the month (?force=1 skips
-  // the gate for manual testing).
+  // the gate for manual testing and for our own continuation calls).
   const force = req.nextUrl.searchParams.get("force") === "1";
+  const contCount = Number(req.nextUrl.searchParams.get("cont") ?? "0") || 0;
   if (!force) {
     const { year, month, day, hour } = easternParts();
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -85,7 +97,15 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = admin();
-  const period = todayMonth();
+  // period defaults to the current month; a manual ?period=YYYY-MM override is
+  // honoured only under ?force=1 (e.g. to backfill a run that timed out). It is
+  // just the idempotency key on rent_reminder_emails — the copy itself is
+  // month-agnostic.
+  const periodParam = req.nextUrl.searchParams.get("period");
+  const period =
+    force && periodParam && /^\d{4}-\d{2}$/.test(periodParam)
+      ? periodParam
+      : todayMonth();
   const today = todayISO();
 
   // Active tenancies whose tenant has an email and whose move_out_date (if set)
@@ -102,6 +122,17 @@ export async function GET(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Everyone already handled for this period — skip them up front so each
+  // (possibly continued) invocation spends its whole budget on fresh sends
+  // instead of re-colliding with the unique constraint one row at a time.
+  const { data: existingRows } = await supabase
+    .from("rent_reminder_emails")
+    .select("tenancy_id")
+    .eq("period_month", period);
+  const alreadyDone = new Set(
+    (existingRows ?? []).map((r: { tenancy_id: string }) => r.tenancy_id),
+  );
 
   type PropertyRel = { is_new_york: boolean };
   type RoomRel = { properties: PropertyRel | PropertyRel[] | null };
@@ -130,7 +161,10 @@ export async function GET(req: NextRequest) {
   let skipped = 0;
   let failed = 0;
   let texted = 0;
+  let remaining = 0;
   const errors: Array<{ tenancy_id: string; error: string }> = [];
+
+  const startedAt = Date.now();
 
   for (const row of rows) {
     const tenant = Array.isArray(row.tenants) ? row.tenants[0] : row.tenants;
@@ -141,6 +175,18 @@ export async function GET(req: NextRequest) {
     }
     if (row.move_out_date && row.move_out_date <= today) {
       skipped++;
+      continue;
+    }
+    // Handled on an earlier (possibly timed-out) pass — nothing to do.
+    if (alreadyDone.has(row.id)) {
+      skipped++;
+      continue;
+    }
+
+    // Out of time for this invocation: stop between tenants and let a fresh
+    // invocation pick up whoever's left (counted here so we know to continue).
+    if (Date.now() - startedAt > BUDGET_MS) {
+      remaining++;
       continue;
     }
 
@@ -205,6 +251,31 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Anyone still unsent when the budget ran out gets picked up by a fresh
+  // invocation. We fire it *after* the response so the current function can
+  // return promptly; the child runs on its own clean 60s clock. force=1 skips
+  // the date gate, and period is pinned so every chunk shares one idempotency
+  // key even if the chain crosses a month/day boundary.
+  let continued = false;
+  if (remaining > 0 && contCount < MAX_CONTINUATIONS) {
+    const next = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    next.searchParams.set("force", "1");
+    next.searchParams.set("period", period);
+    next.searchParams.set("cont", String(contCount + 1));
+    const headers: Record<string, string> = expected
+      ? { authorization: `Bearer ${expected}` }
+      : {};
+    continued = true;
+    after(async () => {
+      try {
+        await fetch(next.toString(), { headers });
+      } catch {
+        // Best-effort; a missed continuation just leaves rows for the next
+        // scheduled run or a manual re-trigger to finish.
+      }
+    });
+  }
+
   return NextResponse.json({
     period,
     total: rows.length,
@@ -213,6 +284,9 @@ export async function GET(req: NextRequest) {
     skipped,
     failed,
     texted,
+    remaining,
+    continued,
+    cont: contCount,
     errors,
   });
 }
