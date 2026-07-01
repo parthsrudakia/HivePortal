@@ -715,7 +715,7 @@ export async function sendAgreement(args: {
   }
 
   if (!result.ok) {
-    return { ok: false, mailbox, error: result.error };
+    return { ok: false, mailbox, error: result.error, diag: result.diag };
   }
   return {
     ok: true,
@@ -723,6 +723,7 @@ export async function sendAgreement(args: {
     letterhead: !args.in_new_york,
     sent: true,
     recipient: args.recipient_email,
+    diag: result.diag,
   };
 }
 

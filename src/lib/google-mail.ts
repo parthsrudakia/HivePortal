@@ -34,9 +34,29 @@ export type DraftResult =
   | { ok: true; draftUrl: string }
   | { ok: false; error: string };
 
+/**
+ * Diagnostic breadcrumbs from an Outlook (Graph) send, surfaced so the Telegram
+ * activity log can capture WHY a send failed or how it was verified — e.g.
+ * whether the draft carried an internetMessageId, and how the Sent-Items match
+ * resolved. Populated only by sendOutlookMessage; the Gmail path leaves it unset.
+ */
+export type SendDiag = {
+  createStatus?: number;
+  /** internetMessageId present on the draft-create response ("" / null if absent). */
+  internetMessageIdOnCreate?: string | null;
+  sendStatus?: number;
+  /** How delivery was confirmed. */
+  verifyMethod?: "subject+recipient+sentDateTime";
+  verifyAttempts?: number;
+  matchedInSentItems?: boolean;
+  /** How many recent Sent-Items messages matched the subject+time filter. */
+  sentItemsCandidates?: number;
+  note?: string;
+};
+
 export type SendResult =
-  | { ok: true; id: string }
-  | { ok: false; error: string };
+  | { ok: true; id: string; diag?: SendDiag }
+  | { ok: false; error: string; diag?: SendDiag };
 
 function config() {
   const user = process.env.GMAIL_USER;

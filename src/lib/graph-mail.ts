@@ -16,7 +16,12 @@
  * Env: MS_CLIENT_ID, MS_CLIENT_SECRET, MS_TENANT_ID, MS_REFRESH_TOKEN
  */
 
-import type { DraftInput, DraftResult, SendResult } from "./google-mail";
+import type {
+  DraftInput,
+  DraftResult,
+  SendDiag,
+  SendResult,
+} from "./google-mail";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const GRAPH_MESSAGES_URL = `${GRAPH_BASE}/me/messages`;
@@ -227,76 +232,101 @@ export async function sendOutlookMessage(
       id?: string;
       internetMessageId?: string;
     };
+    // Diagnostic breadcrumbs surfaced to the Telegram activity log so a bad send
+    // can be investigated — notably whether the draft carried an
+    // internetMessageId (the field whose absence used to trigger a false success)
+    // and how the Sent-Items match resolved.
+    const diag: SendDiag = {
+      createStatus: createRes.status,
+      internetMessageIdOnCreate: draft.internetMessageId ?? null,
+      verifyMethod: "subject+recipient+sentDateTime",
+    };
     if (!draft.id) {
-      return { ok: false, error: "Outlook draft create returned no message id." };
-    }
-
-    // 2. Resolve the internetMessageId we will verify against BEFORE sending.
-    //    It is assigned at draft-creation time and survives the draft → Sent
-    //    move, but the create response does not reliably include it (no
-    //    $select / Prefer: return=representation), so re-read it from the
-    //    durably-persisted draft when absent. Never fall back to trusting the
-    //    202 — that reintroduces the silent-drop false success this whole
-    //    function exists to prevent.
-    let messageId = draft.internetMessageId;
-    if (!messageId) {
-      const idRes = await fetch(
-        `${GRAPH_MESSAGES_URL}/${encodeURIComponent(draft.id)}?$select=internetMessageId`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (idRes.ok) {
-        const fetched = (await idRes.json()) as { internetMessageId?: string };
-        messageId = fetched.internetMessageId;
-      }
-    }
-    if (!messageId) {
       return {
         ok: false,
-        error:
-          "Outlook draft was created but no internetMessageId could be read to " +
-          "verify delivery — send aborted to avoid a false success. Please retry.",
+        error: "Outlook draft create returned no message id.",
+        diag,
       };
     }
+
+    // 2. Record the instant just before we submit. Delivery is confirmed by
+    //    finding a message in Sent Items addressed to this recipient, with this
+    //    subject, sent at/after this instant. This does NOT depend on
+    //    internetMessageId — some mailboxes only assign (or rewrite) it at send
+    //    time, which is exactly what broke the old id-keyed verification. The 60s
+    //    back-off absorbs client/server clock skew.
+    const sentFloor = new Date(Date.now() - 60_000).toISOString();
 
     // 3. Send the persisted draft. /send returns 202 with an empty body.
     const sendRes = await fetch(
       `${GRAPH_MESSAGES_URL}/${encodeURIComponent(draft.id)}/send`,
       { method: "POST", headers: authHeaders },
     );
+    diag.sendStatus = sendRes.status;
     if (!sendRes.ok) {
       const detail = await sendRes.text().catch(() => "");
       return {
         ok: false,
         error: `Outlook send failed (${sendRes.status}): ${detail.slice(0, 200)}`,
+        diag,
       };
     }
 
     // 4. Verify the message actually landed in Sent Items before reporting
-    //    success. Keyed on internetMessageId, which survives the draft → sent
-    //    move. Poll briefly: the async send + Sent-Items write usually completes
-    //    within a couple of seconds.
+    //    success. Match on recipient + subject + sentDateTime window. Never fall
+    //    back to trusting the 202 — a positive Sent-Items match is the only path
+    //    to success. Poll briefly: the async send + Sent-Items write usually
+    //    completes within a few seconds.
+    const escapedSubject = input.subject.replace(/'/g, "''");
+    const recipient = input.to.toLowerCase();
     const verifyUrl =
       `${GRAPH_BASE}/me/mailFolders/sentitems/messages` +
-      `?$filter=${encodeURIComponent(`internetMessageId eq '${messageId}'`)}` +
-      `&$select=id&$top=1`;
-    const delays = [800, 1200, 1600, 2400, 3200]; // ~9s total budget
+      `?$filter=${encodeURIComponent(
+        `sentDateTime ge ${sentFloor} and subject eq '${escapedSubject}'`,
+      )}` +
+      `&$select=id,internetMessageId,toRecipients,sentDateTime&$top=25`;
+    const delays = [1000, 1500, 2000, 2500, 3000, 3000]; // ~13s total budget
+    let attempts = 0;
     for (let attempt = 0; attempt <= delays.length; attempt++) {
+      attempts = attempt + 1;
       const checkRes = await fetch(verifyUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (checkRes.ok) {
-        const found = (await checkRes.json()) as { value?: unknown[] };
-        if (Array.isArray(found.value) && found.value.length > 0) {
-          return { ok: true, id: messageId };
+        const found = (await checkRes.json()) as {
+          value?: Array<{
+            id?: string;
+            internetMessageId?: string;
+            toRecipients?: Array<{ emailAddress?: { address?: string } }>;
+          }>;
+        };
+        const candidates = found.value ?? [];
+        diag.sentItemsCandidates = candidates.length;
+        const match = candidates.find((m) =>
+          (m.toRecipients ?? []).some(
+            (r) => r.emailAddress?.address?.toLowerCase() === recipient,
+          ),
+        );
+        if (match) {
+          diag.verifyAttempts = attempts;
+          diag.matchedInSentItems = true;
+          return {
+            ok: true,
+            id: match.internetMessageId ?? match.id ?? "",
+            diag,
+          };
         }
       }
       if (attempt < delays.length) await sleep(delays[attempt]);
     }
+    diag.verifyAttempts = attempts;
+    diag.matchedInSentItems = false;
     return {
       ok: false,
       error:
-        "Outlook accepted the send but the message did not appear in Sent Items " +
-        "within ~9s — it may have been silently dropped. Please retry.",
+        "Outlook accepted the send but no matching message appeared in Sent " +
+        "Items within ~13s — it may have been silently dropped. Please retry.",
+      diag,
     };
   } catch (e) {
     return {
