@@ -47,6 +47,13 @@ const ADMIN_LINKS: AdminLink[] = [
     title: "Text log",
     description: "Every text the portal has sent, filterable by type and status.",
   },
+  {
+    href: "/settings/telegram-log",
+    title: "Telegram bot log",
+    description:
+      "Every bot turn — user messages, tool calls, results, and errors — for diagnosing what went wrong.",
+    masterOnly: true,
+  },
 ];
 
 export default async function AdminSettingsPage() {

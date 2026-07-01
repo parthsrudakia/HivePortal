@@ -1233,6 +1233,54 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_activity_log: {
+        Row: {
+          chat_id: number
+          created_at: string
+          detail: Json | null
+          error: string | null
+          id: number
+          kind: string
+          latency_ms: number | null
+          ok: boolean | null
+          telegram_user_id: number | null
+          text: string | null
+          tool_name: string | null
+          turn_id: string | null
+          username: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          detail?: Json | null
+          error?: string | null
+          id?: number
+          kind: string
+          latency_ms?: number | null
+          ok?: boolean | null
+          telegram_user_id?: number | null
+          text?: string | null
+          tool_name?: string | null
+          turn_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          detail?: Json | null
+          error?: string | null
+          id?: number
+          kind?: string
+          latency_ms?: number | null
+          ok?: boolean | null
+          telegram_user_id?: number | null
+          text?: string | null
+          tool_name?: string | null
+          turn_id?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
       telegram_chat_messages: {
         Row: {
           chat_id: number

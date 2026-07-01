@@ -231,7 +231,34 @@ export async function sendOutlookMessage(
       return { ok: false, error: "Outlook draft create returned no message id." };
     }
 
-    // 2. Send the persisted draft. /send returns 202 with an empty body.
+    // 2. Resolve the internetMessageId we will verify against BEFORE sending.
+    //    It is assigned at draft-creation time and survives the draft → Sent
+    //    move, but the create response does not reliably include it (no
+    //    $select / Prefer: return=representation), so re-read it from the
+    //    durably-persisted draft when absent. Never fall back to trusting the
+    //    202 — that reintroduces the silent-drop false success this whole
+    //    function exists to prevent.
+    let messageId = draft.internetMessageId;
+    if (!messageId) {
+      const idRes = await fetch(
+        `${GRAPH_MESSAGES_URL}/${encodeURIComponent(draft.id)}?$select=internetMessageId`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (idRes.ok) {
+        const fetched = (await idRes.json()) as { internetMessageId?: string };
+        messageId = fetched.internetMessageId;
+      }
+    }
+    if (!messageId) {
+      return {
+        ok: false,
+        error:
+          "Outlook draft was created but no internetMessageId could be read to " +
+          "verify delivery — send aborted to avoid a false success. Please retry.",
+      };
+    }
+
+    // 3. Send the persisted draft. /send returns 202 with an empty body.
     const sendRes = await fetch(
       `${GRAPH_MESSAGES_URL}/${encodeURIComponent(draft.id)}/send`,
       { method: "POST", headers: authHeaders },
@@ -244,16 +271,10 @@ export async function sendOutlookMessage(
       };
     }
 
-    // 3. Verify the message actually landed in Sent Items before reporting
+    // 4. Verify the message actually landed in Sent Items before reporting
     //    success. Keyed on internetMessageId, which survives the draft → sent
     //    move. Poll briefly: the async send + Sent-Items write usually completes
     //    within a couple of seconds.
-    const messageId = draft.internetMessageId;
-    if (!messageId) {
-      // No id to verify against — fall back to trusting the 202 rather than
-      // failing a send that probably succeeded.
-      return { ok: true, id: "" };
-    }
     const verifyUrl =
       `${GRAPH_BASE}/me/mailFolders/sentitems/messages` +
       `?$filter=${encodeURIComponent(`internetMessageId eq '${messageId}'`)}` +

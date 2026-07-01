@@ -17,6 +17,8 @@ import { runWithToolContext, tools } from "@/lib/portal-tools";
 import { allowedUserIds, sendChatAction, sendMessage } from "@/lib/telegram";
 import { checkOutlookSendAuth } from "@/lib/graph-mail";
 import { checkGmailAuth } from "@/lib/google-mail";
+import { logTelegramEvent } from "@/lib/telegram-log";
+import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Vercel: allow long agent loops
@@ -169,6 +171,14 @@ export async function POST(req: Request) {
 
   const allowed = allowedUserIds();
   if (allowed.size > 0 && !allowed.has(msg.from.id)) {
+    await logTelegramEvent({
+      kind: "rejected",
+      chatId: msg.chat.id,
+      telegramUserId: msg.from.id,
+      username: msg.from.username,
+      text: msg.text.slice(0, 500),
+      detail: { reason: "not on allow list" },
+    });
     await sendMessage(
       msg.chat.id,
       "This bot is private. Your Telegram ID isn't on the allow list.",
@@ -178,8 +188,19 @@ export async function POST(req: Request) {
 
   const userText = msg.text.trim();
 
+  // Correlates every diagnostic-log row for this turn (user msg → tool calls →
+  // reply / error). Metadata about who sent it rides along on each row.
+  const turnId = randomUUID();
+  const actor = {
+    chatId: msg.chat.id,
+    turnId,
+    telegramUserId: msg.from.id,
+    username: msg.from.username,
+  };
+
   // Slash commands
   if (userText === "/start" || userText === "/help") {
+    await logTelegramEvent({ ...actor, kind: "slash_command", text: userText });
     await sendMessage(
       msg.chat.id,
       "Hi — I'm the Hive ops assistant.\n\n" +
@@ -212,6 +233,12 @@ export async function POST(req: Request) {
       if (r.ok) return `${label}: ✅ OK`;
       return `${label}: ❌ ${r.error ?? "auth failed"}`;
     };
+    await logTelegramEvent({
+      ...actor,
+      kind: "slash_command",
+      text: userText,
+      detail: { outlook, gmail },
+    });
     await sendMessage(
       msg.chat.id,
       "Mail diagnostics (no email sent):\n\n" +
@@ -227,6 +254,7 @@ export async function POST(req: Request) {
       .from("telegram_chat_messages")
       .delete()
       .eq("chat_id", msg.chat.id);
+    await logTelegramEvent({ ...actor, kind: "slash_command", text: userText });
     await sendMessage(msg.chat.id, "Chat history cleared.");
     return NextResponse.json({ ok: true });
   }
@@ -243,14 +271,23 @@ export async function POST(req: Request) {
   };
   const messages = [...history, newUserMessage];
 
+  await logTelegramEvent({ ...actor, kind: "user_message", text: userText });
+
+  const turnStartedAt = Date.now();
   let finalMessage: Anthropic.Beta.BetaMessage;
   try {
     // Run inside the chat context so tools that deliver files (e.g.
-    // share_inventory_sheet) know which chat to send the document to. The
+    // share_inventory_sheet) know which chat to send the document to, and so the
+    // per-tool diagnostic logger can attribute each call to this turn. The
     // toolRunner is awaited *inside* the callback so the AsyncLocalStorage store
     // stays active for the whole tool-execution loop, not just construction.
     finalMessage = await runWithToolContext(
-      { chatId: msg.chat.id },
+      {
+        chatId: msg.chat.id,
+        turnId,
+        telegramUserId: msg.from.id,
+        username: msg.from.username,
+      },
       async () =>
         await client.beta.messages.toolRunner({
           model: "claude-opus-4-7",
@@ -265,6 +302,13 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("Anthropic tool runner failed:", e);
     const errText = e instanceof Error ? e.message : "unknown error";
+    await logTelegramEvent({
+      ...actor,
+      kind: "agent_error",
+      ok: false,
+      latencyMs: Date.now() - turnStartedAt,
+      error: errText,
+    });
     await sendMessage(msg.chat.id, `Sorry — agent error: ${errText}`);
     return NextResponse.json({ ok: true });
   }
@@ -282,6 +326,20 @@ export async function POST(req: Request) {
   // turns have the tool-use chain in context if needed).
   await appendHistory(msg.chat.id, "user", newUserMessage.content);
   await appendHistory(msg.chat.id, "assistant", finalMessage.content);
+
+  // Diagnostic record of the reply the operator actually saw, plus the token
+  // usage and stop reason for the whole turn.
+  await logTelegramEvent({
+    ...actor,
+    kind: "assistant_reply",
+    latencyMs: Date.now() - turnStartedAt,
+    text: text.length > 0 ? text : "(no text — final message had no reply)",
+    detail: {
+      stop_reason: finalMessage.stop_reason,
+      usage: finalMessage.usage,
+      content: finalMessage.content,
+    },
+  });
 
   if (text.length === 0) {
     await sendMessage(msg.chat.id, "(Done — no message to add.)");
