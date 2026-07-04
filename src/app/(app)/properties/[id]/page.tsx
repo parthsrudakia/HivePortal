@@ -106,6 +106,14 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     .map((c) => c.name)
     .filter((n): n is string => !!n);
 
+  // Suggest the next "Room N" in the add-room form (max + 1, not count, so
+  // deleting Room 2 and re-adding doesn't suggest a duplicate Room 3).
+  const maxRoomN = (rooms ?? []).reduce((m, r) => {
+    const match = r.room_number?.match(/Room (\d+)/);
+    return match ? Math.max(m, parseInt(match[1], 10)) : m;
+  }, 0);
+  const suggestedRoomNumber = `Room ${maxRoomN + 1}`;
+
   const title = property.building_name?.trim() || property.street_address;
   const leaseholder = one(property.leaseholders);
 
@@ -250,7 +258,18 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           <h2 className="text-xl tracking-tight text-ink">
             <span className="font-display text-accent-text">Rooms</span>
           </h2>
-          <AddRoom propertyId={property.id} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href="/tenants/new"
+              className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-ink hover:bg-warm"
+            >
+              Add tenant
+            </Link>
+            <AddRoom
+              propertyId={property.id}
+              suggestedRoomNumber={suggestedRoomNumber}
+            />
+          </div>
         </header>
 
         {(!rooms || rooms.length === 0) && (

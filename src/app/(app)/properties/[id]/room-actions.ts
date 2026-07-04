@@ -61,25 +61,29 @@ export async function addRoom(
   const parsed = parseRoom(formData);
   if ("error" in parsed) return parsed;
 
+  const room_number = String(formData.get("room_number") ?? "").trim();
+  if (!room_number) return { error: "Room name/number is required." };
+
   const supabase = await createClient();
 
-  // Auto-number this room as "Room N". N = max existing N for this property
-  // plus one (using max, not count, so deleting Room 2 and re-adding doesn't
-  // create a duplicate Room 3).
-  const { data: existing } = await supabase
+  const { data: duplicate } = await supabase
     .from("rooms")
-    .select("room_number")
-    .eq("property_id", propertyId);
-  const maxN = (existing ?? []).reduce((m, r) => {
-    const match = r.room_number?.match(/Room (\d+)/);
-    if (!match) return m;
-    return Math.max(m, parseInt(match[1], 10));
-  }, 0);
-  const room_number = `Room ${maxN + 1}`;
+    .select("id")
+    .eq("property_id", propertyId)
+    .eq("room_number", room_number)
+    .maybeSingle();
+  if (duplicate) {
+    return { error: `"${room_number}" already exists in this property.` };
+  }
 
-  const { error } = await supabase
-    .from("rooms")
-    .insert({ ...parsed, property_id: propertyId, room_number });
+  // A new room always starts out available — status only becomes meaningful
+  // once a tenancy or maintenance state changes it.
+  const { error } = await supabase.from("rooms").insert({
+    ...parsed,
+    status: "available",
+    property_id: propertyId,
+    room_number,
+  });
 
   if (error) return { error: error.message };
 

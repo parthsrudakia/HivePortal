@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import {
   updateRoom,
@@ -130,6 +131,14 @@ export function RoomRow({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {room.status !== "occupied" && (
+            <Link
+              href={`/tenants/new?room_id=${room.id}#add-tenant`}
+              className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
+            >
+              Add tenant
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setEditing(true)}

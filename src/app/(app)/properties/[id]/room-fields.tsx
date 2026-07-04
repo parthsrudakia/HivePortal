@@ -18,23 +18,32 @@ const fieldInput =
 const checkboxLabel =
   "flex items-center gap-2 text-sm text-ink";
 
-export function RoomFields({ initial }: { initial?: Initial }) {
+export function RoomFields({
+  initial,
+  showStatus = true,
+}: {
+  initial?: Initial;
+  // New rooms are always created "available", so the add form hides this.
+  showStatus?: boolean;
+}) {
   const v = initial ?? {};
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="flex flex-col gap-1.5">
-        <span className={fieldLabel}>Status</span>
-        <select
-          name="status"
-          defaultValue={v.status ?? "available"}
-          className={fieldInput}
-        >
-          <option value="available">Available</option>
-          <option value="occupied">Occupied</option>
-          <option value="reserved">Reserved</option>
-          <option value="maintenance">Maintenance</option>
-        </select>
-      </label>
+      {showStatus && (
+        <label className="flex flex-col gap-1.5">
+          <span className={fieldLabel}>Status</span>
+          <select
+            name="status"
+            defaultValue={v.status ?? "available"}
+            className={fieldInput}
+          >
+            <option value="available">Available</option>
+            <option value="occupied">Occupied</option>
+            <option value="reserved">Reserved</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </label>
+      )}
       <label className="flex flex-col gap-1.5">
         <span className={fieldLabel}>Base rent ($)</span>
         <input
