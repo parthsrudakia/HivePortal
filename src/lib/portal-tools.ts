@@ -575,12 +575,20 @@ function composeFullAddress(p: {
 // ready for send_agreement.
 export async function resolvePropertyAddress(args: { query: string }) {
   const supabase = admin();
-  const { data: props, error } = await supabase
-    .from("properties")
-    .select(
-      "id, building_name, street_address, unit_number, neighborhood, is_new_york",
-    );
+  const [{ data: props, error }, { data: saved }] = await Promise.all([
+    supabase
+      .from("properties")
+      .select(
+        "id, building_name, street_address, unit_number, neighborhood, is_new_york",
+      ),
+    // Addresses the operator has already confirmed on a sent agreement —
+    // these are exact and win over anything we could compose.
+    supabase.from("agreement_addresses").select("property_id, full_address"),
+  ]);
   if (error) throw new Error(error.message);
+  const confirmedById = new Map(
+    (saved ?? []).map((s) => [s.property_id as string, s.full_address as string]),
+  );
 
   const tokens = args.query
     .toLowerCase()
@@ -610,14 +618,25 @@ export async function resolvePropertyAddress(args: { query: string }) {
     .sort((a, b) => b.hits - a.hits)
     .slice(0, 5);
 
-  return pool.map(({ p, hits }) => ({
-    property_id: p.id,
-    label: propertyLabel(p),
-    neighborhood: p.neighborhood,
-    is_new_york: p.is_new_york,
-    matched_all_terms: hits === tokens.length,
-    ...composeFullAddress(p),
-  }));
+  return pool.map(({ p, hits }) => {
+    const confirmed = confirmedById.get(p.id);
+    return {
+      property_id: p.id,
+      label: propertyLabel(p),
+      neighborhood: p.neighborhood,
+      is_new_york: p.is_new_york,
+      matched_all_terms: hits === tokens.length,
+      ...(confirmed
+        ? {
+            full_address: confirmed,
+            needs_city_state: false,
+            // Exact address the operator confirmed on a previous agreement —
+            // use verbatim, no re-composing needed.
+            operator_confirmed: true,
+          }
+        : { ...composeFullAddress(p), operator_confirmed: false }),
+    };
+  });
 }
 
 // Undo a scheduled (or accidental) move-out: tenancy back to active with no
@@ -1128,6 +1147,7 @@ export async function sendAgreement(args: {
   pro_rate_rent?: string;
   agreement_date?: string;
   confirm_mailbox_mismatch?: boolean;
+  property_id?: string;
 }) {
   // Validate everything up front: a lease PDF with a malformed date or amount,
   // or sent to a mistyped address, is worse than an error the operator can fix.
@@ -1271,6 +1291,23 @@ export async function sendAgreement(args: {
   if (!result.ok) {
     return { ok: false, mailbox, error: result.error, diag: result.diag };
   }
+
+  // The operator confirmed this exact address and it went out on a real
+  // agreement — remember it so future agreements for this property reuse it
+  // verbatim. Best-effort: a save failure must not taint the send report.
+  if (args.property_id) {
+    await admin()
+      .from("agreement_addresses")
+      .upsert(
+        {
+          property_id: args.property_id,
+          full_address: args.property_address.trim(),
+          confirmed_at: new Date().toISOString(),
+        },
+        { onConflict: "property_id" },
+      );
+  }
+
   return {
     ok: true,
     mailbox,
@@ -1690,6 +1727,14 @@ const rawTools = [
             "though the property address's state contradicts in_new_york. " +
             "Never set it on the first attempt.",
         ),
+      property_id: z
+        .string()
+        .optional()
+        .describe(
+          "UUID from resolve_property_address. Always pass it when known: on " +
+            "a successful send the confirmed property_address is saved and " +
+            "reused verbatim for future agreements at this property.",
+        ),
     }),
     run: async (args) => JSON.stringify(await sendAgreement(args)),
   }),
@@ -1823,11 +1868,14 @@ const rawTools = [
       "Autocomplete a full property address from a fragment the operator " +
       "gave (building name, street, unit, or neighborhood — e.g. '3516 jfk " +
       "203' or 'normandie 32F'). Returns up to 5 matching units, each with a " +
-      "composed full_address (street, apt, city, state) ready for " +
-      "send_agreement, plus the property's is_new_york flag. If " +
-      "needs_city_state is true the city/state couldn't be inferred — ask " +
-      "the operator for it. Always read the completed address back for " +
-      "confirmation before sending an agreement.",
+      "full_address ready for send_agreement plus the property's is_new_york " +
+      "flag. When operator_confirmed is true the address was used on a " +
+      "previously sent agreement — it is exact; use it verbatim. Otherwise " +
+      "full_address is composed from portal data: auto-correct it to the " +
+      "exact postal address (expand abbreviated street names, add the ZIP " +
+      "code if you know it) before reading it back. If needs_city_state is " +
+      "true, ask the operator for the city/state. Always read the final " +
+      "address back for confirmation before sending an agreement.",
     inputSchema: z.object({
       query: z.string().describe("Address fragment as the operator typed it"),
     }),

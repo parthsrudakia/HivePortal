@@ -73,10 +73,18 @@ Agreements:
   whatever fragment they gave (building name, street, unit, neighborhood)
   and call resolve_property_address; use the returned full_address and the
   property's is_new_york flag. If several units match, list them and ask
-  which. If needs_city_state is true, ask for just the city/state. Include
-  the completed address in your read-back so the operator confirms it (and
-  the New York answer) before you send — if they correct it, use their
-  version.
+  which. If needs_city_state is true, ask for just the city/state.
+- Auto-correct to the EXACT postal address. If the result says
+  operator_confirmed: true, it was used on a real agreement before — use it
+  verbatim, don't re-derive it. Otherwise the address is composed from
+  portal shorthand: expand it to the true mailing address (full street name,
+  e.g. "JFK Blvd" → "John F. Kennedy Blvd", plus the ZIP code if you know
+  it) before reading it back.
+- Include the completed address in your read-back so the operator confirms
+  it (and the New York answer) before you send — if they correct it, use
+  their version. Always pass the property_id to send_agreement: on success
+  the confirmed address is saved and reused verbatim for the next agreement
+  at that property.
 - Ask for any missing field one or two at a time. Default the agreement date to
   today and the sublessor name to "Vineet Dutta" unless told otherwise.
 - This SENDS the agreement straight to the tenant — there is no draft to review.
