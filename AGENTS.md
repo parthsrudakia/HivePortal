@@ -52,7 +52,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 
 ## Layout
 
-- `src/app/(app)/**` — the authenticated portal. One folder per feature (`tenants`, `properties`, `inventory`, `cleaning`, `reconciliation`, `agreements`, `credentials`, `projects`, `reports`, `settings`). Each typically has `page.tsx` (Server Component for reads) + `actions.ts` (`"use server"` mutations) + colocated client components.
+- `src/app/(app)/**` — the authenticated portal. One folder per feature (`tenants`, `properties`, `inventory`, `cleaning`, `utilities`, `reconciliation`, `agreements`, `credentials`, `projects`, `reports`, `settings`). Each typically has `page.tsx` (Server Component for reads) + `actions.ts` (`"use server"` mutations) + colocated client components.
 - `src/app/login`, `src/app/auth/**` — login, invite acceptance, password reset.
 - `src/app/api/**` — `telegram/route.ts` (bot webhook) and `cron/{rent-reminders,notification-followups}/route.ts` (Vercel cron, guarded by `CRON_SECRET`).
 - `src/lib/**` — domain logic (see below).
@@ -79,6 +79,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 - `resend-quota.ts` — Resend free-tier guard. **All Resend mail must go through `sendViaResend()`** (the five `email.ts`/`notifications.ts` senders already do): under the daily/monthly caps it sends now, otherwise it parks the email in `email_queue`. The daily cron drains the backlog (`flushEmailQueue`) FIFO, re-respecting the caps. Caps: `RESEND_DAILY_CAP` (90), `RESEND_MONTHLY_CAP` (3000). Gmail sends use `channel='gmail'` and don't count.
 - `notifications.ts` / `lease-reminders.ts` — room-change emails + lease-ending reminders, both run from the daily follow-up cron.
 - `portal-tools.ts` — Claude tool handlers shared by the Telegram bot.
+- `utility-extract.ts` — Claude (`claude-opus-4-8`, structured output) reads an uploaded utility statement (PDF/photo) into bill data for `/utilities`: matches the unit by service address, extracts only current-cycle charges (previous balance ignored), late fees/other as separate line items. Tables `utility_bills`/`utility_bill_charges`; originals in the private `utilities` bucket.
 - `board.ts` — Projects board (ported from the standalone hiveboard app): task/review workflow, monthly recurring rollover, email notifications, and the daily deadline-reminder pass. Tables `board_tasks`/`board_comments`/`board_prefs`; admin = `isMaster()`, every other portal user is a member.
 - `reconciliation/parsers.ts` — Zelle bank-file vs tenant matching rules.
 - `analytics/collections.ts` — historic rent-collection reporting for `/reports`.

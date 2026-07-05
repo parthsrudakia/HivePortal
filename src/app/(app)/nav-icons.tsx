@@ -8,12 +8,16 @@ export type NavIconName =
   | "credentials"
   | "agreements"
   | "projects"
+  | "utilities"
   | "notifications"
   | "settings";
 
 // Stroke-based 24×24 icons (Feather/Lucide style) matching the inline SVGs
 // already used in the nav header and command palette.
 const PATHS: Record<NavIconName, React.ReactNode> = {
+  utilities: (
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  ),
   projects: (
     <>
       <path d="M9 11l3 3 8-8" />

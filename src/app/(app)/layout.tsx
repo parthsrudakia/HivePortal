@@ -23,6 +23,7 @@ const NAV: NavItem[] = [
   { href: "/tenants", label: "Rent Tracker", icon: "tenants" },
   { href: "/reconciliation", label: "Reconciliation", icon: "reconciliation" },
   { href: "/cleaning", label: "Cleaning", icon: "cleaning" },
+  { href: "/utilities", label: "Utilities", icon: "utilities" },
   { href: "/credentials", label: "Credentials", icon: "credentials" },
   { href: "/agreements", label: "Agreements", icon: "agreements" },
 ];
