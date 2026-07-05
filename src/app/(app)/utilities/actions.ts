@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
@@ -62,8 +63,29 @@ export async function uploadStatement(
     unit_number: p.unit_number,
   }));
 
-  // Extract first — if Claude can't read it, don't leave an orphaned upload.
   const buf = Buffer.from(await file.arrayBuffer());
+
+  // Duplicate guard 1: the exact same file was uploaded before. Checked
+  // before extraction so a re-drop doesn't burn an extraction call.
+  const fileHash = createHash("sha256").update(buf).digest("hex");
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: dup } = await (sb as any)
+      .from("utility_bills")
+      .select("id, provider, statement_date")
+      .eq("file_sha256", fileHash)
+      .maybeSingle();
+    if (dup) {
+      const what = [dup.provider, dup.statement_date && `statement ${dup.statement_date}`]
+        .filter(Boolean)
+        .join(", ");
+      return {
+        error: `Duplicate — this exact file is already in the log${what ? ` (${what})` : ""}. Discarded.`,
+      };
+    }
+  }
+
+  // Extract — if Claude can't read it, don't leave an orphaned upload.
   let extracted;
   try {
     extracted = await extractUtilityBill(
@@ -101,6 +123,37 @@ export async function uploadStatement(
     };
   }
 
+  // Duplicate guard 2: the same bill re-scanned or exported again (different
+  // bytes, same account + billing period / statement date).
+  {
+    const acct = extracted.account_number?.replace(/\D/g, "") || null;
+    if (acct && (extracted.period_start || extracted.statement_date)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (sb as any)
+        .from("utility_bills")
+        .select("id, account_number, provider");
+      if (extracted.period_start && extracted.period_end) {
+        q = q
+          .eq("period_start", extracted.period_start)
+          .eq("period_end", extracted.period_end);
+      } else {
+        q = q.eq("statement_date", extracted.statement_date);
+      }
+      const { data: candidates } = await q;
+      const dup = (candidates ?? []).find(
+        (c: { account_number: string | null }) =>
+          (c.account_number ?? "").replace(/\D/g, "") === acct,
+      );
+      if (dup) {
+        return {
+          error:
+            `Duplicate — a bill for this account and period is already in the log` +
+            `${dup.provider ? ` (${dup.provider})` : ""}. Discarded.`,
+        };
+      }
+    }
+  }
+
   // Store the original statement.
   const safeName = file.name.replace(/[^\w.\-]/g, "_") || "statement";
   const path = `${extracted.property_id ?? "unmatched"}/${Date.now()}-${safeName}`;
@@ -124,6 +177,7 @@ export async function uploadStatement(
       period_end: extracted.period_end,
       total_amount: total,
       statement_path: path,
+      file_sha256: fileHash,
       notes: extracted.notes,
     })
     .select("id")
