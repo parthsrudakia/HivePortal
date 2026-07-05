@@ -302,10 +302,10 @@ function OverageFlags({
             <span className="text-xs text-muted">
               {f.month} · {f.type}
             </span>
-            <span className="ml-auto tabular-nums text-ink">
+            <span className="ml-auto pr-3 tabular-nums text-ink">
               {fmtMoney(f.usage)}
             </span>
-            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-700">
+            <span className="mr-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-700">
               +{fmtMoney(f.usage - OVERAGE_THRESHOLD)} over
             </span>
           </li>
