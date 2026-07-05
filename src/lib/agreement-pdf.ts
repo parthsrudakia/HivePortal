@@ -192,23 +192,24 @@ export function buildAgreementPdf(data: AgreementPdfData): jsPDF {
 
   if (hasLetterhead) {
     // Vector lockup from hiveny.com: gold hive glyph + HIVE wordmark.
-    const logoHeight = 16;
+    const logoHeight = 12;
     drawHiveLetterhead(pdf, margin, yPos, logoHeight);
 
-    // Contact details on top right
+    // Contact details on top right. Four lines at 3.6mm leading run taller
+    // than the logo, so the header height below follows the contact block.
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
+    pdf.setFontSize(8.5);
     const rightX = pageWidth - margin;
-    let contactY = yPos + 4;
+    let contactY = yPos + 2;
     pdf.text("917-622-9847", rightX, contactY, { align: "right" });
-    contactY += 4;
+    contactY += 3.6;
     pdf.text("Vineet.Dutta@HiveNY.com", rightX, contactY, { align: "right" });
-    contactY += 4;
+    contactY += 3.6;
     pdf.text("442 5th Avenue Suite #2478", rightX, contactY, { align: "right" });
-    contactY += 4;
+    contactY += 3.6;
     pdf.text("New York, NY 10018", rightX, contactY, { align: "right" });
 
-    yPos += logoHeight + 2;
+    yPos = contactY + 2.5;
 
     // Honey-gold divider line (brand accent #d4920b)
     pdf.setDrawColor(...LETTERHEAD_GOLD);
