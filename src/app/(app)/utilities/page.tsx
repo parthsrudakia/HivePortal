@@ -1,6 +1,6 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { UploadForm } from "./upload-form";
-import { BillsLog, type BillRow, type UnitOpt } from "./bills-log";
+import { UtilitiesView } from "./utilities-view";
+import type { BillRow, UnitOpt } from "./bill-utils";
 
 export const dynamic = "force-dynamic";
 // Extraction calls Claude with the full statement; give it breathing room.
@@ -45,13 +45,7 @@ export default async function UtilitiesPage() {
         </p>
       </header>
 
-      <section className="mt-8">
-        <UploadForm />
-      </section>
-
-      <section className="mt-10">
-        <BillsLog bills={bills} units={units} />
-      </section>
+      <UtilitiesView bills={bills} units={units} />
     </div>
   );
 }
