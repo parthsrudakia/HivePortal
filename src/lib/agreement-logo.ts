@@ -43,23 +43,34 @@ export function drawHiveLetterhead(
     pdf.roundedRect(x + b.x * s, y + b.y * s, b.w * s, 6 * s, 3 * s, 3 * s, "F");
   }
 
-  // Text block, vertically centered against the icon like the site header.
-  const textX = x + 80 * s + 3;
-  const wordY = y + iconHeight * 0.48;
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(15);
-  pdf.setTextColor(...INK);
-  pdf.text("HIVE", textX, wordY, { charSpace: 0.7 });
+  // Text block beside the icon, sized off the site's lockup ratios: the
+  // wordmark's cap height is ~44% of the icon height (nav icon 30px next to
+  // an 18.4px HIVE), the tagline ~42% of the wordmark, gap ~40% of icon
+  // height. Helvetica cap height ≈ 0.72em; 1pt = 0.3528mm.
+  const wordPt = (0.44 * iconHeight) / (0.3528 * 0.72);
+  const tagPt = wordPt * 0.42;
+  const textX = x + 80 * s + iconHeight * 0.4;
 
-  const tagY = wordY + 3.6;
+  // Center the two-line block against the icon.
+  const capH = 0.44 * iconHeight;
+  const tagGap = iconHeight * 0.4;
+  const blockH = capH + tagGap;
+  const wordY = y + (iconHeight - blockH) / 2 + capH;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(wordPt);
+  pdf.setTextColor(...INK);
+  pdf.text("HIVE", textX, wordY, { charSpace: wordPt * 0.047 });
+
+  const tagY = wordY + tagGap;
   pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(5.5);
+  pdf.setFontSize(tagPt);
   pdf.setTextColor(...MUTED);
-  pdf.text("CITY LIVING, MADE SIMPLE", textX, tagY, { charSpace: 0.35 });
+  pdf.text("CITY LIVING, MADE SIMPLE", textX, tagY, { charSpace: tagPt * 0.06 });
 
   pdf.setTextColor(0, 0, 0);
-  const tagWidth = pdf.getTextWidth("CITY LIVING, MADE SIMPLE") + 0.35 * 24;
-  return { width: 80 * s + 3 + tagWidth, height: iconHeight };
+  const tagWidth = pdf.getTextWidth("CITY LIVING, MADE SIMPLE") + tagPt * 0.06 * 24;
+  return { width: 80 * s + iconHeight * 0.4 + tagWidth, height: iconHeight };
 }
 
 /** Divider color under the letterhead — the brand's honey gold. */

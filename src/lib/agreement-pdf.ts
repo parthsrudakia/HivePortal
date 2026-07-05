@@ -191,8 +191,9 @@ export function buildAgreementPdf(data: AgreementPdfData): jsPDF {
   const sectionSpacing = hasLetterhead ? 5 : 8;
 
   if (hasLetterhead) {
-    // Vector lockup from hiveny.com: gold hive glyph + HIVE wordmark.
-    const logoHeight = 12;
+    // Vector lockup from hiveny.com: gold hive glyph + HIVE wordmark. The
+    // icon is deliberately modest next to the wordmark, matching the site.
+    const logoHeight = 9;
     drawHiveLetterhead(pdf, margin, yPos, logoHeight);
 
     // Contact details on top right. Four lines at 3.6mm leading run taller
