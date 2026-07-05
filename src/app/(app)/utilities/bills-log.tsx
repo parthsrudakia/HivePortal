@@ -290,10 +290,7 @@ function OverageFlags({
   return (
     <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 px-5 py-4">
       <p className="text-sm font-semibold text-red-900">
-        ⚡ Over the $200 utility threshold — excess billable to occupants
-      </p>
-      <p className="mt-0.5 text-xs text-red-800/80">
-        Usage charges incl. tax, late fees excluded.
+        ⚡ Over the $200 utility threshold
       </p>
       <ul className="mt-3 flex flex-col gap-1.5">
         {flagged.map((f) => (
