@@ -15,6 +15,7 @@ type Item = {
 
 const STATIC_PAGES: Item[] = [
   { id: "p-dashboard", kind: "page", label: "Dashboard", href: "/" },
+  { id: "p-projects", kind: "page", label: "Projects", href: "/projects" },
   { id: "p-properties", kind: "page", label: "Properties", href: "/properties" },
   { id: "p-inventory", kind: "page", label: "Inventory", href: "/inventory" },
   { id: "p-tenants", kind: "page", label: "Rent Tracker", sublabel: "Tenants", href: "/tenants" },

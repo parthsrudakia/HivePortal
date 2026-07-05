@@ -17,13 +17,13 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
+  { href: "/projects", label: "Projects", icon: "projects" },
   { href: "/inventory", label: "Inventory", icon: "inventory" },
   { href: "/tenants", label: "Rent Tracker", icon: "tenants" },
   { href: "/reconciliation", label: "Reconciliation", icon: "reconciliation" },
   { href: "/cleaning", label: "Cleaning", icon: "cleaning" },
   { href: "/credentials", label: "Credentials", icon: "credentials" },
   { href: "/agreements", label: "Agreements", icon: "agreements" },
-  { href: "/projects", label: "Projects", icon: "projects" },
 ];
 
 export default async function AppLayout({
