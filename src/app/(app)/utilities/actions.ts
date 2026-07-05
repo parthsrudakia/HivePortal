@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { extractUtilityBill, type UnitOption } from "@/lib/utility-extract";
+import { compressStatement } from "@/lib/compress-statement";
 
 export type UploadState =
   | { error?: string; success?: string; warning?: string }
@@ -154,12 +155,20 @@ export async function uploadStatement(
     }
   }
 
-  // Store the original statement.
-  const safeName = file.name.replace(/[^\w.\-]/g, "_") || "statement";
+  // Store the statement, compressed as far as it will go (extraction above
+  // already ran on the original bytes; the hash also covers the original).
+  const compressed = await compressStatement(buf, mediaType);
+  let safeName = file.name.replace(/[^\w.\-]/g, "_") || "statement";
+  if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
+    safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+  }
   const path = `${extracted.property_id ?? "unmatched"}/${Date.now()}-${safeName}`;
   const { error: upErr } = await sb.storage
     .from("utilities")
-    .upload(path, buf, { contentType: mediaType, upsert: false });
+    .upload(path, compressed.data, {
+      contentType: compressed.mediaType,
+      upsert: false,
+    });
   if (upErr) return { error: `Failed to store the statement: ${upErr.message}` };
 
   const total = extracted.charges.reduce((s, c) => s + c.amount, 0);
