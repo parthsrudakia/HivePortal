@@ -153,6 +153,7 @@ export function BillsLog({
         bills={visible}
         unitName={unitName}
         onJump={jumpToBill}
+        showDismissed={overOnly}
       />
 
       <div className="mt-4 flex flex-col gap-3">
@@ -246,10 +247,13 @@ function OverageFlags({
   bills,
   unitName,
   onJump,
+  showDismissed,
 }: {
   bills: BillRow[];
   unitName: Map<string, string>;
   onJump: (bill: BillRow) => void;
+  /** With the over-$200 filter on, discarded flags resurface (restorable). */
+  showDismissed: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   // Two-step confirm for posting the overage to the tenants' ledgers.
@@ -257,10 +261,16 @@ function OverageFlags({
   // Per-bill outcomes of the last charge run, shown in a popup until closed.
   const [results, setResults] = useState<OverageChargeResult[] | null>(null);
   const flagged = bills
-    .filter((b) => isOverThreshold(b) && !b.overage_dismissed)
+    .filter(
+      (b) =>
+        isOverThreshold(b) &&
+        !b.overage_charged_at &&
+        (showDismissed || !b.overage_dismissed),
+    )
     .map((b) => ({
       id: b.id,
       bill: b,
+      dismissed: b.overage_dismissed,
       unit: b.property_id
         ? unitName.get(b.property_id) ?? "Unit"
         : "⚠ Unmatched unit",
@@ -273,9 +283,9 @@ function OverageFlags({
   // the banner (charged bills drop out of the flagged list on revalidation).
   if (flagged.length === 0 && !results) return null;
 
-  const dismiss = (ids: string[]) =>
+  const dismiss = (ids: string[], dismissed = true) =>
     startTransition(async () => {
-      const r = await dismissOverage(ids, true);
+      const r = await dismissOverage(ids, dismissed);
       if (r?.error) toast.error(r.error);
     });
 
@@ -339,7 +349,9 @@ function OverageFlags({
           <button
             type="button"
             disabled={pending}
-            onClick={() => dismiss(flagged.map((f) => f.id))}
+            onClick={() =>
+              dismiss(flagged.filter((f) => !f.dismissed).map((f) => f.id))
+            }
             className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
           >
             Discard all
@@ -366,6 +378,11 @@ function OverageFlags({
             <span className="text-xs text-muted">
               {f.month} · {f.type}
             </span>
+            {f.dismissed && (
+              <span className="rounded-full border border-stone bg-warm/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+                discarded
+              </span>
+            )}
             <span className="ml-auto pr-3 tabular-nums text-ink">
               {fmtMoney(f.usage)}
             </span>
@@ -409,19 +426,35 @@ function OverageFlags({
                 Charge tenants
               </button>
             )}
-            <button
-              type="button"
-              disabled={pending}
-              aria-label={`Discard flag for ${f.unit}`}
-              title="Discard this flag (the badge on the bill stays)"
-              onClick={(e) => {
-                e.stopPropagation();
-                dismiss([f.id]);
-              }}
-              className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
-            >
-              ✕
-            </button>
+            {f.dismissed ? (
+              <button
+                type="button"
+                disabled={pending}
+                aria-label={`Restore flag for ${f.unit}`}
+                title="Restore this flag to the banner"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dismiss([f.id], false);
+                }}
+                className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
+              >
+                ↺
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={pending}
+                aria-label={`Discard flag for ${f.unit}`}
+                title="Discard this flag (the badge on the bill stays)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dismiss([f.id]);
+                }}
+                className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
+              >
+                ✕
+              </button>
+            )}
           </li>
         ))}
       </ul>
