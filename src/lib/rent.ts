@@ -55,6 +55,17 @@ export type LedgerPayment = {
 export type LedgerCharge = { kind: string; amount: number | string };
 export type LedgerAllocation = { kind: string; amount: number | string };
 
+/**
+ * A rent-rate change: from `effective_month` (first-of-month ISO date)
+ * onward, the monthly rent is `monthly_rent`. Rows live in
+ * tenancy_rent_history; a tenancy with no rows bills its current
+ * monthly_rent for every month (no change ever happened).
+ */
+export type RentChange = {
+  effective_month: string;
+  monthly_rent: number | string;
+};
+
 export type Bucket = { owed: number; paid: number; balance: number };
 
 export type Ledger = {
@@ -74,28 +85,56 @@ const num = (v: number | string | null | undefined): number => {
 };
 
 /**
- * Cumulative rent owed from the anchor (or the tenancy's start month, if that
- * is later) through the current month, capped at the move-out month.
+ * The monthly rate in effect for a given month: the latest rent-history row
+ * at or before it, falling back to the tenancy's current monthly_rent (no
+ * change has ever been recorded, or the month predates the baseline).
  */
-function rentDue(t: LedgerTenancy, todayIso: string): number {
+function rateForMonth(
+  idx: number,
+  t: LedgerTenancy,
+  rentChanges: RentChange[],
+): number {
+  let rate = num(t.monthly_rent);
+  let best = -Infinity;
+  for (const c of rentChanges) {
+    const ci = monthIndex(c.effective_month);
+    if (ci <= idx && ci > best) {
+      best = ci;
+      rate = num(c.monthly_rent);
+    }
+  }
+  return rate;
+}
+
+/**
+ * Cumulative rent owed from the anchor (or the tenancy's start month, if that
+ * is later) through the current month, capped at the move-out month. Each
+ * month bills the rate in effect that month (see rateForMonth), so a rent
+ * change reprices future months only.
+ */
+function rentDue(
+  t: LedgerTenancy,
+  todayIso: string,
+  rentChanges: RentChange[],
+): number {
   const anchorIdx = monthIndex(LEDGER_ANCHOR);
   const startIdx = monthIndex(t.start_date);
   const effStart = Math.max(anchorIdx, startIdx);
   let end = monthIndex(todayIso);
   if (t.move_out_date) end = Math.min(end, monthIndex(t.move_out_date));
+  if (end < effStart) return 0;
 
-  const n = end - effStart + 1;
-  if (n <= 0) return 0;
-
-  const monthly = num(t.monthly_rent);
-  // The tenancy's real first month gets first_month_rent — but only when that
-  // month is inside the ledger window. If the tenancy predates the anchor, the
-  // first counted month is the anchor and is just a regular monthly charge.
-  const firstCharge =
-    startIdx >= anchorIdx && t.first_month_rent !== null
-      ? num(t.first_month_rent)
-      : monthly;
-  return firstCharge + monthly * (n - 1);
+  let total = 0;
+  for (let idx = effStart; idx <= end; idx++) {
+    // The tenancy's real first month gets first_month_rent — but only when
+    // that month is inside the ledger window. If the tenancy predates the
+    // anchor, the first counted month is just a regular monthly charge.
+    total +=
+      idx === startIdx && startIdx >= anchorIdx && t.first_month_rent !== null
+        ? num(t.first_month_rent)
+        : rateForMonth(idx, t, rentChanges);
+  }
+  return total;
 }
 
 export function computeLedger(
@@ -104,6 +143,7 @@ export function computeLedger(
   charges: LedgerCharge[],
   allocations: LedgerAllocation[],
   todayIso: string = todayISO(),
+  rentChanges: RentChange[] = [],
 ): Ledger {
   // Rent paid counts only payments from the anchor cycle forward (earlier
   // months are settled). Allocations always move money *out* of the rent
@@ -115,7 +155,7 @@ export function computeLedger(
     .reduce((s, p) => s + num(p.amount), 0);
   const allocatedAway = allocations.reduce((s, a) => s + num(a.amount), 0);
   const rentPaid = rentPaidGross - allocatedAway;
-  const due = rentDue(t, todayIso);
+  const due = rentDue(t, todayIso, rentChanges);
   const rent: Bucket = { owed: due, paid: rentPaid, balance: due - rentPaid };
 
   const paidOf = (type: string) =>
@@ -244,22 +284,24 @@ export function buildLedgerEntries(
   payments: LedgerEntryPayment[],
   charges: LedgerEntryCharge[],
   todayIso: string = todayISO(),
+  rentChanges: RentChange[] = [],
 ): LedgerEntry[] {
   const rows: Omit<LedgerEntry, "balance">[] = [];
 
   // Auto rent: one charge per month from the anchor (or start, if later)
-  // through the current month, capped at the move-out month.
+  // through the current month, capped at the move-out month. Each month
+  // bills the rate in effect that month (rent changes reprice future months
+  // only).
   const anchorIdx = monthIndex(LEDGER_ANCHOR);
   const startIdx = monthIndex(t.start_date);
   const effStart = Math.max(anchorIdx, startIdx);
   let end = monthIndex(todayIso);
   if (t.move_out_date) end = Math.min(end, monthIndex(t.move_out_date));
-  const monthly = num(t.monthly_rent);
   for (let idx = effStart; idx <= end; idx++) {
     const amount =
       idx === startIdx && startIdx >= anchorIdx && t.first_month_rent !== null
         ? num(t.first_month_rent)
-        : monthly;
+        : rateForMonth(idx, t, rentChanges);
     rows.push({
       id: `rent-${idx}`,
       date: firstOfMonthISO(idx),

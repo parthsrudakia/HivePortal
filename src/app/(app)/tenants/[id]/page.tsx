@@ -17,7 +17,7 @@ import { LeaseDownload } from "./lease-download";
 import { LeaseDateEdit } from "./lease-end-edit";
 import { RentAmountEdit } from "./rent-edit";
 import { TenantBackLink } from "./tenant-back-link";
-import { computeLedger, buildLedgerEntries } from "@/lib/rent";
+import { computeLedger, buildLedgerEntries, type RentChange } from "@/lib/rent";
 import { canEditLedger } from "@/lib/access";
 import { todayISO } from "@/lib/date";
 
@@ -164,38 +164,62 @@ export default async function TenantDetailPage({
   const active = tenancies?.find((t) => t.status === "active") ?? null;
   const past = (tenancies ?? []).filter((t) => t.status !== "active");
 
-  // Running ledger for the active tenancy: auto monthly rent + ad-hoc charges
-  // (deposit / late fee) + payments, in one carry-forward balance.
+  // Running ledger tenancy: the active one, or — so a move-out with money
+  // still owed can be seen and settled here — the most recent ended one.
+  const ledgerTenancy =
+    active ?? past.find((t) => t.status === "ended") ?? null;
+
+  // Running ledger: auto monthly rent + ad-hoc charges (deposit / late fee)
+  // + payments, in one carry-forward balance.
   let charges: Charge[] = [];
   let allocations: Allocation[] = [];
-  if (active) {
+  let rentChanges: RentChange[] = [];
+  if (ledgerTenancy) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any;
-    const [chargeRes, allocRes] = await Promise.all([
+    const [chargeRes, allocRes, rentHistRes] = await Promise.all([
       sb
         .from("tenancy_charges")
         .select("id, kind, amount, charged_on, note")
-        .eq("tenancy_id", active.id)
+        .eq("tenancy_id", ledgerTenancy.id)
         .order("charged_on", { ascending: false }),
       // Legacy credit allocations are no longer created, but existing rows are
       // still fed to computeLedger so historical balances stay consistent.
       sb
         .from("credit_allocations")
         .select("id, kind, amount, note, created_at")
-        .eq("tenancy_id", active.id)
+        .eq("tenancy_id", ledgerTenancy.id)
         .order("created_at", { ascending: false }),
+      sb
+        .from("tenancy_rent_history")
+        .select("effective_month, monthly_rent")
+        .eq("tenancy_id", ledgerTenancy.id),
     ]);
     charges = (chargeRes.data ?? []) as Charge[];
     allocations = (allocRes.data ?? []) as Allocation[];
+    rentChanges = (rentHistRes.data ?? []) as RentChange[];
   }
-  const activePayments = active
-    ? (payments ?? []).filter((p) => p.tenancy_id === active.id)
+  const activePayments = ledgerTenancy
+    ? (payments ?? []).filter((p) => p.tenancy_id === ledgerTenancy.id)
     : [];
-  const ledger = active
-    ? computeLedger(active, activePayments, charges, allocations, todayISO())
+  const ledger = ledgerTenancy
+    ? computeLedger(
+        ledgerTenancy,
+        activePayments,
+        charges,
+        allocations,
+        todayISO(),
+        rentChanges,
+      )
     : null;
-  const ledgerEntries = active
-    ? buildLedgerEntries(active, activePayments, charges, todayISO())
+  const ledgerEntries = ledgerTenancy
+    ? buildLedgerEntries(
+        ledgerTenancy,
+        activePayments,
+        charges,
+        todayISO(),
+        rentChanges,
+      )
     : [];
   const summaryRows = ledger
     ? [
@@ -370,12 +394,20 @@ export default async function TenantDetailPage({
         </div>
       </div>
 
-      {active && ledger && (
+      {ledgerTenancy && ledger && (
         <section className="mt-10">
           <header className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-xl tracking-tight text-ink">
                 <span className="font-display text-accent-text">Ledger</span>
+                {!active && (
+                  <span className="ml-2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 align-middle text-xs font-medium text-amber-800">
+                    past tenancy — moved out{" "}
+                    {ledgerTenancy.move_out_date
+                      ? formatDate(ledgerTenancy.move_out_date)
+                      : ""}
+                  </span>
+                )}
               </h2>
               <p className="mt-1 text-xs text-muted">
                 Every rent charge, fee, and payment in one running balance.
@@ -392,12 +424,15 @@ export default async function TenantDetailPage({
                 Download ledger ↓
               </a>
               {ledgerAdmin && (
-                <RecordCharge tenancyId={active.id} tenantId={tenant.id} />
+                <RecordCharge
+                  tenancyId={ledgerTenancy.id}
+                  tenantId={tenant.id}
+                />
               )}
               <RecordPayment
-                tenancyId={active.id}
+                tenancyId={ledgerTenancy.id}
                 tenantId={tenant.id}
-                defaultAmount={Number(active.monthly_rent)}
+                defaultAmount={Number(ledgerTenancy.monthly_rent)}
               />
             </div>
           </header>

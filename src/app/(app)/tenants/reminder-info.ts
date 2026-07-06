@@ -86,7 +86,8 @@ export async function getReminderInfo(
         .limit(20),
     ]);
 
-  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
 
   let outstandingCount = 0;
   for (const row of tenancies ?? []) {
@@ -98,6 +99,7 @@ export async function getReminderInfo(
       charges.get(row.id) ?? [],
       allocations.get(row.id) ?? [],
       today,
+      rentChanges.get(row.id) ?? [],
     );
     if (netBalance > 0.01) outstandingCount++;
   }

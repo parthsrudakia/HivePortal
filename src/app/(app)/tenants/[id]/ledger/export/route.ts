@@ -7,6 +7,7 @@ import {
   computeLedger,
   buildLedgerEntries,
   type LedgerCharge,
+  type RentChange,
   type LedgerAllocation,
 } from "@/lib/rent";
 
@@ -92,14 +93,19 @@ export async function GET(
     return new NextResponse("Tenant not found", { status: 404 });
   }
 
-  const active = tenancies?.find((t) => t.status === "active") ?? null;
+  // Export the active tenancy's ledger, or the most recent ended one so a
+  // moved-out tenant's outstanding balance is still exportable.
+  const active =
+    tenancies?.find((t) => t.status === "active") ??
+    tenancies?.find((t) => t.status === "ended") ??
+    null;
   if (!active) {
-    return new NextResponse("No active tenancy to export", { status: 400 });
+    return new NextResponse("No tenancy to export", { status: 400 });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any;
-  const [chargeRes, allocRes] = await Promise.all([
+  const [chargeRes, allocRes, rentHistRes] = await Promise.all([
     sb
       .from("tenancy_charges")
       .select("id, kind, amount, charged_on, note")
@@ -110,9 +116,14 @@ export async function GET(
       .select("id, kind, amount, note, created_at")
       .eq("tenancy_id", active.id)
       .order("created_at", { ascending: false }),
+    sb
+      .from("tenancy_rent_history")
+      .select("effective_month, monthly_rent")
+      .eq("tenancy_id", active.id),
   ]);
   const charges = (chargeRes.data ?? []) as Charge[];
   const allocations = (allocRes.data ?? []) as Allocation[];
+  const rentChanges = (rentHistRes.data ?? []) as RentChange[];
   const activePayments = (payments ?? []).filter((p) => p.tenancy_id === active.id);
 
   const ledger = computeLedger(
@@ -121,8 +132,15 @@ export async function GET(
     charges as LedgerCharge[],
     allocations as LedgerAllocation[],
     today,
+    rentChanges,
   );
-  const entries = buildLedgerEntries(active, activePayments, charges, today);
+  const entries = buildLedgerEntries(
+    active,
+    activePayments,
+    charges,
+    today,
+    rentChanges,
+  );
 
   const room = one(active.rooms);
   const p = one(room?.properties ?? null);

@@ -5,6 +5,9 @@ import { formatDate } from "@/lib/date";
 import { SearchInput } from "@/components/search-input";
 import { processExpiredTenancies } from "../actions";
 import { isMaster } from "@/lib/access";
+import { computeLedger } from "@/lib/rent";
+import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +26,17 @@ type RoomRel = {
   room_number: string | null;
   properties: PropertyRel | PropertyRel[] | null;
 };
-type PaymentRel = { amount: number | string; payment_type: string };
+type PaymentRel = {
+  amount: number | string;
+  paid_on: string;
+  payment_type: string;
+};
 
 type Row = {
   id: string;
   tenant_id: string;
   monthly_rent: number;
+  first_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -80,15 +88,21 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, monthly_rent, security_deposit, start_date, move_out_date,
+      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date,
        tenants(id, full_name, email, phone),
        rooms(room_number,
              properties(building_name, street_address, unit_number)),
-       payments(amount, payment_type)`,
+       payments(amount, paid_on, payment_type)`,
     )
     .eq("status", "ended")
     .order("move_out_date", { ascending: false, nullsFirst: false })
     .returns<Row[]>();
+
+  // Moved-out tenants keep their running ledger balance here — money owed
+  // at move-out must stay visible and gets resolved from the tenant's page.
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
+  const today = todayISO();
 
   const rows = (data ?? []).map((r) => {
     const tenant = one(r.tenants);
@@ -113,6 +127,14 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
       months,
       monthly_rent: Number(r.monthly_rent),
       total_paid: totalPaid,
+      balance: computeLedger(
+        r,
+        r.payments ?? [],
+        charges.get(r.id) ?? [],
+        allocations.get(r.id) ?? [],
+        today,
+        rentChanges.get(r.id) ?? [],
+      ).netBalance,
     };
   });
 
@@ -180,6 +202,7 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
                 {admin && (
                   <th className="px-3 py-2 text-right font-medium">Total paid</th>
                 )}
+                <th className="px-3 py-2 text-right font-medium">Balance</th>
               </tr>
             </thead>
             <tbody>
@@ -220,6 +243,23 @@ export default async function TenantHistoryPage({ searchParams }: PageProps) {
                       {fmtMoney(r.total_paid)}
                     </td>
                   )}
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {r.balance > 0.005 ? (
+                      <Link
+                        href={`/tenants/${r.tenant_id}`}
+                        title="Open the ledger to resolve"
+                        className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                      >
+                        owes {fmtMoney(r.balance)}
+                      </Link>
+                    ) : r.balance < -0.005 ? (
+                      <span className="text-xs text-accent-text">
+                        {fmtMoney(-r.balance)} credit
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted">Settled</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

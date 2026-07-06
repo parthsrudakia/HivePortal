@@ -130,7 +130,8 @@ export default async function TenantsPage({ searchParams }: PageProps) {
     .select("id, building_name, street_address, unit_number");
 
   // Ad-hoc charges + credit allocations feed the running ledger balance.
-  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
   const today = todayISO();
 
   // Per row we keep the *this-month* operational figures (Due / Paid, mirrored
@@ -158,6 +159,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
       charges.get(row.id) ?? [],
       allocations.get(row.id) ?? [],
       today,
+      rentChanges.get(row.id) ?? [],
     );
     return { ...row, paidThisMonth, balance: ledger.netBalance, due };
   });

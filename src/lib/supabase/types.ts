@@ -1591,6 +1591,52 @@ export type Database = {
           },
         ]
       }
+      tenancy_rent_history: {
+        Row: {
+          created_at: string
+          effective_month: string
+          id: string
+          monthly_rent: number
+          tenancy_id: string
+        }
+        Insert: {
+          created_at?: string
+          effective_month: string
+          id?: string
+          monthly_rent: number
+          tenancy_id: string
+        }
+        Update: {
+          created_at?: string
+          effective_month?: string
+          id?: string
+          monthly_rent?: number
+          tenancy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenancy_rent_history_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenancy_rent_history_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "tenancy_rent_history_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           age: number | null

@@ -1538,7 +1538,8 @@ export async function sendBalanceReminders(args: {
     return { ok: false, error: "No active tenancy found for that id." };
   }
 
-  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
 
   let owing = 0;
   let emailed = 0;
@@ -1557,6 +1558,7 @@ export async function sendBalanceReminders(args: {
       charges.get(row.id) ?? [],
       allocations.get(row.id) ?? [],
       today,
+      rentChanges.get(row.id) ?? [],
     );
     if (netBalance <= 0.01) continue;
     owing++;

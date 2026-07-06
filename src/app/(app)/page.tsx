@@ -157,7 +157,8 @@ export default async function Dashboard() {
     }
   }
 
-  const { charges, allocations } = await fetchLedgerSidecars(supabase);
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
 
   // Rent worklist: active tenancies whose running net balance is positive.
   type RentEntry = {
@@ -199,6 +200,7 @@ export default async function Dashboard() {
       charges.get(t.id) ?? [],
       allocations.get(t.id) ?? [],
       today,
+      rentChanges.get(t.id) ?? [],
     );
     if (netBalance <= 0.01) continue;
     const room = one(t.rooms);
