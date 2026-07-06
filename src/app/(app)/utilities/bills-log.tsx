@@ -10,6 +10,7 @@ import {
   deleteBill,
   dismissOverage,
   getStatementUrl,
+  unpostOverage,
   type OverageChargeResult,
 } from "./actions";
 import {
@@ -579,6 +580,7 @@ function BillCard({
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [confirmingUnpost, setConfirmingUnpost] = useState(false);
   const [pending, startTransition] = useTransition();
   const extras = bill.utility_bill_charges.filter((c) => c.kind !== "current");
 
@@ -634,7 +636,7 @@ function BillCard({
               title="The overage has been posted to the tenants' ledgers"
               className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700"
             >
-              ✓ Charged
+              ✓ Charged to tenants · {fmtDate(bill.overage_charged_at)}
             </span>
           )}
           {extras.length > 0 && (
@@ -724,6 +726,43 @@ function BillCard({
             >
               View statement
             </button>
+            {bill.overage_charged_at &&
+              (!confirmingUnpost ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  title="Remove the posted ledger charges and Rent Tracker alerts for this bill"
+                  onClick={() => setConfirmingUnpost(true)}
+                  className="rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-red-700"
+                >
+                  Unpost charge
+                </button>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        const r = await unpostOverage(bill.id);
+                        if (r?.error) toast.error(r.error);
+                        else if (r?.success) toast.success(r.success);
+                        setConfirmingUnpost(false);
+                      })
+                    }
+                    className="rounded-full border border-red-200 bg-red-50 px-3 py-1 font-semibold text-red-700 hover:bg-red-100"
+                  >
+                    {pending ? "Unposting…" : "Yes, unpost"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingUnpost(false)}
+                    className="text-muted hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ))}
             {!confirming ? (
               <button
                 type="button"

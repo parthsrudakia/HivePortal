@@ -1532,6 +1532,7 @@ export type Database = {
       tenancy_charges: {
         Row: {
           amount: number
+          bill_id: string | null
           charged_on: string
           created_at: string
           id: string
@@ -1541,6 +1542,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          bill_id?: string | null
           charged_on?: string
           created_at?: string
           id?: string
@@ -1550,6 +1552,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          bill_id?: string | null
           charged_on?: string
           created_at?: string
           id?: string
@@ -1558,6 +1561,13 @@ export type Database = {
           tenancy_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tenancy_charges_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "utility_bills"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tenancy_charges_tenancy_id_fkey"
             columns: ["tenancy_id"]

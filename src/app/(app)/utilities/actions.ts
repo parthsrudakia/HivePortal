@@ -466,6 +466,7 @@ async function chargeOverageCore(
         amount: c.amount,
         charged_on: today,
         note: result.period,
+        bill_id: b.id,
       })),
     );
     if (error) return fail(error.message);
@@ -546,6 +547,55 @@ export async function chargeAllOverages(
   revalidatePath("/utilities");
   revalidatePath("/tenants");
   return results;
+}
+
+/**
+ * Reverse a bill's overage charge run: delete the 'Utility Overcharge'
+ * ledger charges it posted, clear its moved-out Rent Tracker alerts, and
+ * reopen the bill so it can be flagged/charged again.
+ */
+export async function unpostOverage(billId: string): Promise<UploadState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const sb = admin();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: bill } = await (sb as any)
+    .from("utility_bills")
+    .select("id, overage_charged_at")
+    .eq("id", billId)
+    .maybeSingle();
+  if (!bill) return { error: "Bill not found." };
+  if (!bill.overage_charged_at)
+    return { error: "This bill's overage hasn't been charged." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: chErr } = await (sb as any)
+    .from("tenancy_charges")
+    .delete()
+    .eq("bill_id", billId)
+    .eq("kind", "utility_overage");
+  if (chErr) return { error: chErr.message };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (sb as any).from("utility_overage_alerts").delete().eq("bill_id", billId);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: billErr } = await (sb as any)
+    .from("utility_bills")
+    .update({ overage_charged_at: null, overage_dismissed: false })
+    .eq("id", billId);
+  if (billErr) return { error: billErr.message };
+
+  revalidatePath("/utilities");
+  revalidatePath("/tenants");
+  return {
+    success:
+      "Charge unposted — the ledger charges and any Rent Tracker alerts were removed, and the bill is flagged again.",
+  };
 }
 
 export async function getStatementUrl(
