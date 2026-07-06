@@ -14,6 +14,8 @@ export type BillRow = {
   period_end: string | null;
   total_amount: number;
   overage_dismissed: boolean;
+  /** Set when the over-$200 overage was posted to the tenants' ledgers. */
+  overage_charged_at: string | null;
   notes: string | null;
   created_at: string;
   utility_bill_charges: {

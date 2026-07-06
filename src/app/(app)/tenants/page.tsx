@@ -15,6 +15,7 @@ import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { todayISO, currentRentCycle } from "@/lib/date";
 import { isMaster } from "@/lib/access";
+import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 
 export const dynamic = "force-dynamic";
 // sendBalanceReminders (see actions.ts) sends an email + SMS per owing tenant,
@@ -274,8 +275,24 @@ export default async function TenantsPage({ searchParams }: PageProps) {
     lastBalanceSmsText,
   } = await getReminderInfo(supabase);
 
+  // Utility-overage shares that hit already-moved-out tenants pop up for the
+  // admin until acknowledged (their share was not posted to any ledger).
+  let overageAlerts: OverageAlert[] = [];
+  if (admin) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: alertRows } = await (supabase as any)
+      .from("utility_overage_alerts")
+      .select("id, tenant_name, unit_label, amount, period_label")
+      .is("acknowledged_at", null)
+      .order("created_at", { ascending: true });
+    overageAlerts = (alertRows ?? []) as OverageAlert[];
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl">
+      {overageAlerts.length > 0 && (
+        <OverageAlertsPopup alerts={overageAlerts} />
+      )}
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-stone/60 pb-6">
         <div>
           <h1 className="text-3xl tracking-tight text-ink">

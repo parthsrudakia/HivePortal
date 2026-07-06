@@ -6,6 +6,16 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { extractUtilityBill, type UnitOption } from "@/lib/utility-extract";
 import { compressStatement } from "@/lib/compress-statement";
+import { one } from "@/lib/relations";
+import { todayISO } from "@/lib/date";
+import {
+  billMonth,
+  isOverThreshold,
+  monthLabel,
+  usageTotal,
+  OVERAGE_THRESHOLD,
+  type BillRow,
+} from "@/lib/utility-bills";
 
 export type UploadState =
   | { error?: string; success?: string; warning?: string }
@@ -312,6 +322,181 @@ export async function dismissOverage(
   if (error) return { error: error.message };
   revalidatePath("/utilities");
   return undefined;
+}
+
+// ----- Charge the over-$200 overage to the unit's tenants -----
+//
+// Lease clause: usage charges (incl. tax, excl. late fees) over $200/month
+// are billable to the occupants. The overage is prorated per billed day and
+// split, day by day, among the tenants living in the unit's AC rooms that
+// day. Active tenants get a ledger charge (kind 'utility_overage'); tenants
+// who had already moved out are NOT charged — their share becomes an alert
+// popup on the Rent Tracker instead.
+
+const fmt$ = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export async function chargeOverage(billId: string): Promise<UploadState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const sb = admin();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: bill, error: billErr } = await (sb as any)
+    .from("utility_bills")
+    .select("*, utility_bill_charges(id, kind, description, amount)")
+    .eq("id", billId)
+    .maybeSingle();
+  if (billErr) return { error: billErr.message };
+  if (!bill) return { error: "Bill not found." };
+  const b = bill as BillRow & { overage_charged_at: string | null };
+
+  if (b.overage_charged_at)
+    return { error: "This bill's overage has already been charged." };
+  if (!b.property_id)
+    return { error: "Assign the bill to a unit before charging tenants." };
+  if (!isOverThreshold(b))
+    return { error: "This bill's usage is not over the $200 threshold." };
+  if (!b.period_start || !b.period_end || b.period_end < b.period_start)
+    return {
+      error:
+        "The bill has no billing period on file — the overage can't be prorated per day.",
+    };
+
+  const overage = usageTotal(b) - OVERAGE_THRESHOLD;
+
+  // Inclusive day count: "the number of days that statement has billed for".
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startMs = Date.parse(`${b.period_start.slice(0, 10)}T00:00:00Z`);
+  const endMs = Date.parse(`${b.period_end.slice(0, 10)}T00:00:00Z`);
+  const days = Math.round((endMs - startMs) / dayMs) + 1;
+  const perDay = overage / days;
+
+  // Occupants: tenancies in this unit's AC rooms. Rooms without AC don't
+  // share the overage.
+  const { data: rooms } = await sb
+    .from("rooms")
+    .select("id, has_ac")
+    .eq("property_id", b.property_id);
+  const acRoomIds = (rooms ?? []).filter((r) => r.has_ac).map((r) => r.id);
+  if (acRoomIds.length === 0)
+    return { error: "No rooms in this unit are marked as having AC." };
+
+  const { data: tenancies, error: tErr } = await sb
+    .from("tenancies")
+    .select("id, start_date, move_out_date, status, tenants(full_name)")
+    .in("room_id", acRoomIds);
+  if (tErr) return { error: tErr.message };
+
+  // Walk the billed days: each day's slice of the overage is split equally
+  // among the tenants living in an AC room that day.
+  const shares = new Map<string, number>();
+  let unassigned = 0;
+  for (let ms = startMs; ms <= endMs; ms += dayMs) {
+    const day = new Date(ms).toISOString().slice(0, 10);
+    const living = (tenancies ?? []).filter(
+      (t) =>
+        t.start_date <= day && (!t.move_out_date || t.move_out_date >= day),
+    );
+    if (living.length === 0) {
+      unassigned += perDay;
+      continue;
+    }
+    for (const t of living) {
+      shares.set(t.id, (shares.get(t.id) ?? 0) + perDay / living.length);
+    }
+  }
+  if (shares.size === 0)
+    return {
+      error:
+        "No tenants were living in this unit's AC rooms during the billing period.",
+    };
+
+  const today = todayISO();
+  const period = `${monthLabel(billMonth(b))} · ${b.utility_type}${b.provider ? ` (${b.provider})` : ""}`;
+  const unitLabel = await (async () => {
+    const { data: p } = await sb
+      .from("properties")
+      .select("building_name, street_address, unit_number")
+      .eq("id", b.property_id!)
+      .maybeSingle();
+    return p
+      ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
+      : "Unit";
+  })();
+
+  const charged: { tenancyId: string; name: string; amount: number }[] = [];
+  const movedOut: { tenancyId: string; name: string; amount: number }[] = [];
+  for (const [tenancyId, raw] of shares) {
+    const amount = Math.round(raw * 100) / 100;
+    if (amount <= 0) continue;
+    const t = (tenancies ?? []).find((x) => x.id === tenancyId)!;
+    const name = one(t.tenants)?.full_name ?? "Tenant";
+    const isMovedOut =
+      t.status === "ended" || (!!t.move_out_date && t.move_out_date < today);
+    if (isMovedOut) movedOut.push({ tenancyId, name, amount });
+    else charged.push({ tenancyId, name, amount });
+  }
+
+  if (charged.length > 0) {
+    // One batch insert so a failure can't leave the bill half-charged.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (sb as any).from("tenancy_charges").insert(
+      charged.map((c) => ({
+        tenancy_id: c.tenancyId,
+        kind: "utility_overage",
+        amount: c.amount,
+        charged_on: today,
+        note: period,
+      })),
+    );
+    if (error) return { error: error.message };
+  }
+
+  if (movedOut.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (sb as any).from("utility_overage_alerts").insert(
+      movedOut.map((m) => ({
+        bill_id: b.id,
+        tenancy_id: m.tenancyId,
+        tenant_name: m.name,
+        unit_label: unitLabel,
+        amount: m.amount,
+        period_label: period,
+      })),
+    );
+    if (error) return { error: error.message };
+  }
+
+  // Mark the bill charged and clear its banner flag.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (sb as any)
+    .from("utility_bills")
+    .update({ overage_charged_at: new Date().toISOString(), overage_dismissed: true })
+    .eq("id", b.id);
+
+  revalidatePath("/utilities");
+  revalidatePath("/tenants");
+
+  const parts: string[] = [];
+  if (charged.length > 0) {
+    const total = charged.reduce((s, c) => s + c.amount, 0);
+    parts.push(
+      `Charged ${fmt$(total)} across ${charged.length} tenant${charged.length === 1 ? "" : "s"} (${charged.map((c) => `${c.name} ${fmt$(c.amount)}`).join(", ")}).`,
+    );
+  }
+  if (movedOut.length > 0) {
+    parts.push(
+      `${movedOut.length} moved-out tenant${movedOut.length === 1 ? "" : "s"} flagged on the Rent Tracker (not charged).`,
+    );
+  }
+  if (unassigned > 0.005) {
+    parts.push(`${fmt$(unassigned)} fell on days with no occupants and was not charged.`);
+  }
+  return { success: parts.join(" ") };
 }
 
 export async function getStatementUrl(

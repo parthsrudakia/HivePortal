@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { SearchableSelect } from "@/components/searchable-select";
 import {
   assignBillProperty,
+  chargeOverage,
   deleteBill,
   dismissOverage,
   getStatementUrl,
@@ -248,6 +249,8 @@ function OverageFlags({
   onJump: (bill: BillRow) => void;
 }) {
   const [pending, startTransition] = useTransition();
+  // Two-step confirm for posting the overage to the tenants' ledgers.
+  const [confirmCharge, setConfirmCharge] = useState<string | null>(null);
   const flagged = bills
     .filter((b) => isOverThreshold(b) && !b.overage_dismissed)
     .map((b) => ({
@@ -267,6 +270,14 @@ function OverageFlags({
     startTransition(async () => {
       const r = await dismissOverage(ids, true);
       if (r?.error) toast.error(r.error);
+    });
+
+  const charge = (id: string) =>
+    startTransition(async () => {
+      const r = await chargeOverage(id);
+      if (r?.error) toast.error(r.error);
+      else if (r?.success) toast.success(r.success, { duration: 10000 });
+      setConfirmCharge(null);
     });
 
   return (
@@ -310,6 +321,43 @@ function OverageFlags({
             <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-700">
               +{fmtMoney(f.usage - OVERAGE_THRESHOLD)} over
             </span>
+            {confirmCharge === f.id ? (
+              <span
+                className="flex items-center gap-1.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => charge(f.id)}
+                  className="rounded-full bg-ink px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-dark disabled:opacity-50"
+                >
+                  {pending
+                    ? "Charging…"
+                    : `Yes, split ${fmtMoney(f.usage - OVERAGE_THRESHOLD)}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmCharge(null)}
+                  className="text-[11px] text-muted hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={pending}
+                title="Split the overage per-day among the tenants in this unit's AC rooms and post it to their ledgers"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmCharge(f.id);
+                }}
+                className="rounded-full border border-stone bg-white px-2.5 py-0.5 text-[11px] font-medium text-ink transition hover:border-accent hover:text-accent-text disabled:opacity-50"
+              >
+                Charge tenants
+              </button>
+            )}
             <button
               type="button"
               disabled={pending}
@@ -383,10 +431,13 @@ function BillCard({
   const extras = bill.utility_bill_charges.filter((c) => c.kind !== "current");
 
   // Jumped to from the over-$200 banner: expand the card so the details are
-  // right there.
-  useEffect(() => {
+  // right there. Adjusted during render (not in an effect) per React's
+  // "derive state from props" guidance.
+  const [wasHighlighted, setWasHighlighted] = useState(highlighted);
+  if (highlighted !== wasHighlighted) {
+    setWasHighlighted(highlighted);
     if (highlighted) setOpen(true);
-  }, [highlighted]);
+  }
 
   return (
     <div
@@ -424,6 +475,14 @@ function BillCard({
           {isOverThreshold(bill) && (
             <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-700">
               ⚡ {fmtMoney(usageTotal(bill) - OVERAGE_THRESHOLD)} over $200
+            </span>
+          )}
+          {bill.overage_charged_at && (
+            <span
+              title="The overage has been posted to the tenants' ledgers"
+              className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700"
+            >
+              ✓ Charged
             </span>
           )}
           {extras.length > 0 && (

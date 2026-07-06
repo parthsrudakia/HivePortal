@@ -129,7 +129,13 @@ export function computeLedger(
   // late fees, so the tenancy's deposit field is purely informational.
   const deposit = bucket(chargedOf("security_deposit"), "security_deposit");
   const lateFee = bucket(chargedOf("late_fee"), "late_fee");
-  const other = bucket(chargedOf("other"), "other");
+  // Utility overcharges (the over-$200 electric/gas split) ride in the
+  // "other" bucket; 'utility' payments settle against it.
+  const other: Bucket = (() => {
+    const owed = chargedOf("other") + chargedOf("utility_overage");
+    const paid = paidOf("other") + allocOf("other") + paidOf("utility");
+    return { owed, paid, balance: owed - paid };
+  })();
 
   // One running balance across every bucket: rent, deposit, and fees share a
   // single pot, so an overpayment anywhere nets against what's owed elsewhere
@@ -154,6 +160,7 @@ export const KIND_LABEL: Record<string, string> = {
   security_deposit: "Security deposit",
   late_fee: "Late fee",
   utility: "Utility",
+  utility_overage: "Utility Overcharge",
   refund: "Refund",
   other: "Other",
 };

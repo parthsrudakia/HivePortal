@@ -1668,6 +1668,7 @@ export type Database = {
           file_sha256: string | null
           id: string
           notes: string | null
+          overage_charged_at: string | null
           overage_dismissed: boolean
           period_end: string | null
           period_start: string | null
@@ -1685,6 +1686,7 @@ export type Database = {
           file_sha256?: string | null
           id?: string
           notes?: string | null
+          overage_charged_at?: string | null
           overage_dismissed?: boolean
           period_end?: string | null
           period_start?: string | null
@@ -1702,6 +1704,7 @@ export type Database = {
           file_sha256?: string | null
           id?: string
           notes?: string | null
+          overage_charged_at?: string | null
           overage_dismissed?: boolean
           period_end?: string | null
           period_start?: string | null
@@ -1720,6 +1723,71 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      utility_overage_alerts: {
+        Row: {
+          acknowledged_at: string | null
+          amount: number
+          bill_id: string | null
+          created_at: string
+          id: string
+          period_label: string
+          tenancy_id: string | null
+          tenant_name: string
+          unit_label: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          amount: number
+          bill_id?: string | null
+          created_at?: string
+          id?: string
+          period_label: string
+          tenancy_id?: string | null
+          tenant_name: string
+          unit_label: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          amount?: number
+          bill_id?: string | null
+          created_at?: string
+          id?: string
+          period_label?: string
+          tenancy_id?: string | null
+          tenant_name?: string
+          unit_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utility_overage_alerts_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "utility_bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utility_overage_alerts_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utility_overage_alerts_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "utility_overage_alerts_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
           },
         ]
       }

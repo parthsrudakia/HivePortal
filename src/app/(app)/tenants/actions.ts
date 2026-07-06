@@ -629,6 +629,22 @@ export async function addCharge(
   return undefined;
 }
 
+// ----- Acknowledge utility-overage alerts (moved-out tenants) -----
+// Shares of an over-$200 utility split that belonged to tenants who had
+// already moved out are not charged; they pop up on the Rent Tracker until
+// the admin acknowledges them here.
+
+export async function acknowledgeOverageAlerts(ids: string[]) {
+  if (ids.length === 0) return;
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from("utility_overage_alerts")
+    .update({ acknowledged_at: new Date().toISOString() })
+    .in("id", ids);
+  revalidatePath("/tenants");
+}
+
 export async function deleteCharge(formData: FormData) {
   // charge_ids carries one or more ids (a consolidated "Other" line deletes
   // every underlying charge at once).
