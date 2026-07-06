@@ -11,3 +11,20 @@ const MASTER_EMAILS = new Set<string>([
 export function isMaster(email: string | null | undefined): boolean {
   return !!email && MASTER_EMAILS.has(email.trim().toLowerCase());
 }
+
+/**
+ * Tenant-ledger writes — adding/deleting charges or credits, and posting a
+ * utility overcharge to tenants — are restricted to the two operators.
+ * Everyone else can still view ledgers and record payments.
+ */
+const LEDGER_ADMIN_EMAILS = new Set<string>([
+  "vdutta1485@gmail.com", // Vineet
+  "parthrudakia@gmail.com", // Parth
+]);
+
+export function canEditLedger(email: string | null | undefined): boolean {
+  return !!email && LEDGER_ADMIN_EMAILS.has(email.trim().toLowerCase());
+}
+
+export const LEDGER_ADMIN_ERROR =
+  "Only Parth or Vineet can add or remove tenant-ledger charges.";

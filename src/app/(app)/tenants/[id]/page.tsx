@@ -18,6 +18,7 @@ import { LeaseDateEdit } from "./lease-end-edit";
 import { RentAmountEdit } from "./rent-edit";
 import { TenantBackLink } from "./tenant-back-link";
 import { computeLedger, buildLedgerEntries } from "@/lib/rent";
+import { canEditLedger } from "@/lib/access";
 import { todayISO } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
@@ -121,6 +122,11 @@ export default async function TenantDetailPage({
     label: "Rent Tracker",
   };
   const supabase = await createClient();
+  // Ledger charges (add/delete) are operator-only; payments stay open to all.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const ledgerAdmin = canEditLedger(user?.email);
 
   const [{ data: tenant }, { data: tenancies }, { data: payments }] =
     await Promise.all([
@@ -360,7 +366,9 @@ export default async function TenantDetailPage({
               >
                 Download ledger ↓
               </a>
-              <RecordCharge tenancyId={active.id} tenantId={tenant.id} />
+              {ledgerAdmin && (
+                <RecordCharge tenancyId={active.id} tenantId={tenant.id} />
+              )}
               <RecordPayment
                 tenancyId={active.id}
                 tenantId={tenant.id}
@@ -433,7 +441,7 @@ export default async function TenantDetailPage({
                             paymentId={e.refIds[0]}
                             tenantId={tenant.id}
                           />
-                        ) : e.deletable === "charge" ? (
+                        ) : e.deletable === "charge" && ledgerAdmin ? (
                           <DeleteChargeButton
                             chargeIds={e.refIds}
                             tenantId={tenant.id}

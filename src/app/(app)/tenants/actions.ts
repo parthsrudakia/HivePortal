@@ -15,6 +15,7 @@ import { sendSms } from "@/lib/sms";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
 
 type PaymentType = Database["public"]["Enums"]["payment_type"];
 // Typed as string[] (not PaymentType[]) so values validate even before the
@@ -618,6 +619,10 @@ export async function addCharge(
     return { error: "Amount must be a positive number." };
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from("tenancy_charges")
@@ -656,6 +661,10 @@ export async function deleteCharge(formData: FormData) {
   if (ids.length === 0) return;
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!canEditLedger(user?.email)) return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any).from("tenancy_charges").delete().in("id", ids);
 

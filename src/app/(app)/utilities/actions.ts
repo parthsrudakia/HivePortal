@@ -8,6 +8,7 @@ import { extractUtilityBill, type UnitOption } from "@/lib/utility-extract";
 import { compressStatement } from "@/lib/compress-statement";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
+import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
 import {
   billMonth,
   isOverThreshold,
@@ -504,6 +505,16 @@ async function chargeOverageCore(
   return result;
 }
 
+const deniedResult = (billId: string, error: string): OverageChargeResult => ({
+  billId,
+  unit: "—",
+  period: "—",
+  error,
+  charged: [],
+  movedOut: [],
+  uncovered: 0,
+});
+
 export async function chargeOverage(
   billId: string,
 ): Promise<OverageChargeResult> {
@@ -511,16 +522,9 @@ export async function chargeOverage(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user)
-    return {
-      billId,
-      unit: "—",
-      period: "—",
-      error: "Not signed in.",
-      charged: [],
-      movedOut: [],
-      uncovered: 0,
-    };
+  if (!user) return deniedResult(billId, "Not signed in.");
+  if (!canEditLedger(user.email))
+    return deniedResult(billId, LEDGER_ADMIN_ERROR);
 
   const result = await chargeOverageCore(supabase, billId);
   revalidatePath("/utilities");
@@ -541,7 +545,9 @@ export async function chargeAllOverages(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return [];
+  if (!user) return billIds.map((id) => deniedResult(id, "Not signed in."));
+  if (!canEditLedger(user.email))
+    return billIds.map((id) => deniedResult(id, LEDGER_ADMIN_ERROR));
 
   const sb = supabase;
   const results: OverageChargeResult[] = [];
@@ -564,6 +570,7 @@ export async function unpostOverage(billId: string): Promise<UploadState> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in." };
+  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
 
   const sb = supabase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

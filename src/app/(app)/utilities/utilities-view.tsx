@@ -13,9 +13,12 @@ import { BillsLog } from "./bills-log";
 export function UtilitiesView({
   bills,
   units,
+  canCharge,
 }: {
   bills: BillRow[];
   units: UnitOpt[];
+  /** Ledger-admin only: posting/unposting overage charges to tenants. */
+  canCharge: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const [overOnly, setOverOnly] = useState(false);
@@ -56,6 +59,7 @@ export function UtilitiesView({
           setFilter={setFilter}
           overOnly={overOnly}
           setOverOnly={setOverOnly}
+          canCharge={canCharge}
         />
       </section>
     </>

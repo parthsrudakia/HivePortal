@@ -42,6 +42,7 @@ export function BillsLog({
   setFilter,
   overOnly,
   setOverOnly,
+  canCharge,
 }: {
   bills: BillRow[];
   units: UnitOpt[];
@@ -49,6 +50,7 @@ export function BillsLog({
   setFilter: (f: string) => void;
   overOnly: boolean;
   setOverOnly: (fn: (o: boolean) => boolean) => void;
+  canCharge: boolean;
 }) {
   const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
   // Bill the user jumped to from the over-$200 banner: its card is scrolled
@@ -154,6 +156,7 @@ export function BillsLog({
         unitName={unitName}
         onJump={jumpToBill}
         showDismissed={overOnly}
+        canCharge={canCharge}
       />
 
       <div className="mt-4 flex flex-col gap-3">
@@ -218,6 +221,7 @@ export function BillsLog({
                             units={units}
                             unitName={unitName}
                             highlighted={jumpTo === b.id}
+                            canCharge={canCharge}
                           />
                         ))}
                       </div>
@@ -248,12 +252,14 @@ function OverageFlags({
   unitName,
   onJump,
   showDismissed,
+  canCharge,
 }: {
   bills: BillRow[];
   unitName: Map<string, string>;
   onJump: (bill: BillRow) => void;
   /** With the over-$200 filter on, discarded flags resurface (restorable). */
   showDismissed: boolean;
+  canCharge: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   // Two-step confirm for posting the overage to the tenants' ledgers.
@@ -336,7 +342,7 @@ function OverageFlags({
           ⚡ Over the $200 utility threshold
         </p>
         <span className="flex items-center gap-2">
-          {confirmCharge === "__all__" ? (
+          {canCharge && (confirmCharge === "__all__" ? (
             <>
               <button
                 type="button"
@@ -366,7 +372,7 @@ function OverageFlags({
             >
               Charge all
             </button>
-          )}
+          ))}
           <button
             type="button"
             disabled={pending}
@@ -408,7 +414,7 @@ function OverageFlags({
             <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-700">
               +{fmtMoney(f.usage - OVERAGE_THRESHOLD)} over
             </span>
-            {confirmCharge === f.id ? (
+            {canCharge && (confirmCharge === f.id ? (
               <span
                 className="flex items-center gap-1.5"
                 onClick={(e) => e.stopPropagation()}
@@ -444,7 +450,7 @@ function OverageFlags({
               >
                 Charge tenants
               </button>
-            )}
+            ))}
             <button
               type="button"
               disabled={pending}
@@ -608,11 +614,13 @@ function BillCard({
   units,
   unitName,
   highlighted = false,
+  canCharge,
 }: {
   bill: BillRow;
   units: UnitOpt[];
   unitName: Map<string, string>;
   highlighted?: boolean;
+  canCharge: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -763,6 +771,7 @@ function BillCard({
               View statement
             </button>
             {bill.overage_charged_at &&
+              canCharge &&
               (!confirmingUnpost ? (
                 <button
                   type="button"
