@@ -499,6 +499,35 @@ export async function chargeOverage(billId: string): Promise<UploadState> {
   return { success: parts.join(" ") };
 }
 
+/**
+ * Charge every flagged bill in one go. Each bill is processed independently
+ * — one bill failing validation (no unit, no billing period…) doesn't stop
+ * the others — and the outcomes are reported together.
+ */
+export async function chargeAllOverages(billIds: string[]): Promise<UploadState> {
+  if (billIds.length === 0) return undefined;
+  const results: string[] = [];
+  const failures: string[] = [];
+  for (const id of billIds) {
+    const r = await chargeOverage(id);
+    if (r?.error) failures.push(r.error);
+    else if (r?.success) results.push(r.success);
+  }
+  const summary = [
+    results.length > 0
+      ? `${results.length} bill${results.length === 1 ? "" : "s"} charged. ${results.join(" ")}`
+      : null,
+    failures.length > 0
+      ? `${failures.length} skipped: ${failures.join(" ")}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" — ");
+  return results.length === 0 && failures.length > 0
+    ? { error: summary }
+    : { success: summary, warning: failures.length > 0 ? summary : undefined };
+}
+
 export async function getStatementUrl(
   billId: string,
 ): Promise<{ url?: string; error?: string }> {

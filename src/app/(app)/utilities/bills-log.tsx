@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { SearchableSelect } from "@/components/searchable-select";
 import {
   assignBillProperty,
+  chargeAllOverages,
   chargeOverage,
   deleteBill,
   dismissOverage,
@@ -280,20 +281,61 @@ function OverageFlags({
       setConfirmCharge(null);
     });
 
+  const chargeAll = (ids: string[]) =>
+    startTransition(async () => {
+      const r = await chargeAllOverages(ids);
+      if (r?.error) toast.error(r.error, { duration: 12000 });
+      else if (r?.success) toast.success(r.success, { duration: 12000 });
+      setConfirmCharge(null);
+    });
+
   return (
     <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 px-5 py-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-red-900">
           ⚡ Over the $200 utility threshold
         </p>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => dismiss(flagged.map((f) => f.id))}
-          className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-        >
-          Discard all
-        </button>
+        <span className="flex items-center gap-2">
+          {confirmCharge === "__all__" ? (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => chargeAll(flagged.map((f) => f.id))}
+                className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white transition hover:bg-accent-dark disabled:opacity-50"
+              >
+                {pending
+                  ? "Charging…"
+                  : `Yes, charge ${flagged.length} bill${flagged.length === 1 ? "" : "s"}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmCharge(null)}
+                className="text-xs text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={pending}
+              title="Split every flagged bill's overage among its unit's AC-room tenants and post the charges"
+              onClick={() => setConfirmCharge("__all__")}
+              className="rounded-full border border-stone bg-white px-3 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent-text disabled:opacity-50"
+            >
+              Charge all
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => dismiss(flagged.map((f) => f.id))}
+            className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+          >
+            Discard all
+          </button>
+        </span>
       </div>
       <ul className="mt-3 flex flex-col gap-1.5">
         {flagged.map((f) => (
