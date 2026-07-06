@@ -260,11 +260,20 @@ function OverageFlags({
   const [confirmCharge, setConfirmCharge] = useState<string | null>(null);
   // Per-bill outcomes of the last charge run, shown in a popup until closed.
   const [results, setResults] = useState<OverageChargeResult[] | null>(null);
+  // Rows ✕'d in this view. Cleared when the over-$200 filter toggles, so
+  // switching it on always brings every over-threshold bill back.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [prevShowDismissed, setPrevShowDismissed] = useState(showDismissed);
+  if (showDismissed !== prevShowDismissed) {
+    setPrevShowDismissed(showDismissed);
+    setHidden(new Set());
+  }
   const flagged = bills
     .filter(
       (b) =>
         isOverThreshold(b) &&
         !b.overage_charged_at &&
+        !hidden.has(b.id) &&
         (showDismissed || !b.overage_dismissed),
     )
     .map((b) => ({
@@ -283,11 +292,23 @@ function OverageFlags({
   // the banner (charged bills drop out of the flagged list on revalidation).
   if (flagged.length === 0 && !results) return null;
 
-  const dismiss = (ids: string[], dismissed = true) =>
-    startTransition(async () => {
-      const r = await dismissOverage(ids, dismissed);
-      if (r?.error) toast.error(r.error);
+  // ✕ a row: it disappears from the banner immediately and its flag is
+  // marked discarded (already-discarded rows shown under the filter just
+  // hide). The over-$200 filter resurfaces everything.
+  const hideRows = (rows: { id: string; dismissed: boolean }[]) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      for (const r of rows) next.add(r.id);
+      return next;
     });
+    const toDismiss = rows.filter((r) => !r.dismissed).map((r) => r.id);
+    if (toDismiss.length > 0) {
+      startTransition(async () => {
+        const r = await dismissOverage(toDismiss, true);
+        if (r?.error) toast.error(r.error);
+      });
+    }
+  };
 
   const charge = (id: string) =>
     startTransition(async () => {
@@ -349,9 +370,7 @@ function OverageFlags({
           <button
             type="button"
             disabled={pending}
-            onClick={() =>
-              dismiss(flagged.filter((f) => !f.dismissed).map((f) => f.id))
-            }
+            onClick={() => hideRows(flagged)}
             className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
           >
             Discard all
@@ -426,35 +445,19 @@ function OverageFlags({
                 Charge tenants
               </button>
             )}
-            {f.dismissed ? (
-              <button
-                type="button"
-                disabled={pending}
-                aria-label={`Restore flag for ${f.unit}`}
-                title="Restore this flag to the banner"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dismiss([f.id], false);
-                }}
-                className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
-              >
-                ↺
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={pending}
-                aria-label={`Discard flag for ${f.unit}`}
-                title="Discard this flag (the badge on the bill stays)"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dismiss([f.id]);
-                }}
-                className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
-              >
-                ✕
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={pending}
+              aria-label={`Discard flag for ${f.unit}`}
+              title="Discard this row (the ⚡ Over $200 only filter brings it back)"
+              onClick={(e) => {
+                e.stopPropagation();
+                hideRows([f]);
+              }}
+              className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
+            >
+              ✕
+            </button>
           </li>
         ))}
       </ul>
