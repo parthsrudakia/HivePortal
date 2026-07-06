@@ -140,8 +140,11 @@ export function computeLedger(
   // One running balance across every bucket: rent, deposit, and fees share a
   // single pot, so an overpayment anywhere nets against what's owed elsewhere
   // and surfaces as account-wide credit. Negative `netBalance` == credit.
+  // A refund is money returned to the tenant — it consumes credit / adds to
+  // what's owed, mirroring the debit row in buildLedgerEntries.
+  const refunded = paidOf("refund");
   const netBalance =
-    rent.balance + deposit.balance + lateFee.balance + other.balance;
+    rent.balance + deposit.balance + lateFee.balance + other.balance + refunded;
   const availableCredit = Math.max(0, -netBalance);
 
   return { rent, deposit, lateFee, other, netBalance, availableCredit };
@@ -305,10 +308,24 @@ export function buildLedgerEntries(
   }
 
   // Payments. Rent payments only count from the anchor forward (pre-anchor
-  // months are treated as settled); other payments always count. This mirrors
-  // computeLedger so the running balance lands on the same net figure.
+  // months are treated as settled); other payments always count. A refund is
+  // money returned to the tenant, so it posts on the charge (debit) side.
+  // This mirrors computeLedger so the running balance lands on the same net
+  // figure.
   for (const p of payments) {
     if (p.payment_type === "rent" && p.paid_on < LEDGER_ANCHOR) continue;
+    if (p.payment_type === "refund") {
+      rows.push({
+        id: p.id,
+        date: p.paid_on,
+        description: "Refund" + (p.notes ? ` · ${p.notes}` : ""),
+        charge: num(p.amount),
+        payment: 0,
+        deletable: "payment",
+        refIds: [p.id],
+      });
+      continue;
+    }
     const label =
       p.payment_type === "rent"
         ? "Payment"
