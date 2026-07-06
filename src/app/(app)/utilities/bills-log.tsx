@@ -241,6 +241,13 @@ function OverageFlags({
       if (r?.error) toast.error(r.error);
     });
 
+  const openStatement = (id: string) =>
+    startTransition(async () => {
+      const r = await getStatementUrl(id);
+      if (r.error) toast.error(r.error);
+      else if (r.url) window.open(r.url, "_blank");
+    });
+
   return (
     <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 px-5 py-4">
       <div className="flex items-center justify-between gap-3">
@@ -260,7 +267,17 @@ function OverageFlags({
         {flagged.map((f) => (
           <li
             key={f.id}
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white px-3 py-2 text-sm shadow-sm"
+            role="button"
+            tabIndex={0}
+            title="Open the statement"
+            onClick={() => openStatement(f.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openStatement(f.id);
+              }
+            }}
+            className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white px-3 py-2 text-sm shadow-sm transition hover:bg-red-100/50"
           >
             <span className="font-medium text-ink">{f.unit}</span>
             <span className="text-xs text-muted">
@@ -277,7 +294,10 @@ function OverageFlags({
               disabled={pending}
               aria-label={`Discard flag for ${f.unit}`}
               title="Discard this flag (the badge on the bill stays)"
-              onClick={() => dismiss([f.id])}
+              onClick={(e) => {
+                e.stopPropagation();
+                dismiss([f.id]);
+              }}
               className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
             >
               ✕
