@@ -60,9 +60,9 @@ export function MonthlyChart({ data }: { data: Point[] }) {
 
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">
-        Monthly utility spend
-      </p>
+      <h2 className="text-xl tracking-tight text-ink">
+        Monthly <span className="font-display text-accent-text">spend</span>
+      </h2>
       <div className="relative mt-2">
         <svg
           ref={svgRef}
