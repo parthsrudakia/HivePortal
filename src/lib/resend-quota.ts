@@ -108,11 +108,44 @@ function recipientOf(payload: ResendPayload): string {
   return Array.isArray(audience) ? audience.join(", ") : audience;
 }
 
+// ── From-address guardrail ───────────────────────────────────────────────────
+// Every outbound Resend email must come from the configured sender
+// (RESEND_FROM, or Resend's onboarding fallback when unset). No code path in
+// this app — a bug, a stale queue row, bot-tool input — can send as anyone
+// else. This cannot stop someone holding the raw API key (they'd call
+// Resend's API directly); pair it with a domain-restricted `sending_access`
+// key in the Resend dashboard so a leaked key is send-only on our domain.
+
+/** Bare lowercase address from either `a@b.com` or `Name <a@b.com>`. */
+function emailOf(addr: string): string {
+  const m = addr.match(/<([^>]+)>/);
+  return (m ? m[1] : addr).trim().toLowerCase();
+}
+
+function fromAllowed(from: string): boolean {
+  const configured = process.env.RESEND_FROM || "onboarding@resend.dev";
+  return emailOf(from) === emailOf(configured);
+}
+
 /** Actually hit the Resend API and log the outcome to email_log. */
 async function dispatch(
   payload: ResendPayload,
   meta: ResendLogMeta,
 ): Promise<DispatchResult> {
+  if (!fromAllowed(payload.from)) {
+    const error = `Blocked: from address "${payload.from}" is not the configured sender`;
+    await logEmail({
+      type: meta.type,
+      recipient: recipientOf(payload),
+      subject: payload.subject,
+      context: meta.context ?? null,
+      channel: "resend",
+      status: "failed",
+      error,
+    });
+    return { ok: false, error };
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     await logEmail({
@@ -193,6 +226,10 @@ export async function sendViaResend(
   payload: ResendPayload,
   meta: ResendLogMeta,
 ): Promise<SendResult> {
+  // A disallowed from-address never sends and never queues — dispatch logs
+  // the block to email_log and rejects without touching the Resend API.
+  if (!fromAllowed(payload.from)) return dispatch(payload, meta);
+
   const sb = admin();
   // Without a service-role client we can neither meter nor queue — fail open and
   // just send, so a missing key never silently drops mail.
