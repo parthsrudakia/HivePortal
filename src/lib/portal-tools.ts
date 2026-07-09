@@ -851,13 +851,15 @@ export async function updateTenant(args: {
   return { ok: true, updated_fields: Object.keys(patch) };
 }
 
-// Patch tenancy money/date fields. A monthly_rent change is recorded in
-// tenancy_rent_history first, so it reprices the current month onward only —
-// past months keep billing the rate that was in effect back then
+// Patch tenancy money/date fields. A monthly_rent change is a lease renewal:
+// it requires new_lease_start + lease_end_date, is recorded in
+// tenancy_rent_history effective the lease-start month (never a past month),
+// and past months keep billing the rate that was in effect back then
 // (first_month_rent only affects the calendar month the tenancy starts in).
 export async function updateTenancy(args: {
   tenancy_id: string;
   monthly_rent?: number;
+  new_lease_start?: string;
   first_month_rent?: number | null;
   security_deposit?: number | null;
   start_date?: string;
@@ -867,7 +869,17 @@ export async function updateTenancy(args: {
   if (args.monthly_rent !== undefined) {
     if (!(args.monthly_rent > 0))
       throw new Error("monthly_rent must be greater than 0.");
+    const isDate = (s: unknown): s is string =>
+      typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!isDate(args.new_lease_start) || !isDate(args.lease_end_date))
+      throw new Error(
+        "Changing monthly_rent is a lease renewal: provide new_lease_start and lease_end_date (YYYY-MM-DD). The new rent takes effect from the lease-start month.",
+      );
+    if (args.lease_end_date <= args.new_lease_start)
+      throw new Error("lease_end_date must be after new_lease_start.");
     patch.monthly_rent = args.monthly_rent;
+  } else if (args.new_lease_start !== undefined) {
+    throw new Error("new_lease_start only applies when changing monthly_rent.");
   }
   if (args.first_month_rent !== undefined) {
     if (args.first_month_rent !== null && !(args.first_month_rent >= 0))
@@ -897,6 +909,7 @@ export async function updateTenancy(args: {
       supabase,
       args.tenancy_id,
       args.monthly_rent,
+      args.new_lease_start,
     );
     if (histErr) throw new Error(histErr);
   }
@@ -2105,12 +2118,20 @@ const rawTools = [
       "Update a tenancy's rent amounts and lease dates: monthly_rent, " +
       "first_month_rent (prorated amount charged only for the calendar month " +
       "the tenancy starts in; null = full monthly rent), security_deposit " +
-      "(informational), start_date, lease_end_date. The ledger recomputes " +
-      "from these, so rent changes reprice the auto monthly charges " +
-      "immediately. Use end_tenancy / cancel_move_out for move-outs.",
+      "(informational), start_date, lease_end_date. Changing monthly_rent is " +
+      "a lease renewal and REQUIRES new_lease_start and lease_end_date: the " +
+      "new rent takes effect from the lease-start month (never a past month) " +
+      "and rent already posted for past months is untouched. Use " +
+      "end_tenancy / cancel_move_out for move-outs.",
     inputSchema: z.object({
       tenancy_id: z.string(),
       monthly_rent: z.number().positive().optional(),
+      new_lease_start: z
+        .string()
+        .optional()
+        .describe(
+          '"YYYY-MM-DD"; required with monthly_rent — the renewed lease\'s start; the new rent bills from this month',
+        ),
       first_month_rent: z.number().min(0).nullable().optional(),
       security_deposit: z.number().min(0).nullable().optional(),
       start_date: z.string().optional().describe('"YYYY-MM-DD"'),
@@ -2118,7 +2139,9 @@ const rawTools = [
         .string()
         .nullable()
         .optional()
-        .describe('"YYYY-MM-DD"; changing it re-arms lease-ending reminders'),
+        .describe(
+          '"YYYY-MM-DD"; changing it re-arms lease-ending reminders; required with monthly_rent as the renewed lease\'s end',
+        ),
     }),
     run: async (args) => JSON.stringify(await updateTenancy(args)),
   }),
