@@ -66,6 +66,8 @@ type TenancyInfo = {
   property_label: string | null;
   room_label: string | null;
   rent_changes: RentChange[];
+  /** Remembered payer keys for this tenant (tenant_payer_aliases). */
+  alias_keys: string[];
 };
 
 // Every tenancy that overlapped the reconciliation month — including ones that
@@ -133,6 +135,26 @@ async function loadMonthTenancies(
     }
   }
 
+  // Remembered payer aliases (operator assigned a deposit to this tenant in
+  // an earlier run) — those payer keys match the tenant automatically.
+  const tenantIds = [
+    ...new Set((data ?? []).map((t) => t.tenant_id).filter(Boolean)),
+  ];
+  const aliasesByTenant = new Map<string, string[]>();
+  if (tenantIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any;
+    const { data: aliasRows } = await sb
+      .from("tenant_payer_aliases")
+      .select("tenant_id, payer_key")
+      .in("tenant_id", tenantIds);
+    for (const r of aliasRows ?? []) {
+      const list = aliasesByTenant.get(r.tenant_id);
+      if (list) list.push(r.payer_key);
+      else aliasesByTenant.set(r.tenant_id, [r.payer_key]);
+    }
+  }
+
   const tenancies = (data ?? [])
     .map((t): TenancyInfo | null => {
       const tenant = one(t.tenants);
@@ -154,6 +176,7 @@ async function loadMonthTenancies(
           : null,
         room_label: room?.room_number ?? null,
         rent_changes: changesByTenancy.get(t.id) ?? [],
+        alias_keys: aliasesByTenant.get(tenant.id) ?? [],
       };
     })
     .filter((t): t is TenancyInfo => t !== null);
@@ -173,6 +196,12 @@ type MatchRow = {
   difference: number;
   status: "match" | "mismatch" | "missing";
 };
+
+// Every payer key a tenancy answers to: its pays_as/full-name key plus each
+// remembered alias of its tenant (operator-assigned in an earlier run).
+function keysOf(t: TenancyInfo): string[] {
+  return [...new Set([tenantKey(t.pays_as, t.full_name), ...t.alias_keys])];
+}
 
 // Pure matcher shared by the initial run and by recompute-after-assign. Sums
 // deposits by payer key and lines them up against each tenancy's expected rent.
@@ -202,8 +231,9 @@ function buildMatches(
   );
   const keyClaimedBy = new Map<string, string>();
   for (const t of ordered) {
-    const k = tenantKey(t.pays_as, t.full_name);
-    if (!keyClaimedBy.has(k)) keyClaimedBy.set(k, t.id);
+    for (const k of keysOf(t)) {
+      if (!keyClaimedBy.has(k)) keyClaimedBy.set(k, t.id);
+    }
   }
 
   for (const t of tenancies) {
@@ -216,11 +246,17 @@ function buildMatches(
       monthEnd,
       t.rent_changes,
     );
-    const actual =
-      keyClaimedBy.get(rawKey) === t.id ? aggregate.get(rawKey) ?? 0 : 0;
-    if (actual > 0) {
-      claimedKeys.add(rawKey);
-      tenancyByKey.set(rawKey, t.id);
+    // Sum the deposits under every key this tenancy claims — a tenant can pay
+    // under their own name one month and a remembered alias the next.
+    let actual = 0;
+    for (const k of keysOf(t)) {
+      if (keyClaimedBy.get(k) !== t.id) continue;
+      const sum = aggregate.get(k) ?? 0;
+      if (sum > 0) {
+        actual += sum;
+        claimedKeys.add(k);
+        tenancyByKey.set(k, t.id);
+      }
     }
 
     const difference = actual - expected;
@@ -897,8 +933,8 @@ export async function assignUnmatchedDeposit(
   }
 
   const supabase = await createClient();
-  // Rewrites the tenant's pays_as alias and can immediately re-post money on
-  // a posted run — operator-only.
+  // Permanently maps this payer to the tenant and can immediately re-post
+  // money on a posted run — operator-only.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -917,7 +953,7 @@ export async function assignUnmatchedDeposit(
     return { error: "Couldn't find that tenant." };
   }
 
-  // The bank's printed payer name (original case) becomes the alias.
+  // The bank's printed payer name (original case), kept for display.
   const { data: dep } = await supabase
     .from("reconciliation_deposits")
     .select("raw_description")
@@ -929,11 +965,20 @@ export async function assignUnmatchedDeposit(
     ? bankPayerNameDisplay(dep.raw_description)
     : payerKey;
 
-  const { error: upErr } = await supabase
-    .from("tenants")
-    .update({ pays_as: alias })
-    .eq("id", ten.tenant_id);
-  if (upErr) return { error: `Failed to set pays as: ${upErr.message}` };
+  // Remember the payer → tenant mapping for every future run. Upsert on the
+  // payer key so re-assigning a payer simply moves it to the new tenant.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: upErr } = await (supabase as any)
+    .from("tenant_payer_aliases")
+    .upsert(
+      {
+        tenant_id: ten.tenant_id,
+        payer_key: payerKey,
+        display_name: alias,
+      },
+      { onConflict: "payer_key" },
+    );
+  if (upErr) return { error: `Failed to remember the payer: ${upErr.message}` };
 
   try {
     await recomputeRun(supabase, runId);
@@ -953,6 +998,6 @@ export async function assignUnmatchedDeposit(
   revalidatePath(`/reconciliation/${runId}`);
   revalidatePath("/tenants");
   return {
-    success: `Assigned to ${tenant?.full_name ?? "tenant"} (pays as "${alias}").`,
+    success: `Assigned to ${tenant?.full_name ?? "tenant"} — "${alias}" will match them automatically in future runs.`,
   };
 }
