@@ -16,9 +16,10 @@ const fmtMoney = (n: number) =>
 
 /**
  * Popup shown on the Rent Tracker when a utility-overage split included
- * tenants who had already moved out. Their share was NOT posted to the
- * ledger — the admin settles it manually (e.g. from the deposit) and
- * dismisses the alert.
+ * tenants who had already moved out. Their share IS posted to their (ended)
+ * tenancy's ledger like everyone else's — this alert exists because moved-out
+ * tenants don't surface in the normal rent flows, so the admin collects the
+ * balance (e.g. against the deposit) and dismisses the alert.
  */
 export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -44,9 +45,10 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
           </span>
         </h2>
         <p className="mt-1 text-sm text-muted">
-          These tenants owed a share of an over-$200 utility split but had
-          already moved out, so nothing was posted to their ledger. Settle
-          their share manually (e.g. against the deposit), then dismiss.
+          These tenants were charged their share of an over-$200 utility
+          split but have already moved out, so they won&apos;t see it through
+          the usual rent flow. Collect the balance (e.g. against the
+          deposit), then dismiss.
         </p>
 
         <ul className="mt-4 flex flex-col gap-2">

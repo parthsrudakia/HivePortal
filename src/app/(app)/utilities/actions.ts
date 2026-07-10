@@ -363,9 +363,10 @@ export async function dismissOverage(
 // Lease clause: usage charges (incl. tax, excl. late fees) over $200/month
 // are billable to the occupants. The overage is prorated per billed day and
 // split, day by day, among the tenants living in the unit's AC rooms that
-// day. Active tenants get a ledger charge (kind 'utility_overage'); tenants
-// who had already moved out are NOT charged — their share becomes an alert
-// popup on the Rent Tracker instead.
+// day. Every occupant gets a ledger charge (kind 'utility_overage') —
+// including tenants who have since moved out; their share additionally
+// raises an alert popup on the Rent Tracker so the operator remembers to
+// collect it (e.g. against the deposit).
 
 /** Per-bill outcome of a charge run, rendered in the results popup. */
 export type OverageChargeResult = {
@@ -375,7 +376,7 @@ export type OverageChargeResult = {
   /** null when the bill was charged; otherwise why it was skipped. */
   error: string | null;
   charged: { name: string; amount: number }[];
-  /** Not charged — flagged on the Rent Tracker instead. */
+  /** Also charged, but moved out — additionally flagged on the Rent Tracker. */
   movedOut: { name: string; amount: number }[];
   /** Overage dollars falling on days no eligible tenant was living there. */
   uncovered: number;
@@ -646,10 +647,13 @@ async function chargeOverageCore(
       .eq("id", b.id);
   };
 
-  if (charged.length > 0) {
+  // Everyone with a share gets the ledger charge — moved-out tenants
+  // included; their ended tenancy's ledger carries the balance.
+  const allCharged = [...charged, ...movedOut];
+  if (allCharged.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (sb as any).from("tenancy_charges").insert(
-      charged.map((c) => ({
+      allCharged.map((c) => ({
         tenancy_id: c.tenancyId,
         kind: "utility_overage",
         amount: c.amount,

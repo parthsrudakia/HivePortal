@@ -566,7 +566,7 @@ function ChargePreview({
                   {t.name}
                   {t.movedOut && (
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                      moved out · will be flagged on Rent Tracker
+                      moved out · charged &amp; flagged on Rent Tracker
                     </span>
                   )}
                 </p>
@@ -643,7 +643,7 @@ function ChargeResults({
   onClose: () => void;
 }) {
   const totalCharged = results
-    .flatMap((r) => r.charged)
+    .flatMap((r) => [...r.charged, ...r.movedOut])
     .reduce((s, c) => s + c.amount, 0);
   const chargedBills = results.filter((r) => !r.error).length;
   const skipped = results.filter((r) => r.error).length;
@@ -698,7 +698,7 @@ function ChargeResults({
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
                         moved out · flagged on Rent Tracker
                       </span>
-                      <span className="ml-auto tabular-nums text-muted line-through">
+                      <span className="ml-auto tabular-nums text-ink">
                         {fmtMoney(m.amount)}
                       </span>
                     </li>
