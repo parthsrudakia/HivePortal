@@ -68,6 +68,8 @@ type TenancyInfo = {
   rent_changes: RentChange[];
   /** Remembered payer keys for this tenant (tenant_payer_aliases). */
   alias_keys: string[];
+  /** Rent recorded in the system for this month outside a bank posting. */
+  recorded_paid: number;
 };
 
 // Every tenancy that overlapped the reconciliation month — including ones that
@@ -135,6 +137,30 @@ async function loadMonthTenancies(
     }
   }
 
+  // Rent already recorded in the system for this month outside a bank
+  // posting (manual entries, Zelle recorded on the tenant page, …). These
+  // count toward a tenancy's "actual" so a tenant who paid through another
+  // channel isn't shown as missing. Bank-posted payments are excluded
+  // (external_ref set) — their deposits are already in the run, and counting
+  // both would double the money.
+  const paidByTenancy = new Map<string, number>();
+  if (ids.length > 0) {
+    const { data: payRows } = await supabase
+      .from("payments")
+      .select("tenancy_id, amount")
+      .eq("payment_type", "rent")
+      .is("external_ref", null)
+      .gte("paid_on", monthStart)
+      .lte("paid_on", monthEnd)
+      .in("tenancy_id", ids);
+    for (const p of payRows ?? []) {
+      paidByTenancy.set(
+        p.tenancy_id,
+        (paidByTenancy.get(p.tenancy_id) ?? 0) + Number(p.amount),
+      );
+    }
+  }
+
   // Remembered payer aliases (operator assigned a deposit to this tenant in
   // an earlier run) — those payer keys match the tenant automatically.
   const tenantIds = [
@@ -177,6 +203,7 @@ async function loadMonthTenancies(
         room_label: room?.room_number ?? null,
         rent_changes: changesByTenancy.get(t.id) ?? [],
         alias_keys: aliasesByTenant.get(tenant.id) ?? [],
+        recorded_paid: paidByTenancy.get(t.id) ?? 0,
       };
     })
     .filter((t): t is TenancyInfo => t !== null);
@@ -204,7 +231,8 @@ function keysOf(t: TenancyInfo): string[] {
 }
 
 // Pure matcher shared by the initial run and by recompute-after-assign. Sums
-// deposits by payer key and lines them up against each tenancy's expected rent.
+// deposits by payer key — plus rent recorded outside a bank posting — and
+// lines the total up against each tenancy's expected rent.
 function buildMatches(
   deposits: Deposit[],
   tenancies: TenancyInfo[],
@@ -258,6 +286,9 @@ function buildMatches(
         tenancyByKey.set(k, t.id);
       }
     }
+    // Plus rent already recorded in the system for this month outside a bank
+    // posting — a tenant who paid through another channel isn't missing.
+    actual += t.recorded_paid;
 
     const difference = actual - expected;
     let status: MatchRow["status"];
