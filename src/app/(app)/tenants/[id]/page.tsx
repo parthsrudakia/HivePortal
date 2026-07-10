@@ -438,7 +438,10 @@ export default async function TenantDetailPage({
           </header>
 
           {/* Summary — fee totals charged so far, plus the overall balance/credit. */}
-          <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
+          <h3 className="mt-4 px-1 text-xs font-medium uppercase tracking-wide text-muted">
+            Summary
+          </h3>
+          <div className="mt-2 overflow-hidden rounded-2xl bg-white shadow-sm">
             <table className="w-full text-sm">
               <tbody>
                 {summaryRows.map((r) => (
@@ -462,12 +465,15 @@ export default async function TenantDetailPage({
           </div>
 
           {/* Running ledger — oldest first, balance carried down. */}
+          <h3 className="mt-4 px-1 text-xs font-medium uppercase tracking-wide text-muted">
+            Transactions
+          </h3>
           {ledgerEntries.length === 0 ? (
-            <p className="mt-4 rounded-2xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
+            <p className="mt-2 rounded-2xl bg-white px-6 py-10 text-center text-sm text-muted shadow-sm">
               No charges or payments yet.
             </p>
           ) : (
-            <div className="mt-4 overflow-x-auto rounded-2xl bg-white shadow-sm">
+            <div className="mt-2 overflow-x-auto rounded-2xl bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
                   <tr>
