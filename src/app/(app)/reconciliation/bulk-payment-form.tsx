@@ -31,14 +31,18 @@ export function BulkPaymentForm({
 
   const filled = Object.values(amounts).filter((v) => v.trim() !== "").length;
 
+  // Only show tenants the user searched for, plus any with an amount already
+  // entered — never the full roster by default.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return tenants;
-    return tenants.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) || t.unit.toLowerCase().includes(q),
-    );
-  }, [tenants, query]);
+    return tenants.filter((t) => {
+      if ((amounts[t.tenancy_id] ?? "").trim() !== "") return true;
+      if (!q) return false;
+      return (
+        t.name.toLowerCase().includes(q) || t.unit.toLowerCase().includes(q)
+      );
+    });
+  }, [tenants, query, amounts]);
 
   function submit() {
     const fd = new FormData();
@@ -110,7 +114,9 @@ export function BulkPaymentForm({
           <div className="mt-4 max-h-96 divide-y divide-stone/30 overflow-y-auto rounded-lg border border-stone/40">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-muted">
-                No tenants match.
+                {query.trim() === ""
+                  ? "Search for a tenant to record a payment."
+                  : "No tenants match."}
               </p>
             ) : (
               filtered.map((t) => (
