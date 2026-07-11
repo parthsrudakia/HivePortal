@@ -216,7 +216,7 @@ export default async function ReconciliationMatchPage({ params }: PageProps) {
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl bg-white shadow-sm">
+      <section className="mt-8 overflow-hidden rounded-2xl bg-white shadow-sm">
         <div className="px-5 pt-5">
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             Bank transactions ({deposits.length})
@@ -278,7 +278,7 @@ export default async function ReconciliationMatchPage({ params }: PageProps) {
       </section>
 
       {recorded.length > 0 && (
-        <section className="mt-8 rounded-2xl bg-white shadow-sm">
+        <section className="mt-8 overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="px-5 pt-5">
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               Recorded payments ({recorded.length})
