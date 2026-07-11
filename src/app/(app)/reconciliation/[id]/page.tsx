@@ -318,22 +318,16 @@ export default async function ReconciliationRunPage({
               return (
               <tr key={m.id} className="border-t border-stone/40">
                 <td className="px-5 py-4">
-                  {m.tenant_id ? (
-                    <Link
-                      href={`/tenants/${m.tenant_id}?from=reconciliation`}
-                      className={
-                        flagged
-                          ? "text-red-700 hover:text-red-800"
-                          : "text-ink hover:text-accent-text"
-                      }
-                    >
-                      {m.tenant_name}
-                    </Link>
-                  ) : (
-                    <span className={flagged ? "text-red-700" : "text-ink"}>
-                      {m.tenant_name}
-                    </span>
-                  )}
+                  <Link
+                    href={`/reconciliation/${run.id}/match/${m.id}`}
+                    className={
+                      flagged
+                        ? "text-red-700 hover:text-red-800"
+                        : "text-ink hover:text-accent-text"
+                    }
+                  >
+                    {m.tenant_name}
+                  </Link>
                 </td>
                 <td className="px-5 py-4 text-ink">
                   {m.property_label ?? "—"}
