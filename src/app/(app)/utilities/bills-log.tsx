@@ -44,6 +44,8 @@ export function BillsLog({
   setFilter,
   overOnly,
   setOverOnly,
+  chargedOnly,
+  setChargedOnly,
   canCharge,
   billTenants,
 }: {
@@ -53,6 +55,8 @@ export function BillsLog({
   setFilter: (f: string) => void;
   overOnly: boolean;
   setOverOnly: (fn: (o: boolean) => boolean) => void;
+  chargedOnly: boolean;
+  setChargedOnly: (fn: (o: boolean) => boolean) => void;
   canCharge: boolean;
   /** Per over-$200 bill: first names of the tenants sharing the overage. */
   billTenants: Record<string, string[]>;
@@ -81,7 +85,7 @@ export function BillsLog({
     return () => clearTimeout(t);
   }, [jumpTo]);
 
-  const visible = filterBills(bills, filter, overOnly);
+  const visible = filterBills(bills, filter, overOnly, chargedOnly);
 
   // Month groups (newest first), each holding unit groups (alphabetical,
   // unmatched last).
@@ -142,6 +146,18 @@ export function BillsLog({
           title="Show only electric/gas bills whose usage exceeds $200"
         >
           ⚡ Over $200 only
+        </button>
+        <button
+          type="button"
+          onClick={() => setChargedOnly((o) => !o)}
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+            chargedOnly
+              ? "border-green-300 bg-green-50 text-green-700"
+              : "border-stone bg-white text-muted hover:text-ink"
+          }`}
+          title="Show only bills whose overage was posted to tenants' ledgers"
+        >
+          ✓ Charged to tenants
         </button>
         <SearchableSelect
           className="w-64"

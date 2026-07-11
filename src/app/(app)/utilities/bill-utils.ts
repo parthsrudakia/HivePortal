@@ -31,14 +31,17 @@ export const fmtDate = (iso: string | null) =>
       })
     : "—";
 
-/** Apply the log's filters (unit + over-$200) to the bill list. */
+/** Apply the log's filters (unit + over-$200 + charged-to-tenants) to the
+ *  bill list. */
 export function filterBills(
   bills: BillRow[],
   filter: string,
   overOnly: boolean,
+  chargedOnly = false,
 ): BillRow[] {
   return bills.filter((b) => {
     if (overOnly && !isOverThreshold(b)) return false;
+    if (chargedOnly && !b.overage_charged_at) return false;
     if (!filter) return true;
     return filter === "unmatched" ? !b.property_id : b.property_id === filter;
   });

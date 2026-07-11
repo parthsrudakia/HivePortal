@@ -25,10 +25,11 @@ export function UtilitiesView({
 }) {
   const [filter, setFilter] = useState("");
   const [overOnly, setOverOnly] = useState(false);
+  const [chargedOnly, setChargedOnly] = useState(false);
 
   const visible = useMemo(
-    () => filterBills(bills, filter, overOnly),
-    [bills, filter, overOnly],
+    () => filterBills(bills, filter, overOnly, chargedOnly),
+    [bills, filter, overOnly, chargedOnly],
   );
 
   const series = useMemo(() => {
@@ -62,6 +63,8 @@ export function UtilitiesView({
           setFilter={setFilter}
           overOnly={overOnly}
           setOverOnly={setOverOnly}
+          chargedOnly={chargedOnly}
+          setChargedOnly={setChargedOnly}
           canCharge={canCharge}
           billTenants={billTenants}
         />
