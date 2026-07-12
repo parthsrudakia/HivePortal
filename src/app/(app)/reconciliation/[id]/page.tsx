@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canEditLedger, isMaster } from "@/lib/access";
 import { formatDate } from "@/lib/date";
+import { recomputeRun } from "@/lib/reconciliation/matching";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { DeleteRunButton } from "./delete-run";
 import { AssignDepositForm, type AssignTenantOption } from "./assign-deposit-form";
 import { one } from "@/lib/relations";
@@ -94,6 +96,17 @@ export default async function ReconciliationRunPage({
   // (enforced server-side in the actions; hidden here to match).
   const canPost = canEditLedger(user?.email);
 
+  // Freshen the stored snapshot before reading it: re-derive matches/totals
+  // from the run's saved deposits against current tenancy + payment data, so
+  // payments recorded (or deleted) since the run was created show up without
+  // re-uploading. A no-op write-wise when nothing changed; a failure falls
+  // back to displaying the stored rows.
+  try {
+    await recomputeRun(supabase, id);
+  } catch (e) {
+    console.error("[recon] recompute on view failed:", e);
+  }
+
   const [{ data: run }, { data: matches }] = await Promise.all([
     supabase
       .from("reconciliation_runs")
@@ -171,6 +184,7 @@ export default async function ReconciliationRunPage({
 
   return (
     <div className="mx-auto w-full max-w-6xl">
+      <AutoRefresh />
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-stone/60 pb-6">
         <div>
           <Link
