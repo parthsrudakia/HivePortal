@@ -84,6 +84,13 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// Ledger amounts are cent-precision, but binary floating point can't sum them
+// exactly (726.61 + 598.39 + 1325 − 2650 ≈ 1e-13, not 0). Every figure the
+// ledger publishes is rounded to the cent so a settled account nets to exactly
+// 0 and strict `> 0` checks ("Balance due only", reminder gates) never see
+// sub-cent dust as money owed.
+const cents = (n: number): number => Math.round(n * 100) / 100;
+
 /**
  * The monthly rate in effect for a given month: the latest rent-history row
  * at or before it, falling back to the tenancy's current monthly_rent (no
@@ -176,9 +183,9 @@ export function computeLedger(
     )
     .reduce((s, p) => s + num(p.amount), 0);
   const allocatedAway = allocations.reduce((s, a) => s + num(a.amount), 0);
-  const rentPaid = rentPaidGross - allocatedAway;
-  const due = rentDue(t, todayIso, rentChanges);
-  const rent: Bucket = { owed: due, paid: rentPaid, balance: due - rentPaid };
+  const rentPaid = cents(rentPaidGross - allocatedAway);
+  const due = cents(rentDue(t, todayIso, rentChanges));
+  const rent: Bucket = { owed: due, paid: rentPaid, balance: cents(due - rentPaid) };
 
   const paidOf = (type: string) =>
     payments
@@ -194,8 +201,8 @@ export function computeLedger(
       .reduce((s, c) => s + num(c.amount), 0);
 
   const bucket = (owed: number, key: string): Bucket => {
-    const paid = paidOf(key) + allocOf(key);
-    return { owed, paid, balance: owed - paid };
+    const paid = cents(paidOf(key) + allocOf(key));
+    return { owed: cents(owed), paid, balance: cents(owed - paid) };
   };
 
   // The security deposit is now an ad-hoc charge (kind 'security_deposit') like
@@ -207,13 +214,14 @@ export function computeLedger(
   // 'broker_fee' payment type also lands here so the summary stays in
   // lockstep with the running ledger (which counts every non-rent payment).
   const other: Bucket = (() => {
-    const owed = chargedOf("other") + chargedOf("utility_overage");
-    const paid =
+    const owed = cents(chargedOf("other") + chargedOf("utility_overage"));
+    const paid = cents(
       paidOf("other") +
-      allocOf("other") +
-      paidOf("utility") +
-      paidOf("broker_fee");
-    return { owed, paid, balance: owed - paid };
+        allocOf("other") +
+        paidOf("utility") +
+        paidOf("broker_fee"),
+    );
+    return { owed, paid, balance: cents(owed - paid) };
   })();
 
   // One running balance across every bucket: rent, deposit, and fees share a
@@ -222,8 +230,9 @@ export function computeLedger(
   // A refund is money returned to the tenant — it consumes credit / adds to
   // what's owed, mirroring the debit row in buildLedgerEntries.
   const refunded = paidOf("refund");
-  const netBalance =
-    rent.balance + deposit.balance + lateFee.balance + other.balance + refunded;
+  const netBalance = cents(
+    rent.balance + deposit.balance + lateFee.balance + other.balance + refunded,
+  );
   const availableCredit = Math.max(0, -netBalance);
 
   return { rent, deposit, lateFee, other, netBalance, availableCredit };
@@ -431,7 +440,7 @@ export function buildLedgerEntries(
 
   let balance = 0;
   return rows.map((r) => {
-    balance += r.charge - r.payment;
+    balance = cents(balance + r.charge - r.payment);
     return { ...r, balance };
   });
 }
