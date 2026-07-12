@@ -19,12 +19,8 @@ type PageProps = {
 };
 
 type FilterKey = "match" | "mismatch" | "missing";
-// "flagged" = everything that needs a look: mismatch + missing together.
-type FilterParam = FilterKey | "flagged";
-function isFilterParam(v: string | undefined): v is FilterParam {
-  return (
-    v === "match" || v === "mismatch" || v === "missing" || v === "flagged"
-  );
+function isFilterParam(v: string | undefined): v is FilterKey {
+  return v === "match" || v === "mismatch" || v === "missing";
 }
 
 type Run = {
@@ -138,12 +134,9 @@ export default async function ReconciliationRunPage({
 
   if (!run) notFound();
 
-  const filtered =
-    activeFilter === "flagged"
-      ? (matches ?? []).filter((m) => m.status !== "match")
-      : activeFilter
-        ? (matches ?? []).filter((m) => m.status === activeFilter)
-        : matches ?? [];
+  const filtered = activeFilter
+    ? (matches ?? []).filter((m) => m.status === activeFilter)
+    : matches ?? [];
 
   // Active tenancies to choose from when assigning an unmatched deposit.
   const hasUnmatched =
@@ -271,7 +264,7 @@ export default async function ReconciliationRunPage({
         )}
       </section>
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {admin && (
           <KpiCard
             label="Expected"
@@ -320,17 +313,6 @@ export default async function ReconciliationRunPage({
           }
           active={activeFilter === "missing"}
           accent="bg-red-100 text-red-900"
-        />
-        <KpiCard
-          label="Flagged"
-          value={(run.mismatch_count ?? 0) + (run.missing_count ?? 0)}
-          href={
-            activeFilter === "flagged"
-              ? `/reconciliation/${run.id}`
-              : `/reconciliation/${run.id}?filter=flagged`
-          }
-          active={activeFilter === "flagged"}
-          accent="bg-red-50 text-red-900"
         />
       </section>
 
