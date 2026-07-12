@@ -30,15 +30,31 @@ export function RentAmountEdit({
   // Renewal fields (monthly rent only).
   const [leaseStart, setLeaseStart] = useState("");
   const [leaseEnd, setLeaseEnd] = useState("");
+  // Once the operator edits the end date by hand it stops following the
+  // start date's one-year convenience default.
+  const [endEdited, setEndEdited] = useState(false);
   const [amount, setAmount] = useState("");
   // Monthly rent is required; the prorated amount and deposit may be
   // cleared (no proration / no deposit on file).
   const clearable = field !== "monthly_rent";
 
+  // A one-year lease from `start`, ending the day before the anniversary.
+  const yearFrom = (start: string) => {
+    const d = new Date(`${start}T12:00:00`);
+    d.setFullYear(d.getFullYear() + 1);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  };
+
   const open = () => {
     setAmount(value !== null ? String(value) : "");
-    setLeaseStart("");
-    setLeaseEnd("");
+    // Start both pickers at the current month: renewal from the 1st of this
+    // month, ending a year later — editable, just a starting point.
+    const now = new Date();
+    const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    setLeaseStart(start);
+    setLeaseEnd(yearFrom(start));
+    setEndEdited(false);
     setEditing(true);
   };
 
@@ -96,13 +112,10 @@ export function RentAmountEdit({
             onChange={(e) => {
               const start = e.target.value;
               setLeaseStart(start);
-              // Convenience default: a one-year lease ending the day before
-              // the anniversary. Only fills an empty end date.
-              if (!leaseEnd && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
-                const d = new Date(`${start}T12:00:00`);
-                d.setFullYear(d.getFullYear() + 1);
-                d.setDate(d.getDate() - 1);
-                setLeaseEnd(d.toISOString().slice(0, 10));
+              // Keep the one-year convenience default in step with the start
+              // date until the operator sets an end date themselves.
+              if (!endEdited && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+                setLeaseEnd(yearFrom(start));
               }
             }}
             className="rounded-lg border border-stone bg-white px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
@@ -115,7 +128,10 @@ export function RentAmountEdit({
             value={leaseEnd}
             min={startPicked ? leaseStart : undefined}
             disabled={pending}
-            onChange={(e) => setLeaseEnd(e.target.value)}
+            onChange={(e) => {
+              setLeaseEnd(e.target.value);
+              setEndEdited(true);
+            }}
             className="rounded-lg border border-stone bg-white px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
           />
         </label>
