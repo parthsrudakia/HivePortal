@@ -4,25 +4,27 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useTransition } from "react";
 
 /**
- * Pill toggle that filters the tenant list down to tenancies with an
- * outstanding balance. Writes ?owing=1 to the URL so the server component
- * can read it and filter; preserves any active ?q= search.
+ * Sort control shown only while the "Balance due only" filter is active.
+ * Cycles ?sort= through balance high→low, low→high, and off (property
+ * order); the server component reads it and orders both the tenants inside
+ * each property group and the groups themselves.
  */
-export function BalanceFilter() {
+export function BalanceSort() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const active = searchParams.get("owing") === "1";
+  const sort = searchParams.get("sort");
+  const active = sort === "balance_desc" || sort === "balance_asc";
 
-  function toggle() {
+  function cycle() {
     const next = new URLSearchParams(searchParams.toString());
-    if (active) {
-      next.delete("owing");
-      // The balance sort only exists inside the owing view.
+    if (sort === "balance_desc") {
+      next.set("sort", "balance_asc");
+    } else if (sort === "balance_asc") {
       next.delete("sort");
     } else {
-      next.set("owing", "1");
+      next.set("sort", "balance_desc");
     }
     const qs = next.toString();
     startTransition(() => {
@@ -33,7 +35,7 @@ export function BalanceFilter() {
   return (
     <button
       type="button"
-      onClick={toggle}
+      onClick={cycle}
       aria-pressed={active}
       className={`rounded-full border px-4 py-2 text-sm shadow-sm transition ${
         active
@@ -41,7 +43,11 @@ export function BalanceFilter() {
           : "border-stone bg-white text-ink hover:bg-warm"
       }`}
     >
-      {active ? "✓ " : ""}Balance due only
+      {sort === "balance_desc"
+        ? "Balance: high → low"
+        : sort === "balance_asc"
+          ? "Balance: low → high"
+          : "Sort by balance"}
     </button>
   );
 }

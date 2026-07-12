@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { SearchInput } from "@/components/search-input";
 import { BalanceFilter } from "./balance-filter";
+import { BalanceSort } from "./balance-sort";
 import { RentReminderButton } from "./rent-reminder-button";
 import { getReminderInfo } from "./reminder-info";
 import { processExpiredTenancies } from "./actions";
@@ -88,12 +89,19 @@ function dueForMonth(
   return monthlyRent;
 }
 
-type PageProps = { searchParams: Promise<{ q?: string; owing?: string }> };
+type PageProps = {
+  searchParams: Promise<{ q?: string; owing?: string; sort?: string }>;
+};
 
 export default async function TenantsPage({ searchParams }: PageProps) {
-  const { q, owing } = await searchParams;
+  const { q, owing, sort } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
   const owingOnly = owing === "1";
+  // Balance sort only applies inside the owing view.
+  const balanceSort =
+    owingOnly && (sort === "balance_desc" || sort === "balance_asc")
+      ? sort
+      : null;
 
   // Finalize any tenancies whose move_out_date has passed since the last visit.
   await processExpiredTenancies();
@@ -269,6 +277,17 @@ export default async function TenantsPage({ searchParams }: PageProps) {
       };
     });
 
+  // Reorder the owing view by balance: tenants within each group and the
+  // groups themselves (by subtotal), so the biggest debtors surface first
+  // (or last, ascending).
+  if (balanceSort) {
+    const dir = balanceSort === "balance_asc" ? 1 : -1;
+    for (const g of groups) {
+      g.rows.sort((a, b) => dir * (a.balance - b.balance));
+    }
+    groups.sort((a, b) => dir * (a.subBalance - b.subBalance));
+  }
+
   // Balance-reminder button state (outstanding count + per-channel last-sent).
   const {
     outstandingCount,
@@ -427,6 +446,7 @@ export default async function TenantsPage({ searchParams }: PageProps) {
           ariaLabel="Search tenants"
         />
         <BalanceFilter />
+        {owingOnly && <BalanceSort />}
       </div>
 
       {error && <p className="mt-6 text-sm text-red-700">{error.message}</p>}
