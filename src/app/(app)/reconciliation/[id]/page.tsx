@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/date";
 import { recomputeRun } from "@/lib/reconciliation/matching";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { DeleteRunButton } from "./delete-run";
+import { AddStatementForm } from "./add-statement-form";
 import { AssignDepositForm, type AssignTenantOption } from "./assign-deposit-form";
 import { one } from "@/lib/relations";
 import { postPayments, unpostPayments } from "../actions";
@@ -18,8 +19,12 @@ type PageProps = {
 };
 
 type FilterKey = "match" | "mismatch" | "missing";
-function isFilterKey(v: string | undefined): v is FilterKey {
-  return v === "match" || v === "mismatch" || v === "missing";
+// "flagged" = everything that needs a look: mismatch + missing together.
+type FilterParam = FilterKey | "flagged";
+function isFilterParam(v: string | undefined): v is FilterParam {
+  return (
+    v === "match" || v === "mismatch" || v === "missing" || v === "flagged"
+  );
 }
 
 type Run = {
@@ -83,7 +88,7 @@ export default async function ReconciliationRunPage({
 }: PageProps) {
   const { id } = await params;
   const sp = await searchParams;
-  const activeFilter = isFilterKey(sp.filter) ? sp.filter : null;
+  const activeFilter = isFilterParam(sp.filter) ? sp.filter : null;
 
   const supabase = await createClient();
   // The Expected/Collected money totals are admin-only; the run itself, the
@@ -133,9 +138,12 @@ export default async function ReconciliationRunPage({
 
   if (!run) notFound();
 
-  const filtered = activeFilter
-    ? (matches ?? []).filter((m) => m.status === activeFilter)
-    : matches ?? [];
+  const filtered =
+    activeFilter === "flagged"
+      ? (matches ?? []).filter((m) => m.status !== "match")
+      : activeFilter
+        ? (matches ?? []).filter((m) => m.status === activeFilter)
+        : matches ?? [];
 
   // Active tenancies to choose from when assigning an unmatched deposit.
   const hasUnmatched =
@@ -219,6 +227,7 @@ export default async function ReconciliationRunPage({
               </a>
             </>
           )}
+          {!run.posted_at && <AddStatementForm runId={run.id} />}
           {canPost &&
             (run.posted_at ? (
               <form action={unpostPayments}>
@@ -262,7 +271,7 @@ export default async function ReconciliationRunPage({
         )}
       </section>
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {admin && (
           <KpiCard
             label="Expected"
@@ -311,6 +320,17 @@ export default async function ReconciliationRunPage({
           }
           active={activeFilter === "missing"}
           accent="bg-red-100 text-red-900"
+        />
+        <KpiCard
+          label="Flagged"
+          value={(run.mismatch_count ?? 0) + (run.missing_count ?? 0)}
+          href={
+            activeFilter === "flagged"
+              ? `/reconciliation/${run.id}`
+              : `/reconciliation/${run.id}?filter=flagged`
+          }
+          active={activeFilter === "flagged"}
+          accent="bg-red-50 text-red-900"
         />
       </section>
 

@@ -249,6 +249,153 @@ export async function runReconciliation(
 }
 
 // ----------------------------------------------------------------------------
+// 1b. Add another statement to an existing (unposted) run: parse it, append
+//     only the deposits the run doesn't already have, and re-derive matches.
+// ----------------------------------------------------------------------------
+
+export type AddStatementState =
+  | { error?: string; success?: string }
+  | undefined;
+
+export async function addStatementToRun(
+  _prev: AddStatementState,
+  formData: FormData,
+): Promise<AddStatementState> {
+  const runId = String(formData.get("run_id") ?? "");
+  const file = formData.get("bank_statement");
+  if (!runId) return { error: "Missing run id." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Upload a statement file." };
+  }
+
+  const supabase = await createClient();
+  const { data: run } = await supabase
+    .from("reconciliation_runs")
+    .select("id, month, posted_at, notes")
+    .eq("id", runId)
+    .maybeSingle<{
+      id: string;
+      month: string;
+      posted_at: string | null;
+      notes: string | null;
+    }>();
+  if (!run) return { error: "Run not found." };
+  if (run.posted_at) {
+    return {
+      error:
+        "This run is already posted — unpost it before adding another statement.",
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = await parseBankFile(file);
+  } catch (e) {
+    return {
+      error: `Couldn't read bank file: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+
+  // Same fingerprint hygiene as run creation, extended across the run:
+  // Conf# rows the run already holds (overlapping exports) are skipped, and
+  // synthetic month:ordinal refs continue counting from the existing rows so
+  // a re-uploaded cash row can't collide with — or shadow — an earlier one.
+  const { data: existingDeps } = await supabase
+    .from("reconciliation_deposits")
+    .select("external_ref")
+    .eq("run_id", runId);
+  const existingRefs = new Set(
+    ((existingDeps ?? []) as { external_ref: string }[]).map(
+      (r) => r.external_ref,
+    ),
+  );
+  const occurrence = new Map<string, number>();
+  for (const ref of existingRefs) {
+    const m = ref.match(/^(.*):(\d{4}-\d{2}-\d{2}):(\d+)$/);
+    if (m && m[2] === run.month) {
+      occurrence.set(
+        m[1],
+        Math.max(occurrence.get(m[1]) ?? 0, Number(m[3])),
+      );
+    }
+  }
+
+  const fresh: Deposit[] = [];
+  let dupes = 0;
+  for (const d of parsed.deposits) {
+    if (d.externalRef.startsWith("zelle:")) {
+      if (existingRefs.has(d.externalRef)) {
+        dupes++;
+        continue;
+      }
+      existingRefs.add(d.externalRef);
+      fresh.push(d);
+    } else {
+      const n = (occurrence.get(d.externalRef) ?? 0) + 1;
+      occurrence.set(d.externalRef, n);
+      fresh.push({ ...d, externalRef: `${d.externalRef}:${run.month}:${n}` });
+    }
+  }
+
+  if (fresh.length === 0) {
+    return {
+      error: `No new deposits — all ${dupes} deposit row${dupes === 1 ? " is" : "s are"} already in this run.`,
+    };
+  }
+
+  const { error: dErr } = await supabase.from("reconciliation_deposits").insert(
+    fresh.map((d) => ({
+      run_id: runId,
+      tenancy_id: null, // recompute re-points these below
+      external_ref: d.externalRef,
+      payer_key: d.description,
+      raw_description: d.raw,
+      amount: d.amount,
+      deposit_date: d.date,
+    })),
+  );
+  if (dErr) return { error: `Failed to save deposits: ${dErr.message}` };
+
+  // Audit trail: store the file alongside the run's other sources (the run
+  // folder is what Delete cleans up) and note what this upload contributed.
+  const safeName = (s: string) => s.replace(/[^\w.\-]/g, "_");
+  const path = `${runId}/bank-${Date.now()}-${safeName(file.name)}`;
+  const { error: upErr } = await supabase.storage
+    .from("reconciliation")
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  if (upErr) console.error("[recon] statement upload failed:", upErr.message);
+
+  const note =
+    `Added ${file.name}: ${parsed.parsedRowCount} rows → ${fresh.length} new deposits` +
+    (dupes > 0 ? `, ${dupes} duplicates skipped` : "") +
+    ".";
+  await supabase
+    .from("reconciliation_runs")
+    .update({ notes: run.notes ? `${run.notes}\n${note}` : note })
+    .eq("id", runId);
+
+  // Fold the new deposits into matches/totals/unmatched. If this throws the
+  // deposits are already saved — the run page recomputes on view anyway.
+  try {
+    await recomputeRun(supabase, runId);
+  } catch (e) {
+    console.error("[recon] recompute after add-statement failed:", e);
+  }
+
+  revalidatePath("/reconciliation");
+  revalidatePath(`/reconciliation/${runId}`);
+  return {
+    success:
+      `Added ${fresh.length} deposit${fresh.length === 1 ? "" : "s"}` +
+      (dupes > 0 ? ` (${dupes} duplicates skipped)` : "") +
+      ".",
+  };
+}
+
+// ----------------------------------------------------------------------------
 // 2. Post payments: write a payments table row for each matched tenancy.
 //    Idempotent — re-posting upserts on external_ref (ON CONFLICT DO NOTHING)
 //    and re-links deposits, so it never duplicates. If ANY deposit fails to
