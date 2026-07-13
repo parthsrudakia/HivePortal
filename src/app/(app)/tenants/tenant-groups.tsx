@@ -120,7 +120,7 @@ export function TenantGroups({
               const isCollapsed = collapsed.has(g.label);
               return (
                 <Fragment key={g.label}>
-                  <tr className="border-t border-stone/40 bg-warm/40">
+                  <tr className="border-t border-stone/60 bg-warm/80">
                     <td colSpan={2} className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button
@@ -173,17 +173,22 @@ export function TenantGroups({
                             Vacant
                           </span>
                         )}
+                        {admin && g.rows.length > 0 && (
+                          <span className="ml-auto text-[11px] font-semibold uppercase tracking-wide text-muted">
+                            Unit total
+                          </span>
+                        )}
                       </div>
                     </td>
                     {admin && g.rows.length > 0 ? (
                       <>
-                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-semibold text-ink">
                           {fmtMoney(g.subDue)}
                         </td>
-                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium text-ink">
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-semibold text-ink">
                           {fmtMoney(g.subPaid)}
                         </td>
-                        <td className="px-5 py-2 text-right tabular-nums text-sm font-medium">
+                        <td className="px-5 py-2 text-right tabular-nums text-sm font-semibold">
                           <BalanceBadge n={g.subBalance} />
                         </td>
                       </>
