@@ -5,6 +5,9 @@ import { canViewProfitability } from "@/lib/access";
 import { todayISO } from "@/lib/date";
 import { one } from "@/lib/relations";
 import { billMonth, type BillRow } from "@/lib/utility-bills";
+import { deleteLineItem } from "./actions";
+import { LineItemForm } from "./line-item-form";
+import { NetProfitChart, RevenueExpenseChart } from "./charts";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +25,7 @@ const MONTHS = [
 ];
 
 const VIEWS = [
+  { key: "summary", label: "Summary" },
   { key: "profit", label: "Profit" },
   { key: "collection", label: "Rent Collection" },
   { key: "rent_paid", label: "Rent Paid" },
@@ -33,6 +37,7 @@ const VIEWS = [
   { key: "insurance", label: "Insurance" },
 ] as const;
 type ViewKey = (typeof VIEWS)[number]["key"];
+type MetricKey = Exclude<ViewKey, "summary">;
 
 /** One metric cell: null = no data / out of lease; estimated = ~ prefix. */
 type Cell = { value: number; estimated: boolean } | null;
@@ -65,7 +70,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
     ? Number(sp.year)
     : currentYear;
   const view: ViewKey = (VIEWS.find((v) => v.key === sp.view)?.key ??
-    "profit") as ViewKey;
+    "summary") as ViewKey;
 
   // Last month that can hold data: December for past years, the current
   // month for the current year, none for future years.
@@ -97,8 +102,12 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
       | null;
   };
 
-  const [{ data: properties }, { data: payments }, { data: bills }] =
-    await Promise.all([
+  const [
+    { data: properties },
+    { data: payments },
+    { data: bills },
+    { data: lineItems },
+  ] = await Promise.all([
       supabase
         .from("properties")
         .select(
@@ -123,6 +132,11 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
         .select(
           "id, property_id, provider, utility_type, account_number, service_address, statement_date, period_start, period_end, total_amount, overage_dismissed, overage_charged_at, notes, created_at, utility_bill_charges(id, kind, description, amount)",
         ) as Promise<{ data: BillRow[] | null }>,
+      supabase
+        .from("profitability_line_items")
+        .select("id, side, label, amount")
+        .eq("year", year)
+        .order("created_at"),
     ]);
 
   const props = properties ?? [];
@@ -191,7 +205,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
       ? null
       : { value: Number(amount), estimated: false };
 
-  const cellBuilders: Record<ViewKey, (p: PropertyRow) => (m: number) => Cell> = {
+  const cellBuilders: Record<MetricKey, (p: PropertyRow) => (m: number) => Cell> = {
     collection: (p) => (m) =>
       m > lastMonthIdx ? null : { value: collection.get(p.id)?.[m] ?? 0, estimated: false },
     rent_paid: (p) => flatMonthly(p, p.unit_rent),
@@ -234,8 +248,60 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
     },
   };
 
+  // The per-unit grid renders every non-summary view; Summary derives its
+  // monthly series from the same builders so both always agree.
+  const metric: MetricKey = view === "summary" ? "profit" : view;
+
+  const monthlyTotalOf = (key: MetricKey): (number | null)[] =>
+    MONTHS.map((_, m) => {
+      if (m > lastMonthIdx) return null;
+      let sum = 0;
+      for (const p of props) {
+        const c = cellBuilders[key](p)(m);
+        if (c) sum += c.value;
+      }
+      return sum;
+    });
+  const yearlyOf = (arr: (number | null)[]) =>
+    arr.reduce<number>((s, v) => s + (v ?? 0), 0);
+
+  const EXPENSE_METRICS: { key: MetricKey; label: string }[] = [
+    { key: "rent_paid", label: "Rent paid" },
+    { key: "utilities", label: "Utilities" },
+    { key: "internet", label: "Internet" },
+    { key: "cleaning", label: "Cleaning" },
+    { key: "amenity", label: "Amenity fees" },
+    { key: "misc", label: "Misc fees" },
+    { key: "insurance", label: "Insurance" },
+  ];
+  const monthlyRevenue = monthlyTotalOf("collection");
+  const expenseSeries = EXPENSE_METRICS.map((e) => ({
+    ...e,
+    monthly: monthlyTotalOf(e.key),
+  }));
+  const monthlyExpenses: (number | null)[] = MONTHS.map((_, m) =>
+    m > lastMonthIdx
+      ? null
+      : expenseSeries.reduce((s, e) => s + (e.monthly[m] ?? 0), 0),
+  );
+  const monthlyNet: (number | null)[] = MONTHS.map((_, m) =>
+    monthlyRevenue[m] === null
+      ? null
+      : (monthlyRevenue[m] ?? 0) - (monthlyExpenses[m] ?? 0),
+  );
+
+  const revenueItems = (lineItems ?? []).filter((i) => i.side === "revenue");
+  const expenseItems = (lineItems ?? []).filter((i) => i.side === "expense");
+  const unitRevenueYear = yearlyOf(monthlyRevenue);
+  const totalRevenue =
+    unitRevenueYear + revenueItems.reduce((s, i) => s + Number(i.amount), 0);
+  const totalExpenses =
+    expenseSeries.reduce((s, e) => s + yearlyOf(e.monthly), 0) +
+    expenseItems.reduce((s, i) => s + Number(i.amount), 0);
+  const netTotal = totalRevenue - totalExpenses;
+
   const grid: UnitGrid[] = props.map((p) => {
-    const build = cellBuilders[view](p);
+    const build = cellBuilders[metric](p);
     const cells = MONTHS.map((_, m) => build(m));
     const present = cells.filter((c): c is NonNullable<Cell> => c !== null);
     return {
@@ -324,6 +390,154 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
         ))}
       </nav>
 
+      {view === "summary" && (
+        <>
+          <section className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+                {year} summary
+              </h2>
+              <table className="mt-4 w-full text-sm">
+                <tbody>
+                  <tr>
+                    <td className="py-1.5 text-xs font-semibold uppercase tracking-wide text-muted" colSpan={3}>
+                      Revenue
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 text-ink">Rent collection (units)</td>
+                    <td className="py-1.5 text-right tabular-nums text-ink">
+                      {fmtMoney(unitRevenueYear)}
+                    </td>
+                    <td className="w-8" />
+                  </tr>
+                  {revenueItems.map((i) => (
+                    <tr key={i.id}>
+                      <td className="py-1.5 text-ink">{i.label}</td>
+                      <td className="py-1.5 text-right tabular-nums text-ink">
+                        {fmtMoney(Number(i.amount))}
+                      </td>
+                      <td className="w-8 text-right">
+                        <form action={deleteLineItem}>
+                          <input type="hidden" name="id" value={i.id} />
+                          <button
+                            type="submit"
+                            aria-label={`Delete ${i.label}`}
+                            title="Delete line item"
+                            className="rounded-full px-1.5 text-muted hover:text-red-700"
+                          >
+                            ×
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-stone/40 font-semibold">
+                    <td className="py-2 text-ink">Total revenue</td>
+                    <td className="py-2 text-right tabular-nums text-ink">
+                      {fmtMoney(totalRevenue)}
+                    </td>
+                    <td />
+                  </tr>
+
+                  <tr>
+                    <td className="pt-4 pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted" colSpan={3}>
+                      Expenses
+                    </td>
+                  </tr>
+                  {expenseSeries.map((e) => (
+                    <tr key={e.key}>
+                      <td className="py-1.5 text-ink">{e.label}</td>
+                      <td className="py-1.5 text-right tabular-nums text-ink">
+                        {fmtMoney(yearlyOf(e.monthly))}
+                      </td>
+                      <td />
+                    </tr>
+                  ))}
+                  {expenseItems.map((i) => (
+                    <tr key={i.id}>
+                      <td className="py-1.5 text-ink">{i.label}</td>
+                      <td className="py-1.5 text-right tabular-nums text-ink">
+                        {fmtMoney(Number(i.amount))}
+                      </td>
+                      <td className="w-8 text-right">
+                        <form action={deleteLineItem}>
+                          <input type="hidden" name="id" value={i.id} />
+                          <button
+                            type="submit"
+                            aria-label={`Delete ${i.label}`}
+                            title="Delete line item"
+                            className="rounded-full px-1.5 text-muted hover:text-red-700"
+                          >
+                            ×
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-stone/40 font-semibold">
+                    <td className="py-2 text-ink">Total expenses</td>
+                    <td className="py-2 text-right tabular-nums text-ink">
+                      {fmtMoney(totalExpenses)}
+                    </td>
+                    <td />
+                  </tr>
+
+                  <tr className="border-t-2 border-stone/60 text-base font-semibold">
+                    <td className="py-3 text-ink">Net profit</td>
+                    <td
+                      className={`py-3 text-right tabular-nums ${
+                        netTotal < -0.005 ? "text-red-700" : "text-green-800"
+                      }`}
+                    >
+                      {fmtMoney(netTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="mt-5 border-t border-stone/40 pt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+                  Add a line item ({year})
+                </p>
+                <LineItemForm year={year} />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="rounded-2xl bg-white p-6 shadow-sm">
+                <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+                  Revenue vs expenses by month
+                </h2>
+                <div className="mt-4">
+                  <RevenueExpenseChart
+                    revenue={monthlyRevenue}
+                    expenses={monthlyExpenses}
+                  />
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white p-6 shadow-sm">
+                <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+                  Net profit by month
+                </h2>
+                <div className="mt-4">
+                  <NetProfitChart net={monthlyNet} />
+                </div>
+              </div>
+            </div>
+          </section>
+          <p className="mt-4 max-w-4xl text-xs text-muted">
+            Unit figures come from the metric tabs (utility months without a
+            bill use similar-unit averages). Manual line items are yearly
+            amounts and count toward the totals and net profit here; the
+            monthly charts show unit-derived figures only.
+          </p>
+        </>
+      )}
+
+      {view !== "summary" && (
+      <>
       <section className="mt-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full min-w-[1100px] text-sm">
           <thead className="text-xs uppercase tracking-wide text-muted">
@@ -449,6 +663,8 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
           </>
         )}
       </p>
+      </>
+      )}
     </div>
   );
 }

@@ -751,6 +751,36 @@ export type Database = {
           },
         ]
       }
+      profitability_line_items: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string
+          side: string
+          year: number
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label: string
+          side: string
+          year: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string
+          side?: string
+          year?: number
+        }
+        Relationships: []
+      }
       properties: {
         Row: {
           amenities_notes: string | null
