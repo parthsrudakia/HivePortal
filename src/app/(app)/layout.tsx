@@ -7,6 +7,7 @@ import { NavIcon, type NavIconName } from "./nav-icons";
 import {
   AuthGate,
   MobileUserInfo,
+  ProfitabilityNavLink,
   ProjectsBadge,
   UserIdentity,
 } from "./session-slots";
@@ -45,6 +46,14 @@ export default function AppLayout({
       </Suspense>
       <MobileNav
         items={NAV}
+        extraNav={
+          <Suspense>
+            <ProfitabilityNavLink
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              iconClassName="shrink-0 text-accent"
+            />
+          </Suspense>
+        }
         badges={{
           "/projects": (
             <Suspense>
@@ -100,6 +109,12 @@ export default function AppLayout({
               )}
             </Link>
           ))}
+          <Suspense>
+            <ProfitabilityNavLink
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              iconClassName="shrink-0 text-accent"
+            />
+          </Suspense>
         </nav>
       </aside>
 

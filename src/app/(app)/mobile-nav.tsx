@@ -11,12 +11,15 @@ export function MobileNav({
   items,
   badges,
   userInfo,
+  extraNav,
 }: {
   items: NavItem[];
   // Server-rendered slots keyed by nav href / for the drawer footer, so the
   // session-dependent bits stream in without making this shell dynamic.
   badges?: Record<string, React.ReactNode>;
   userInfo?: React.ReactNode;
+  /** Session-gated nav entries appended after the static items. */
+  extraNav?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -128,6 +131,7 @@ export function MobileNav({
                   </Link>
                 );
               })}
+              {extraNav}
             </nav>
             {userInfo}
           </aside>

@@ -28,3 +28,14 @@ export function canEditLedger(email: string | null | undefined): boolean {
 
 export const LEDGER_ADMIN_ERROR =
   "Only Parth or Vineet can add or remove tenant-ledger charges.";
+
+/**
+ * Unit profitability (per-unit P&L) is owner-only: the same two operators
+ * as the ledger. Separate function so the intent stays readable at call
+ * sites and the sets can diverge later.
+ */
+export function canViewProfitability(
+  email: string | null | undefined,
+): boolean {
+  return canEditLedger(email);
+}

@@ -1,9 +1,11 @@
 import { cache } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { isMaster } from "@/lib/access";
+import { canViewProfitability, isMaster } from "@/lib/access";
 import { NamePrompt } from "./name-prompt";
+import { NavIcon } from "./nav-icons";
 
 // Session-dependent fragments of the app shell. Each is rendered behind its
 // own <Suspense> so the layout itself stays free of runtime data access —
@@ -65,6 +67,28 @@ export async function ProjectsBadge({ className }: { className: string }) {
   const count = await getProjectsBadgeCount();
   if (!count) return null;
   return <span className={className}>{count > 99 ? "99+" : count}</span>;
+}
+
+/**
+ * Owner-only "Profitability" nav entry — renders nothing for everyone else.
+ * Styling comes from the caller so the same slot fits the desktop sidebar
+ * and the mobile drawer.
+ */
+export async function ProfitabilityNavLink({
+  className,
+  iconClassName,
+}: {
+  className: string;
+  iconClassName: string;
+}) {
+  const user = await getSessionUser();
+  if (!canViewProfitability(user?.email)) return null;
+  return (
+    <Link href="/profitability" className={className}>
+      <NavIcon name="profitability" className={iconClassName} />
+      Profitability
+    </Link>
+  );
 }
 
 export async function UserIdentity() {
