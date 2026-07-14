@@ -10,6 +10,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { DeleteRunButton } from "./delete-run";
 import { AddStatementForm } from "./add-statement-form";
 import { LedgerQuickAdd } from "./ledger-quick-add";
+import { ReversalAlerts, type ReversalAlert } from "./reversal-alerts";
 import { AssignDepositForm, type AssignTenantOption } from "./assign-deposit-form";
 import { one } from "@/lib/relations";
 import { postPayments, unpostPayments, unignorePayer } from "../actions";
@@ -22,14 +23,18 @@ type PageProps = {
 };
 
 type FilterKey = "match" | "mismatch" | "missing";
-function isFilterKey(v: string): v is FilterKey {
-  return v === "match" || v === "mismatch" || v === "missing";
+// "new" narrows to tenants whose deposits arrived in the run's latest
+// statement batch — it composes with the status filters instead of
+// replacing them (?filter=mismatch,new = new mismatches only).
+type FilterToken = FilterKey | "new";
+function isFilterToken(v: string): v is FilterToken {
+  return v === "match" || v === "mismatch" || v === "missing" || v === "new";
 }
 
 // Filters are multi-select: `?filter=mismatch,missing` keeps both applied,
 // and clicking an active card removes just that one.
-function parseFilters(param: string | undefined): Set<FilterKey> {
-  return new Set((param ?? "").split(",").filter(isFilterKey));
+function parseFilters(param: string | undefined): Set<FilterToken> {
+  return new Set((param ?? "").split(",").filter(isFilterToken));
 }
 
 type Run = {
@@ -113,8 +118,8 @@ export default async function ReconciliationRunPage({
   const { id } = await params;
   const sp = await searchParams;
   const activeFilters = parseFilters(sp.filter);
-  // Toggle one status in/out of the filter set, preserving the others.
-  const toggleHref = (key: FilterKey) => {
+  // Toggle one token in/out of the filter set, preserving the others.
+  const toggleHref = (key: FilterToken) => {
     const next = new Set(activeFilters);
     if (next.has(key)) next.delete(key);
     else next.add(key);
@@ -178,6 +183,50 @@ export default async function ReconciliationRunPage({
     .order("display_name");
   const ignoredPayers = ignoredData ?? [];
 
+  // Unresolved chargeback alerts for this run, enriched with the suspected
+  // original payment's tenant and date.
+  const { data: reversalRows } = await supabase
+    .from("reconciliation_reversals")
+    .select("id, raw_description, amount, deposit_date, suspect_payment_id")
+    .eq("run_id", id)
+    .is("resolved_at", null)
+    .order("created_at");
+  const suspectIds = (reversalRows ?? [])
+    .map((r) => r.suspect_payment_id)
+    .filter((x): x is string => !!x);
+  const suspectById = new Map<string, { tenantName: string; paidOn: string }>();
+  if (suspectIds.length > 0) {
+    type SuspectRow = {
+      id: string;
+      paid_on: string;
+      tenancies: {
+        tenants: { full_name: string } | { full_name: string }[] | null;
+      } | {
+        tenants: { full_name: string } | { full_name: string }[] | null;
+      }[] | null;
+    };
+    const { data: suspects } = await supabase
+      .from("payments")
+      .select("id, paid_on, tenancies(tenants(full_name))")
+      .in("id", suspectIds)
+      .returns<SuspectRow[]>();
+    for (const s of suspects ?? []) {
+      suspectById.set(s.id, {
+        tenantName: one(one(s.tenancies)?.tenants ?? null)?.full_name ?? "tenant",
+        paidOn: s.paid_on,
+      });
+    }
+  }
+  const reversalAlerts: ReversalAlert[] = (reversalRows ?? []).map((r) => ({
+    id: r.id,
+    raw: r.raw_description,
+    amount: Number(r.amount),
+    date: r.deposit_date,
+    suspect: r.suspect_payment_id
+      ? (suspectById.get(r.suspect_payment_id) ?? null)
+      : null,
+  }));
+
   // Balance — where each tenant stands AFTER this statement, from the same
   // carry-forward ledger math as the Rent Tracker: the running balance minus
   // this run's matched deposits that aren't posted as payments yet. Deposits
@@ -192,6 +241,11 @@ export default async function ReconciliationRunPage({
     ),
   );
   const balanceAfter = new Map<string, number>();
+  // Tenancies whose deposits arrived in the run's LATEST statement batch —
+  // rows in one insert share a created_at, so the newest distinct timestamp
+  // is the last "Add statement" upload. Only meaningful once the run has
+  // more than one batch; those rows get a light "new" highlight.
+  const newTenancyIds = new Set<string>();
   if (tenancyIds.length > 0) {
     type LedgerTenancyRow = {
       id: string;
@@ -215,16 +269,30 @@ export default async function ReconciliationRunPage({
         fetchLedgerSidecars(supabase),
         supabase
           .from("reconciliation_deposits")
-          .select("tenancy_id, amount, external_ref")
-          .eq("run_id", id)
-          .not("tenancy_id", "is", null),
+          .select("tenancy_id, amount, external_ref, created_at")
+          .eq("run_id", id),
       ]);
 
-    const deps = (runDeps ?? []) as {
-      tenancy_id: string;
+    const allDeps = (runDeps ?? []) as {
+      tenancy_id: string | null;
       amount: number;
       external_ref: string;
+      created_at: string;
     }[];
+    const batchTimes = [...new Set(allDeps.map((d) => d.created_at))].sort();
+    if (batchTimes.length > 1) {
+      const latest = batchTimes[batchTimes.length - 1];
+      for (const d of allDeps) {
+        if (d.created_at === latest && d.tenancy_id) {
+          newTenancyIds.add(d.tenancy_id);
+        }
+      }
+    }
+
+    const deps = allDeps.filter(
+      (d): d is (typeof allDeps)[number] & { tenancy_id: string } =>
+        d.tenancy_id !== null,
+    );
     const postedRefs = new Set<string>();
     if (deps.length > 0) {
       const { data: postedRows } = await supabase
@@ -262,10 +330,18 @@ export default async function ReconciliationRunPage({
     }
   }
 
-  const filtered =
-    activeFilters.size > 0
-      ? (matches ?? []).filter((m) => activeFilters.has(m.status))
-      : matches ?? [];
+  // Status filters OR together; "new" then narrows whatever survives.
+  const statusFilters = new Set(
+    [...activeFilters].filter((f): f is FilterKey => f !== "new"),
+  );
+  const newOnly = activeFilters.has("new");
+  const isNewRow = (m: Match) =>
+    !!m.tenancy_id && newTenancyIds.has(m.tenancy_id);
+  const filtered = (matches ?? []).filter(
+    (m) =>
+      (statusFilters.size === 0 || statusFilters.has(m.status)) &&
+      (!newOnly || isNewRow(m)),
+  );
 
   // Row order: settled matches first, then matches still owing, then matches
   // in credit, then mismatches, then missing — tenant name within each group.
@@ -407,7 +483,11 @@ export default async function ReconciliationRunPage({
         )}
       </section>
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <section
+        className={`mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+          newTenancyIds.size > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+        }`}
+      >
         {admin && (
           <KpiCard
             label="Expected"
@@ -445,6 +525,15 @@ export default async function ReconciliationRunPage({
           active={activeFilters.has("missing")}
           accent="bg-red-100 text-red-900"
         />
+        {newTenancyIds.size > 0 && (
+          <KpiCard
+            label="New"
+            value={(matches ?? []).filter(isNewRow).length}
+            href={toggleHref("new")}
+            active={activeFilters.has("new")}
+            accent="bg-accent/15 text-accent-text"
+          />
+        )}
       </section>
 
       <section className="mt-8 rounded-2xl bg-white shadow-sm">
@@ -474,8 +563,12 @@ export default async function ReconciliationRunPage({
           <tbody>
             {sorted.map((m) => {
               const flagged = m.status === "mismatch" || m.status === "missing";
+              const isNew = isNewRow(m);
               return (
-              <tr key={m.id} className="border-t border-stone/40">
+              <tr
+                key={m.id}
+                className={`border-t border-stone/40 ${isNew ? "bg-accent/5" : ""}`}
+              >
                 <td className="px-5 py-4">
                   <Link
                     href={`/reconciliation/${run.id}/match/${m.id}`}
@@ -487,6 +580,14 @@ export default async function ReconciliationRunPage({
                   >
                     {m.tenant_name}
                   </Link>
+                  {isNew && (
+                    <span
+                      title="This tenant received deposits from the most recently added statement"
+                      className="ml-2 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-text"
+                    >
+                      New
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-4 text-ink">{m.property_label ?? "—"}</td>
                 <td className="px-5 py-4 text-ink">{m.room_label ?? "—"}</td>
@@ -544,6 +645,8 @@ export default async function ReconciliationRunPage({
           </tbody>
         </table>
       </section>
+
+      <ReversalAlerts alerts={reversalAlerts} />
 
       {run.unmatched_deposits && run.unmatched_deposits.length > 0 && (
         <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
