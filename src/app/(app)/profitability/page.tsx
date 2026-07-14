@@ -3,8 +3,12 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canViewProfitability } from "@/lib/access";
 import { todayISO } from "@/lib/date";
-import { one } from "@/lib/relations";
-import { billMonth, type BillRow } from "@/lib/utility-bills";
+import {
+  loadProfitability,
+  profitUnitLabel,
+  PROFIT_MONTHS,
+  type ProfitCell,
+} from "@/lib/profitability";
 import { deleteLineItem } from "./actions";
 import { LineItemForm } from "./line-item-form";
 import { NetProfitChart, RevenueExpenseChart } from "./charts";
@@ -19,10 +23,7 @@ type PageProps = {
   searchParams: Promise<{ year?: string; view?: string }>;
 };
 
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+const MONTHS = PROFIT_MONTHS;
 
 const VIEWS = [
   { key: "summary", label: "Summary" },
@@ -40,7 +41,7 @@ type ViewKey = (typeof VIEWS)[number]["key"];
 type MetricKey = Exclude<ViewKey, "summary">;
 
 /** One metric cell: null = no data / out of lease; estimated = ~ prefix. */
-type Cell = { value: number; estimated: boolean } | null;
+type Cell = ProfitCell;
 
 type UnitGrid = {
   id: string;
@@ -72,241 +73,34 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
   const view: ViewKey = (VIEWS.find((v) => v.key === sp.view)?.key ??
     "summary") as ViewKey;
 
-  // Last month that can hold data: December for past years, the current
-  // month for the current year, none for future years.
-  const lastMonthIdx =
-    year < currentYear ? 11 : year > currentYear ? -1 : Number(today.slice(5, 7)) - 1;
-
-  type PropertyRow = {
-    id: string;
-    building_name: string | null;
-    street_address: string;
-    unit_number: string;
-    bedrooms: number | null;
-    unit_rent: number | null;
-    unit_lease_start: string | null;
-    unit_lease_end: string | null;
-    amenity_fees_yearly: number | null;
-    misc_fees_yearly: number | null;
-    internet_monthly: number | null;
-    cleaning_fee_monthly: number | null;
-    insurance_monthly: number | null;
-  };
-  type PaymentRow = {
-    amount: number | string;
-    paid_on: string;
-    payment_type: string;
-    tenancies:
-      | { rooms: { property_id: string | null } | { property_id: string | null }[] | null }
-      | { rooms: { property_id: string | null } | { property_id: string | null }[] | null }[]
-      | null;
-  };
-
-  const [
-    { data: properties },
-    { data: payments },
-    { data: bills },
-    { data: lineItems },
-  ] = await Promise.all([
-      supabase
-        .from("properties")
-        .select(
-          `id, building_name, street_address, unit_number, bedrooms,
-           unit_rent, unit_lease_start, unit_lease_end,
-           amenity_fees_yearly, misc_fees_yearly,
-           internet_monthly, cleaning_fee_monthly, insurance_monthly`,
-        )
-        .order("street_address")
-        .returns<PropertyRow[]>(),
-      supabase
-        .from("payments")
-        .select(
-          "amount, paid_on, payment_type, tenancies!inner(rooms!inner(property_id))",
-        )
-        .gte("paid_on", `${year}-01-01`)
-        .lte("paid_on", `${year}-12-31`)
-        .returns<PaymentRow[]>(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from("utility_bills")
-        .select(
-          "id, property_id, provider, utility_type, account_number, service_address, statement_date, period_start, period_end, total_amount, overage_dismissed, overage_charged_at, notes, created_at, utility_bill_charges(id, kind, description, amount)",
-        ) as Promise<{ data: BillRow[] | null }>,
-      supabase
-        .from("profitability_line_items")
-        .select("id, side, label, amount")
-        .eq("year", year)
-        .order("created_at"),
-    ]);
-
-  const props = properties ?? [];
-  const monthKey = (m: number) => `${year}-${String(m + 1).padStart(2, "0")}`;
-
-  // A unit is "active" in a month when the month overlaps its lease window
-  // (missing dates = unbounded, matching the sheet where a unit's columns
-  // simply stop after the lease ends).
-  const activeIn = (p: PropertyRow, m: number): boolean => {
-    const key = monthKey(m);
-    if (p.unit_lease_start && p.unit_lease_start.slice(0, 7) > key) return false;
-    if (p.unit_lease_end && p.unit_lease_end.slice(0, 7) < key) return false;
-    return true;
-  };
-
-  // Revenue collected per unit per month: every tenant payment dated inside
-  // the calendar month, security deposits excluded, refunds subtracting.
-  const collection = new Map<string, number[]>(
-    props.map((p) => [p.id, Array(12).fill(0)]),
-  );
-  for (const pay of payments ?? []) {
-    const propertyId = one(one(pay.tenancies)?.rooms ?? null)?.property_id;
-    if (!propertyId) continue;
-    if (pay.payment_type === "security_deposit") continue;
-    const arr = collection.get(propertyId);
-    if (!arr) continue;
-    const m = Number(pay.paid_on.slice(5, 7)) - 1;
-    arr[m] += (pay.payment_type === "refund" ? -1 : 1) * Number(pay.amount);
-  }
-
-  // Actual utility spend per unit per month (bills attributed to the month
-  // holding most of their billing period).
-  const utilityActual = new Map<string, (number | undefined)[]>(
-    props.map((p) => [p.id, Array(12).fill(undefined)]),
-  );
-  for (const b of bills ?? []) {
-    if (!b.property_id) continue;
-    const bm = billMonth(b);
-    if (bm.slice(0, 4) !== String(year)) continue;
-    const arr = utilityActual.get(b.property_id);
-    if (!arr) continue;
-    const m = Number(bm.slice(5, 7)) - 1;
-    arr[m] = (arr[m] ?? 0) + Number(b.total_amount);
-  }
-
-  // Per-month estimate for units with no bill: average of that month's
-  // actuals across units with the same bedroom count, falling back to all
-  // units — the sheet's "Average Taken" rows.
-  const estimateFor = (p: PropertyRow, m: number): number | null => {
-    const similar: number[] = [];
-    const all: number[] = [];
-    for (const q of props) {
-      const v = utilityActual.get(q.id)?.[m];
-      if (v === undefined) continue;
-      all.push(v);
-      if ((q.bedrooms ?? null) === (p.bedrooms ?? null)) similar.push(v);
-    }
-    const pool = similar.length > 0 ? similar : all;
-    if (pool.length === 0) return null;
-    return pool.reduce((s, x) => s + x, 0) / pool.length;
-  };
-
-  // Build the requested metric's grid (profit derives from all of them).
-  const flatMonthly = (p: PropertyRow, amount: number | null) => (m: number): Cell =>
-    amount === null || !activeIn(p, m) || m > lastMonthIdx
-      ? null
-      : { value: Number(amount), estimated: false };
-
-  const cellBuilders: Record<MetricKey, (p: PropertyRow) => (m: number) => Cell> = {
-    collection: (p) => (m) =>
-      m > lastMonthIdx ? null : { value: collection.get(p.id)?.[m] ?? 0, estimated: false },
-    rent_paid: (p) => flatMonthly(p, p.unit_rent),
-    utilities: (p) => (m) => {
-      if (m > lastMonthIdx || !activeIn(p, m)) return null;
-      const actual = utilityActual.get(p.id)?.[m];
-      if (actual !== undefined) return { value: actual, estimated: false };
-      const est = estimateFor(p, m);
-      return est === null ? null : { value: est, estimated: true };
-    },
-    internet: (p) => flatMonthly(p, p.internet_monthly),
-    cleaning: (p) => flatMonthly(p, p.cleaning_fee_monthly),
-    amenity: (p) =>
-      flatMonthly(p, p.amenity_fees_yearly !== null ? Number(p.amenity_fees_yearly) / 12 : null),
-    misc: (p) =>
-      flatMonthly(p, p.misc_fees_yearly !== null ? Number(p.misc_fees_yearly) / 12 : null),
-    insurance: (p) => flatMonthly(p, p.insurance_monthly),
-    profit: (p) => (m) => {
-      if (m > lastMonthIdx) return null;
-      const active = activeIn(p, m);
-      const revenue = collection.get(p.id)?.[m] ?? 0;
-      if (!active && revenue === 0) return null;
-      const costs: Cell[] = [
-        cellBuilders.rent_paid(p)(m),
-        cellBuilders.utilities(p)(m),
-        cellBuilders.internet(p)(m),
-        cellBuilders.cleaning(p)(m),
-        cellBuilders.amenity(p)(m),
-        cellBuilders.misc(p)(m),
-        cellBuilders.insurance(p)(m),
-      ];
-      let value = revenue;
-      let estimated = false;
-      for (const c of costs) {
-        if (!c) continue;
-        value -= c.value;
-        estimated = estimated || c.estimated;
-      }
-      return { value, estimated };
-    },
-  };
+  // All figures come from the shared computation (also behind the Telegram
+  // bot's get_profitability), so every consumer always agrees.
+  const data = await loadProfitability(supabase, year, today);
+  const props = data.units;
+  const {
+    monthlyRevenue,
+    monthlyExpenses,
+    monthlyNet,
+    expenseSeries,
+    unitRevenueYear,
+    revenueItems,
+    expenseItems,
+    totalRevenue,
+    totalExpenses,
+    netTotal,
+  } = data.summary;
 
   // The per-unit grid renders every non-summary view; Summary derives its
-  // monthly series from the same builders so both always agree.
+  // series from the same builders so both always agree.
   const metric: MetricKey = view === "summary" ? "profit" : view;
 
-  const monthlyTotalOf = (key: MetricKey): (number | null)[] =>
-    MONTHS.map((_, m) => {
-      if (m > lastMonthIdx) return null;
-      let sum = 0;
-      for (const p of props) {
-        const c = cellBuilders[key](p)(m);
-        if (c) sum += c.value;
-      }
-      return sum;
-    });
-  const yearlyOf = (arr: (number | null)[]) =>
-    arr.reduce<number>((s, v) => s + (v ?? 0), 0);
-
-  const EXPENSE_METRICS: { key: MetricKey; label: string }[] = [
-    { key: "rent_paid", label: "Rent paid" },
-    { key: "utilities", label: "Utilities" },
-    { key: "internet", label: "Internet" },
-    { key: "cleaning", label: "Cleaning" },
-    { key: "amenity", label: "Amenity fees" },
-    { key: "misc", label: "Misc fees" },
-    { key: "insurance", label: "Insurance" },
-  ];
-  const monthlyRevenue = monthlyTotalOf("collection");
-  const expenseSeries = EXPENSE_METRICS.map((e) => ({
-    ...e,
-    monthly: monthlyTotalOf(e.key),
-  }));
-  const monthlyExpenses: (number | null)[] = MONTHS.map((_, m) =>
-    m > lastMonthIdx
-      ? null
-      : expenseSeries.reduce((s, e) => s + (e.monthly[m] ?? 0), 0),
-  );
-  const monthlyNet: (number | null)[] = MONTHS.map((_, m) =>
-    monthlyRevenue[m] === null
-      ? null
-      : (monthlyRevenue[m] ?? 0) - (monthlyExpenses[m] ?? 0),
-  );
-
-  const revenueItems = (lineItems ?? []).filter((i) => i.side === "revenue");
-  const expenseItems = (lineItems ?? []).filter((i) => i.side === "expense");
-  const unitRevenueYear = yearlyOf(monthlyRevenue);
-  const totalRevenue =
-    unitRevenueYear + revenueItems.reduce((s, i) => s + Number(i.amount), 0);
-  const totalExpenses =
-    expenseSeries.reduce((s, e) => s + yearlyOf(e.monthly), 0) +
-    expenseItems.reduce((s, i) => s + Number(i.amount), 0);
-  const netTotal = totalRevenue - totalExpenses;
-
   const grid: UnitGrid[] = props.map((p) => {
-    const build = cellBuilders[metric](p);
+    const build = data.cellFor(metric, p);
     const cells = MONTHS.map((_, m) => build(m));
     const present = cells.filter((c): c is NonNullable<Cell> => c !== null);
     return {
       id: p.id,
-      label: `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`,
+      label: profitUnitLabel(p),
       cells,
       total:
         present.length > 0
@@ -449,7 +243,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                     <tr key={e.key}>
                       <td className="py-1.5 text-ink">{e.label}</td>
                       <td className="py-1.5 text-right tabular-nums text-ink">
-                        {fmtMoney(yearlyOf(e.monthly))}
+                        {fmtMoney(e.yearly)}
                       </td>
                       <td />
                     </tr>

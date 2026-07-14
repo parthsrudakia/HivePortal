@@ -40,6 +40,11 @@ import {
 } from "@/lib/utility-bills";
 import { buildInventorySheet } from "@/lib/inventory-sheet";
 import { sendDocument } from "@/lib/telegram";
+import {
+  loadProfitability,
+  profitUnitLabel,
+  PROFIT_MONTHS,
+} from "@/lib/profitability";
 
 /**
  * Per-request context for tools that need to know which Telegram chat they're
@@ -545,6 +550,145 @@ export async function getUtilityBills(args: {
         notes: bill.notes,
       };
     }),
+  };
+}
+
+// ----- Profitability (owner-only surface — bot access is already limited
+// to the operators via ALLOWED_TELEGRAM_USER_IDS) -----
+
+export async function getProfitability(args: { year?: number }) {
+  const supabase = admin();
+  const today = todayISO();
+  const year = args.year ?? Number(today.slice(0, 4));
+  if (year < 2020 || year > 2100) throw new Error("Invalid year.");
+
+  const data = await loadProfitability(supabase, year, today);
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const monthsWithData = PROFIT_MONTHS.slice(
+    0,
+    Math.max(0, data.lastMonthIdx + 1),
+  );
+
+  const units = data.units
+    .map((p) => {
+      const profitCells = PROFIT_MONTHS.map((_, m) =>
+        data.cellFor("profit", p)(m),
+      );
+      const present = profitCells.filter((c) => c !== null);
+      const revenueCells = PROFIT_MONTHS.map((_, m) =>
+        data.cellFor("collection", p)(m),
+      );
+      return {
+        unit: profitUnitLabel(p),
+        property_id: p.id,
+        profit_ytd: round(present.reduce((s, c) => s + (c?.value ?? 0), 0)),
+        revenue_ytd: round(
+          revenueCells.reduce((s, c) => s + (c?.value ?? 0), 0),
+        ),
+        includes_estimated_utilities: present.some((c) => c?.estimated),
+        monthly_profit: Object.fromEntries(
+          profitCells
+            .map((c, m) => [PROFIT_MONTHS[m], c ? round(c.value) : null])
+            .filter(([, v]) => v !== null),
+        ),
+      };
+    })
+    .sort((a, b) => a.profit_ytd - b.profit_ytd);
+
+  const s = data.summary;
+  return {
+    year,
+    months_with_data: monthsWithData,
+    units,
+    summary: {
+      total_revenue: round(s.totalRevenue),
+      total_expenses: round(s.totalExpenses),
+      net_profit: round(s.netTotal),
+      revenue: {
+        rent_collection_units: round(s.unitRevenueYear),
+        line_items: s.revenueItems.map((i) => ({
+          id: i.id,
+          label: i.label,
+          amount: round(Number(i.amount)),
+        })),
+      },
+      expenses: {
+        by_category: s.expenseSeries.map((e) => ({
+          category: e.label,
+          yearly: round(e.yearly),
+        })),
+        line_items: s.expenseItems.map((i) => ({
+          id: i.id,
+          label: i.label,
+          amount: round(Number(i.amount)),
+        })),
+      },
+      monthly_net: Object.fromEntries(
+        s.monthlyNet
+          .map((v, m) => [PROFIT_MONTHS[m], v === null ? null : round(v)])
+          .filter(([, v]) => v !== null),
+      ),
+    },
+    notes:
+      "Rent collection = payments dated in the calendar month (deposits excluded, refunds subtracted). Utility months without a bill use same-bedroom averages (includes_estimated_utilities). Line items are manual yearly amounts and count in the totals but not in monthly figures.",
+  };
+}
+
+export async function addProfitabilityLineItem(args: {
+  year: number;
+  side: "revenue" | "expense";
+  label: string;
+  amount: number;
+}) {
+  if (!Number.isInteger(args.year) || args.year < 2020 || args.year > 2100)
+    throw new Error("Invalid year.");
+  if (!args.label.trim()) throw new Error("Give the line item a name.");
+  if (!Number.isFinite(args.amount) || args.amount <= 0)
+    throw new Error("Amount must be a positive number.");
+
+  const supabase = admin();
+  const { data, error } = await supabase
+    .from("profitability_line_items")
+    .insert({
+      year: args.year,
+      side: args.side,
+      label: args.label.trim(),
+      amount: args.amount,
+      created_by: "telegram",
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return {
+    ok: true,
+    id: data.id,
+    added: `${args.side} "${args.label.trim()}" $${args.amount.toLocaleString()} (${args.year})`,
+  };
+}
+
+/** Signed link to a utility bill's original statement (private bucket). */
+export async function getUtilityStatementUrl(args: { bill_id: string }) {
+  const supabase = admin();
+  const { data: bill, error } = await supabase
+    .from("utility_bills")
+    .select("statement_path, provider, utility_type")
+    .eq("id", args.bill_id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!bill) throw new Error("Bill not found.");
+  if (!bill.statement_path) throw new Error("No statement file on this bill.");
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from("utilities")
+    .createSignedUrl(bill.statement_path, 3600);
+  if (signErr || !signed?.signedUrl) {
+    throw new Error(signErr?.message ?? "Failed to sign the statement URL.");
+  }
+  return {
+    url: signed.signedUrl,
+    expires_in: "1 hour",
+    provider: bill.provider,
+    utility_type: bill.utility_type,
   };
 }
 
@@ -1806,6 +1950,45 @@ const rawTools = [
         .describe("Window size when month is omitted (default 6)."),
     }),
     run: async (args) => JSON.stringify(await getUtilityBills(args)),
+  }),
+  betaZodTool({
+    name: "get_utility_statement_url",
+    description:
+      "Get a temporary (1-hour) link to a utility bill's original uploaded " +
+      "statement (PDF/photo). Find the bill_id via get_utility_bills.",
+    inputSchema: z.object({
+      bill_id: z.string().describe("UUID of the bill from get_utility_bills"),
+    }),
+    run: async (args) => JSON.stringify(await getUtilityStatementUrl(args)),
+  }),
+  betaZodTool({
+    name: "get_profitability",
+    description:
+      "Unit profitability for a year (defaults to the current year): per-unit " +
+      "YTD and monthly profit (revenue collected minus rent paid, utilities, " +
+      "internet, cleaning, amenity, misc, insurance), plus the year summary " +
+      "with total revenue / expenses / net and the manual revenue/expense line " +
+      "items. Units sorted worst profit first. Utility months without an " +
+      "uploaded bill use same-bedroom-unit averages (flagged as estimated). " +
+      "Matches the portal's Profitability tab exactly.",
+    inputSchema: z.object({
+      year: z.number().int().optional().describe("Defaults to the current year"),
+    }),
+    run: async (args) => JSON.stringify(await getProfitability(args)),
+  }),
+  betaZodTool({
+    name: "add_profitability_line_item",
+    description:
+      "Add a manual yearly revenue or expense line item to the Profitability " +
+      "summary (e.g. admin costs, insurance payout). Counts toward that " +
+      "year's totals and net profit.",
+    inputSchema: z.object({
+      year: z.number().int(),
+      side: z.enum(["revenue", "expense"]),
+      label: z.string().describe('e.g. "Admin costs — Upwork"'),
+      amount: z.number().positive().describe("Yearly amount in dollars"),
+    }),
+    run: async (args) => JSON.stringify(await addProfitabilityLineItem(args)),
   }),
   betaZodTool({
     name: "record_payment",
