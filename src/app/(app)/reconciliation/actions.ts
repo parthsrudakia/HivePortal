@@ -24,6 +24,42 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type RunFormState = { error?: string } | undefined;
 
+// Store the bank file's negative Zelle rows (chargebacks) as reversal alerts
+// on the run, each matched to its best-guess original payment: the most
+// recent posted deposit from the same payer for the same amount. Upsert on
+// the reversal's own fingerprint, so re-uploading an overlapping statement
+// never duplicates an alert (or resurrects a resolved one).
+async function saveReversals(
+  supabase: SupabaseClient,
+  runId: string,
+  reversals: Deposit[],
+): Promise<void> {
+  for (const rev of reversals) {
+    const { data: suspect } = await supabase
+      .from("reconciliation_deposits")
+      .select("payment_id")
+      .eq("payer_key", rev.description)
+      .eq("amount", rev.amount)
+      .not("payment_id", "is", null)
+      .order("deposit_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const { error } = await supabase.from("reconciliation_reversals").upsert(
+      {
+        run_id: runId,
+        external_ref: rev.externalRef,
+        payer_key: rev.description,
+        raw_description: rev.raw,
+        amount: rev.amount,
+        deposit_date: rev.date,
+        suspect_payment_id: suspect?.payment_id ?? null,
+      },
+      { onConflict: "external_ref", ignoreDuplicates: true },
+    );
+    if (error) console.error("[recon] save reversal failed:", error.message);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // 1. Upload + match → creates a preview run (no payments written yet).
 // ----------------------------------------------------------------------------
@@ -184,6 +220,9 @@ export async function runReconciliation(
       otherPath = null;
     }
   }
+
+  // 4b) Flag any negative Zelle rows (chargebacks) for operator review.
+  await saveReversals(supabase, runId, bankResult.reversals);
 
   // 5) Build per-tenant matches (known non-rent payers stay out of the
   //    unmatched list).
@@ -376,9 +415,15 @@ export async function addStatementToRun(
     });
   if (upErr) console.error("[recon] statement upload failed:", upErr.message);
 
+  // Flag any negative Zelle rows (chargebacks) in the added statement.
+  await saveReversals(supabase, runId, parsed.reversals);
+
   const note =
     `Added ${file.name}: ${parsed.parsedRowCount} rows → ${fresh.length} new deposits` +
     (dupes > 0 ? `, ${dupes} duplicates skipped` : "") +
+    (parsed.reversals.length > 0
+      ? `, ${parsed.reversals.length} possible reversal(s) flagged`
+      : "") +
     ".";
   await supabase
     .from("reconciliation_runs")
@@ -432,7 +477,7 @@ async function postRunCore(supabase: SupabaseClient, runId: string) {
   const { data: deposits, error: dErr } = await supabase
     .from("reconciliation_deposits")
     .select(
-      "id, tenancy_id, external_ref, amount, deposit_date, raw_description",
+      "id, tenancy_id, external_ref, amount, deposit_date, raw_description, payment_id",
     )
     .eq("run_id", runId)
     .not("tenancy_id", "is", null);
@@ -467,21 +512,46 @@ async function postRunCore(supabase: SupabaseClient, runId: string) {
 
   const stamp = todayISO();
 
-  // For each matched deposit:
-  //   1) try to insert a payments row with external_ref = the deposit's
-  //      Conf# (or synthetic fingerprint). If it already exists from a
-  //      prior overlapping bank statement run, ON CONFLICT short-circuits
-  //      and we just re-link this deposit to the existing payment.
-  //   2) update the deposit row with payment_id so future Unpost knows.
-  // Failures are collected, not swallowed: a single failed upsert must not
-  // let the run be marked posted while payments are missing.
+  // Prefetch every payment that already exists for this run's refs (posted
+  // earlier, or by an overlapping run) in a few bulk queries. Re-posting a
+  // large run (e.g. after adding a statement) then writes only the genuinely
+  // new or changed rows, instead of 2-3 round trips per deposit — which is
+  // what made "add statement to a posted run" hang.
+  const existingByRef = new Map<
+    string,
+    { id: string; tenancy_id: string | null }
+  >();
+  const refs = deposits.filter((d) => d.tenancy_id).map((d) => d.external_ref);
+  for (let i = 0; i < refs.length; i += 150) {
+    const { data: batch, error: exErr } = await supabase
+      .from("payments")
+      .select("id, tenancy_id, external_ref")
+      .in("external_ref", refs.slice(i, i + 150));
+    if (exErr) {
+      throw new Error(`Failed to load existing payments: ${exErr.message}`);
+    }
+    for (const p of batch ?? []) {
+      if (p.external_ref) {
+        existingByRef.set(p.external_ref, { id: p.id, tenancy_id: p.tenancy_id });
+      }
+    }
+  }
+
+  // For each matched deposit: insert its payment if missing (adopting the
+  // existing row on a unique-index race), move the money if the deposit was
+  // re-attributed since (a pays_as fix), and (re)link the deposit. Failures
+  // are collected, not swallowed: a single failure must not let the run be
+  // marked posted while payments are missing.
   const failures: string[] = [];
   for (const d of deposits) {
     if (!d.tenancy_id) continue;
-    const { data: ins, error: pErr } = await supabase
-      .from("payments")
-      .upsert(
-        {
+    let existing = existingByRef.get(d.external_ref);
+    let paymentId: string | null = existing?.id ?? null;
+
+    if (!existing) {
+      const { data: ins, error: pErr } = await supabase
+        .from("payments")
+        .insert({
           tenancy_id: d.tenancy_id,
           paid_on: d.deposit_date ?? stamp,
           amount: Number(d.amount),
@@ -490,40 +560,56 @@ async function postRunCore(supabase: SupabaseClient, runId: string) {
           notes: `Posted from recon (${d.external_ref})`,
           reconciliation_run_id: runId,
           external_ref: d.external_ref,
-        },
-        { onConflict: "external_ref", ignoreDuplicates: true },
-      )
-      .select("id")
-      .maybeSingle();
-    if (pErr) {
-      console.error("[recon] upsert payment failed:", pErr, d.external_ref);
-      failures.push(`${d.external_ref}: ${pErr.message}`);
-      continue;
-    }
-    let paymentId: string | null = ins?.id ?? null;
-    // If ignored (conflict), look up the existing row so we can link. When
-    // the deposit was re-attributed since (e.g. a pays_as fix moved it to a
-    // different tenancy), move the money too — otherwise the match table
-    // would show the new tenant paid while the ledger credits the old one.
-    if (!paymentId) {
-      const { data: existing } = await supabase
-        .from("payments")
-        .select("id, tenancy_id")
-        .eq("external_ref", d.external_ref)
+        })
+        .select("id")
         .maybeSingle();
-      paymentId = existing?.id ?? null;
-      if (existing && existing.tenancy_id !== d.tenancy_id) {
-        const { error: moveErr } = await supabase
-          .from("payments")
-          .update({ tenancy_id: d.tenancy_id })
-          .eq("id", existing.id);
-        if (moveErr) {
-          failures.push(`${d.external_ref}: ${moveErr.message}`);
+      if (pErr) {
+        if (pErr.code === "23505") {
+          // Raced a concurrent post — adopt the winner's row.
+          const { data: raced } = await supabase
+            .from("payments")
+            .select("id, tenancy_id")
+            .eq("external_ref", d.external_ref)
+            .maybeSingle();
+          if (raced) {
+            existing = { id: raced.id, tenancy_id: raced.tenancy_id };
+            existingByRef.set(d.external_ref, existing);
+            paymentId = raced.id;
+          } else {
+            failures.push(`${d.external_ref}: ${pErr.message}`);
+            continue;
+          }
+        } else {
+          console.error("[recon] insert payment failed:", pErr, d.external_ref);
+          failures.push(`${d.external_ref}: ${pErr.message}`);
           continue;
         }
+      } else {
+        paymentId = ins?.id ?? null;
       }
     }
-    if (paymentId) {
+
+    // The deposit was re-attributed since the payment was written (e.g. a
+    // pays_as fix moved it to a different tenancy) — move the money too,
+    // otherwise the match table shows the new tenant paid while the ledger
+    // credits the old one.
+    if (existing && existing.tenancy_id !== d.tenancy_id) {
+      const { error: moveErr } = await supabase
+        .from("payments")
+        .update({ tenancy_id: d.tenancy_id })
+        .eq("id", existing.id);
+      if (moveErr) {
+        failures.push(`${d.external_ref}: ${moveErr.message}`);
+        continue;
+      }
+      existing.tenancy_id = d.tenancy_id;
+    }
+
+    if (!paymentId) {
+      failures.push(`${d.external_ref}: no payment row written or found`);
+      continue;
+    }
+    if (d.payment_id !== paymentId) {
       const { error: linkErr } = await supabase
         .from("reconciliation_deposits")
         .update({ payment_id: paymentId })
@@ -532,8 +618,6 @@ async function postRunCore(supabase: SupabaseClient, runId: string) {
         console.error("[recon] link deposit failed:", linkErr, d.external_ref);
         failures.push(`${d.external_ref}: ${linkErr.message}`);
       }
-    } else {
-      failures.push(`${d.external_ref}: no payment row written or found`);
     }
   }
 
@@ -833,6 +917,116 @@ export async function unignorePayer(formData: FormData) {
     revalidatePath(`/reconciliation/${runId}`);
   }
   revalidatePath("/reconciliation");
+}
+
+// ---------------------------------------------------------------------------
+// Resolve a reversal alert: record the offsetting refund on the suspect
+// payment's tenancy (debiting their ledger), or dismiss it (the reversed
+// transfer wasn't rent / was handled elsewhere).
+// ---------------------------------------------------------------------------
+
+export type ReversalState = { error?: string; success?: string } | undefined;
+
+export async function resolveReversal(
+  _prev: ReversalState,
+  formData: FormData,
+): Promise<ReversalState> {
+  const id = String(formData.get("id") ?? "");
+  const mode = String(formData.get("mode") ?? "");
+  if (!id || (mode !== "refund" && mode !== "dismiss")) {
+    return { error: "Invalid reversal action." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+
+  const { data: rev } = await supabase
+    .from("reconciliation_reversals")
+    .select(
+      "id, run_id, external_ref, raw_description, amount, deposit_date, suspect_payment_id, resolved_at",
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (!rev) return { error: "Reversal not found." };
+  if (rev.resolved_at) return { success: "Already resolved." };
+
+  let refundPaymentId: string | null = null;
+  if (mode === "refund") {
+    if (!rev.suspect_payment_id) {
+      return {
+        error:
+          "No matching posted payment found for this reversal — record a refund on the tenant's page manually, then dismiss this alert.",
+      };
+    }
+    const { data: suspect } = await supabase
+      .from("payments")
+      .select("tenancy_id")
+      .eq("id", rev.suspect_payment_id)
+      .maybeSingle();
+    if (!suspect?.tenancy_id) {
+      return {
+        error:
+          "The suspected payment no longer exists — record the refund manually, then dismiss this alert.",
+      };
+    }
+
+    const paidOn =
+      rev.deposit_date && rev.deposit_date <= todayISO()
+        ? rev.deposit_date
+        : todayISO();
+    const { data: ins, error: insErr } = await supabase
+      .from("payments")
+      .insert({
+        tenancy_id: suspect.tenancy_id,
+        paid_on: paidOn,
+        amount: Number(rev.amount),
+        payment_type: "refund",
+        method: "Reconciliation",
+        notes: `Zelle reversal (${rev.raw_description.slice(0, 120)})`,
+        // The reversal's own fingerprint — a second click can't debit twice.
+        external_ref: rev.external_ref,
+      })
+      .select("id")
+      .single();
+    if (insErr) {
+      // Unique violation = the refund was already recorded; adopt it.
+      if (insErr.code === "23505") {
+        const { data: existing } = await supabase
+          .from("payments")
+          .select("id")
+          .eq("external_ref", rev.external_ref)
+          .maybeSingle();
+        refundPaymentId = existing?.id ?? null;
+      } else {
+        return { error: `Failed to record the refund: ${insErr.message}` };
+      }
+    } else {
+      refundPaymentId = ins.id;
+    }
+  }
+
+  await supabase
+    .from("reconciliation_reversals")
+    .update({
+      resolved_at: new Date().toISOString(),
+      resolved_by: user?.email ?? null,
+      resolution: mode === "refund" ? "refunded" : "dismissed",
+      refund_payment_id: refundPaymentId,
+    })
+    .eq("id", id);
+
+  revalidatePath("/reconciliation");
+  revalidatePath(`/reconciliation/${rev.run_id}`);
+  revalidatePath("/tenants");
+  return {
+    success:
+      mode === "refund"
+        ? `Refund of $${Number(rev.amount).toLocaleString()} recorded — the tenant's ledger now reflects the returned money.`
+        : "Reversal dismissed.",
+  };
 }
 
 export type AssignState = { error?: string; success?: string } | undefined;

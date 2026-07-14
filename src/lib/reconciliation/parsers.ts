@@ -215,6 +215,10 @@ export type ParseResult = {
   /** Rows we saw but skipped because they weren't Zelle, were negative,
    *  or had a blank description. For debugging if the result is empty. */
   skipped: { reason: string; count: number }[];
+  /** Negative ZELLE rows — chargebacks / returned transfers. Captured (with
+   *  `amount` as the positive magnitude) so the run can surface them until
+   *  an operator records the refund or dismisses the alert. */
+  reversals: Deposit[];
 };
 
 async function readFileToMatrix(file: File): Promise<string[][]> {
@@ -243,21 +247,38 @@ function rowsToDeposits(
   opts: { zelleOnly: boolean },
 ): ParseResult {
   let nonPositive = 0;
-  let zelleReversals = 0;
   let nonZelle = 0;
   let blank = 0;
   const out: Deposit[] = [];
+  const reversals: Deposit[] = [];
   for (const r of rows) {
     if (!r.description) {
       blank++;
       continue;
     }
     if (r.amount <= 0) {
-      // A negative ZELLE row is likely a reversal/chargeback of a deposit —
-      // count it separately so the operator is told to check, instead of
-      // burying it with ordinary debits.
-      if (ZELLE_FROM_RE.test(r.description)) zelleReversals++;
-      else nonPositive++;
+      // A negative ZELLE row is a reversal/chargeback of a deposit. Capture
+      // it (magnitude + its own fingerprint, prefixed so it can never
+      // collide with the original transfer's ref) instead of dropping it.
+      if (r.amount < 0 && ZELLE_FROM_RE.test(r.description)) {
+        const key = bankPayerKey(r.description);
+        if (key) {
+          const conf = extractConfNumber(r.description);
+          const magnitude = Math.abs(r.amount);
+          reversals.push({
+            description: key,
+            raw: r.description,
+            amount: magnitude,
+            date: r.date,
+            source,
+            externalRef: conf
+              ? `zellerev:${conf}`
+              : `rev:${fingerprintFor(source, r.date, r.description, magnitude)}`,
+          });
+          continue;
+        }
+      }
+      nonPositive++;
       continue;
     }
     let key: string | null;
@@ -289,11 +310,11 @@ function rowsToDeposits(
     });
   }
   const skipped: { reason: string; count: number }[] = [];
-  if (zelleReversals > 0)
+  if (reversals.length > 0)
     skipped.push({
       reason:
-        "⚠ NEGATIVE ZELLE ROWS — possible reversals/chargebacks, check whether a posted payment was returned",
-      count: zelleReversals,
+        "⚠ NEGATIVE ZELLE ROWS — possible reversals/chargebacks, flagged on the run for review",
+      count: reversals.length,
     });
   if (nonPositive > 0)
     skipped.push({ reason: "Negative or zero amount", count: nonPositive });
@@ -301,7 +322,7 @@ function rowsToDeposits(
     skipped.push({ reason: "Not a Zelle payment", count: nonZelle });
   if (blank > 0)
     skipped.push({ reason: "Blank description", count: blank });
-  return { deposits: out, parsedRowCount, skipped };
+  return { deposits: out, parsedRowCount, skipped, reversals };
 }
 
 // ---------------------------------------------------------------------------

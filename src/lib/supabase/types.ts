@@ -1083,6 +1083,76 @@ export type Database = {
           },
         ]
       }
+      reconciliation_reversals: {
+        Row: {
+          amount: number
+          created_at: string
+          deposit_date: string | null
+          external_ref: string
+          id: string
+          payer_key: string
+          raw_description: string
+          refund_payment_id: string | null
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          run_id: string
+          suspect_payment_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          deposit_date?: string | null
+          external_ref: string
+          id?: string
+          payer_key: string
+          raw_description: string
+          refund_payment_id?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          run_id: string
+          suspect_payment_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          deposit_date?: string | null
+          external_ref?: string
+          id?: string
+          payer_key?: string
+          raw_description?: string
+          refund_payment_id?: string | null
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          run_id?: string
+          suspect_payment_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_reversals_refund_payment_id_fkey"
+            columns: ["refund_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_reversals_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliation_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_reversals_suspect_payment_id_fkey"
+            columns: ["suspect_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reconciliation_runs: {
         Row: {
           bank_statement_path: string | null
