@@ -29,7 +29,7 @@ type Row = {
   service_name: string;
   property_id: string | null;
   username: string | null;
-  password: string | null;
+  password_cipher: string | null;
   login_url: string | null;
   account_number: string | null;
   owner_label: string | null;
@@ -58,14 +58,15 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  // Anyone can Copy a password; only admins can Reveal it on screen.
+  // Only admins (masters) can reveal/copy passwords or manage credentials;
+  // the plaintext is fetched on demand and never shipped with the page.
   const admin = isMaster(user?.email);
 
   const [{ data: credentials }, { data: properties }] = await Promise.all([
     supabase
       .from("credentials")
       .select(
-        `id, category, service_name, property_id, username, password,
+        `id, category, service_name, property_id, username, password_cipher,
          login_url, account_number, owner_label, notes,
          properties(building_name, street_address, unit_number)`,
       )
@@ -92,8 +93,7 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
       property_id: c.property_id,
       property_label: p ? propertyLabel(p) : null,
       username: c.username,
-      password: c.password,
-      hasPassword: !!c.password,
+      hasPassword: !!c.password_cipher,
       login_url: c.login_url,
       account_number: c.account_number,
       owner_label: c.owner_label,
@@ -140,7 +140,7 @@ export default async function CredentialsPage({ searchParams }: PageProps) {
             credentials also surface on each property&apos;s detail page.
           </p>
         </div>
-        <AddCredential properties={propertyOptions} />
+        {admin && <AddCredential properties={propertyOptions} />}
       </header>
 
       <div className="mt-4">

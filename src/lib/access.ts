@@ -16,6 +16,12 @@ export function isMaster(email: string | null | undefined): boolean {
  * Tenant-ledger writes — adding/deleting charges or credits, and posting a
  * utility overcharge to tenants — are restricted to the two operators.
  * Everyone else can still view ledgers and record payments.
+ *
+ * IMPORTANT: this operator allowlist is mirrored in Postgres RLS policies
+ * (payments, credentials, profitability_line_items, ledger side-tables, and the
+ * credential_password / set_credential_password functions). RLS cannot import
+ * this TS constant, so if the operator set ever changes, update BOTH here and
+ * the database policies (see the 20260716* migrations) to avoid drift.
  */
 const LEDGER_ADMIN_EMAILS = new Set<string>([
   "vdutta1485@gmail.com", // Vineet

@@ -17,6 +17,21 @@ const VALID_CATEGORIES: Category[] = [
 
 export type CredentialFormState = { error?: string } | undefined;
 
+const LEDGER_ADMIN_ERROR =
+  "Only Parth or Vineet can manage credentials.";
+
+// The credentials vault is admin-managed. Every mutation is gated here as
+// defense-in-depth on top of the RLS policy that restricts writes to the two
+// operators (see 20260716095000_credentials_write_rls_and_plaintext_block).
+async function requireMaster(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<string | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return isMaster(user?.email) ? null : LEDGER_ADMIN_ERROR;
+}
+
 type CredentialValues = {
   category: Category;
   service_name: string;
@@ -63,9 +78,27 @@ export async function createCredential(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
-  const { error } = await supabase.from("credentials").insert(parsed);
+  const denied = await requireMaster(supabase);
+  if (denied) return { error: denied };
+
+  // Insert the row without the plaintext password (the DB trigger nulls it
+  // regardless); the secret is then encrypted via set_credential_password.
+  const { password, ...rest } = parsed;
+  const { data: created, error } = await supabase
+    .from("credentials")
+    .insert(rest)
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  if (password && created?.id) {
+    const { error: pwErr } = await supabase.rpc("set_credential_password", {
+      cred_id: created.id,
+      plaintext: password,
+    });
+    if (pwErr) return { error: pwErr.message };
+  }
 
   revalidatePath("/credentials");
   return undefined;
@@ -80,24 +113,26 @@ export async function updateCredential(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const denied = await requireMaster(supabase);
+  if (denied) return { error: denied };
 
-  // Only admins may set or change a password. For everyone else, drop it from
-  // the update so a non-admin edit can never read, overwrite, or clear it.
-  let update: Partial<CredentialValues> = parsed;
-  if (!isMaster(user?.email)) {
-    update = { ...parsed };
-    delete update.password;
-  }
-
+  // Password is written only through the encrypting setter, and only when a new
+  // value was entered (an empty field means "leave the stored secret as-is").
+  const { password, ...rest } = parsed;
   const { error } = await supabase
     .from("credentials")
-    .update(update)
+    .update(rest)
     .eq("id", id);
 
   if (error) return { error: error.message };
+
+  if (password) {
+    const { error: pwErr } = await supabase.rpc("set_credential_password", {
+      cred_id: id,
+      plaintext: password,
+    });
+    if (pwErr) return { error: pwErr.message };
+  }
 
   revalidatePath("/credentials");
   return undefined;
@@ -108,8 +143,30 @@ export async function deleteCredential(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
+  if (await requireMaster(supabase)) return;
   await supabase.from("credentials").delete().eq("id", id);
   revalidatePath("/credentials");
+}
+
+/**
+ * On-demand password reveal. The plaintext is never shipped with the page; the
+ * client calls this only when an admin clicks Reveal/Copy. Gated to the two
+ * operators (the DB function re-checks) and every reveal is logged.
+ */
+export async function revealCredential(
+  credentialId: string,
+): Promise<{ password: string | null } | { error: string }> {
+  const supabase = await createClient();
+  const denied = await requireMaster(supabase);
+  if (denied) return { error: denied };
+
+  const { data, error } = await supabase.rpc("credential_password", {
+    cred_id: credentialId,
+  });
+  if (error) return { error: error.message };
+
+  await logCredentialAccess(credentialId, "reveal");
+  return { password: (data as string | null) ?? null };
 }
 
 export async function logCredentialAccess(

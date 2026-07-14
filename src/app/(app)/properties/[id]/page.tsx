@@ -50,7 +50,8 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  // Anyone can Copy a password; only admins can Reveal it on screen.
+  // Only admins (masters) can reveal/copy passwords or manage credentials;
+  // the plaintext is fetched on demand and never shipped with the page.
   const admin = isMaster(user?.email);
 
   const [
@@ -90,7 +91,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     supabase
       .from("credentials")
       .select(
-        `id, category, service_name, property_id, username, password,
+        `id, category, service_name, property_id, username, password_cipher,
          login_url, account_number, owner_label, notes`,
       )
       .eq("property_id", id)
@@ -165,8 +166,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     property_id: c.property_id,
     property_label: propertyLabel,
     username: c.username,
-    password: c.password,
-    hasPassword: !!c.password,
+    hasPassword: !!c.password_cipher,
     login_url: c.login_url,
     account_number: c.account_number,
     owner_label: c.owner_label,

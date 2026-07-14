@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       agreement_addresses: {
@@ -379,6 +354,7 @@ export type Database = {
           notes: string | null
           owner_label: string | null
           password: string | null
+          password_cipher: string | null
           property_id: string | null
           service_name: string
           updated_at: string
@@ -393,6 +369,7 @@ export type Database = {
           notes?: string | null
           owner_label?: string | null
           password?: string | null
+          password_cipher?: string | null
           property_id?: string | null
           service_name: string
           updated_at?: string
@@ -407,6 +384,7 @@ export type Database = {
           notes?: string | null
           owner_label?: string | null
           password?: string | null
+          password_cipher?: string | null
           property_id?: string | null
           service_name?: string
           updated_at?: string
@@ -2141,6 +2119,11 @@ export type Database = {
       }
     }
     Functions: {
+      credential_password: { Args: { cred_id: string }; Returns: string }
+      credential_password_internal: {
+        Args: { cred_id: string }
+        Returns: string
+      }
       property_display_name: {
         Args: {
           building_name: string
@@ -2148,6 +2131,10 @@ export type Database = {
           unit_number: string
         }
         Returns: string
+      }
+      set_credential_password: {
+        Args: { cred_id: string; plaintext: string }
+        Returns: undefined
       }
     }
     Enums: {
@@ -2306,9 +2293,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       credential_category: [

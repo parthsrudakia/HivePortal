@@ -5,6 +5,7 @@ import {
   updateCredential,
   deleteCredential,
   logCredentialAccess,
+  revealCredential,
   type CredentialFormState,
 } from "./actions";
 import { CredentialFields } from "./credential-fields";
@@ -20,10 +21,9 @@ export type CredentialRowData = {
   property_id: string | null;
   property_label: string | null;
   username: string | null;
-  // Plaintext password — sent to all so anyone can Copy it. Only admins can
-  // Reveal it on screen (a display-only gate). `hasPassword` tells the UI
-  // whether to render the dots + Copy control at all.
-  password: string | null;
+  // The plaintext password is NEVER sent with the page. `hasPassword` only tells
+  // the UI whether to render the dots + Reveal/Copy controls; the secret itself
+  // is fetched on demand (admins only) via the revealCredential server action.
   hasPassword: boolean;
   login_url: string | null;
   account_number: string | null;
@@ -58,6 +58,21 @@ export function CredentialRow({
   const [editing, setEditing] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  // Plaintext is fetched lazily (admins only) and cached for the row's lifetime.
+  const [secret, setSecret] = useState<string | null>(null);
+  const [secretError, setSecretError] = useState<string | null>(null);
+
+  async function fetchSecret(): Promise<string | null> {
+    if (secret !== null) return secret;
+    const res = await revealCredential(credential.id);
+    if ("error" in res) {
+      setSecretError(res.error);
+      return null;
+    }
+    setSecretError(null);
+    setSecret(res.password ?? "");
+    return res.password ?? "";
+  }
 
   const boundUpdate = updateCredential.bind(null, credential.id) as (
     state: CredentialFormState,
@@ -69,7 +84,7 @@ export function CredentialRow({
   >(boundUpdate, undefined);
 
   async function copy(
-    field: "username" | "password" | "account_number",
+    field: "username" | "account_number",
     value: string | null,
   ) {
     if (!value) return;
@@ -77,9 +92,19 @@ export function CredentialRow({
       await navigator.clipboard.writeText(value);
       setCopied(field);
       setTimeout(() => setCopied(null), 1200);
-      if (field === "password") {
-        await logCredentialAccess(credential.id, "copy");
-      }
+    } catch {
+      // Clipboard may be blocked; silently skip.
+    }
+  }
+
+  async function copyPassword() {
+    const value = await fetchSecret();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied("password");
+      setTimeout(() => setCopied(null), 1200);
+      await logCredentialAccess(credential.id, "copy");
     } catch {
       // Clipboard may be blocked; silently skip.
     }
@@ -87,7 +112,8 @@ export function CredentialRow({
 
   async function toggleReveal() {
     if (!revealed) {
-      await logCredentialAccess(credential.id, "reveal");
+      const value = await fetchSecret();
+      if (value === null) return; // fetch failed (not authorized); stay masked
     }
     setRevealed((r) => !r);
   }
@@ -168,15 +194,13 @@ export function CredentialRow({
       </td>
       <td className="px-3 py-2">
         {credential.hasPassword ? (
-          <div className="flex w-full items-center justify-between gap-3">
-            <span className="break-all font-mono text-xs text-ink">
-              {revealed && credential.password
-                ? credential.password
-                : PASSWORD_MASK}
-            </span>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {/* Reveal (on-screen display) is admin-only; Copy is for everyone. */}
-              {canReveal && (
+          canReveal ? (
+            <div className="flex w-full items-center justify-between gap-3">
+              <span className="break-all font-mono text-xs text-ink">
+                {revealed && secret ? secret : PASSWORD_MASK}
+              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* Reveal and Copy are admin-only; both fetch the secret on demand. */}
                 <button
                   type="button"
                   onClick={toggleReveal}
@@ -184,13 +208,21 @@ export function CredentialRow({
                 >
                   {revealed ? "Hide" : "Reveal"}
                 </button>
+                <CopyChip
+                  onClick={copyPassword}
+                  copied={copied === "password"}
+                />
+              </div>
+              {secretError && (
+                <span className="text-xs text-red-700">{secretError}</span>
               )}
-              <CopyChip
-                onClick={() => copy("password", credential.password)}
-                copied={copied === "password"}
-              />
             </div>
-          </div>
+          ) : (
+            // Non-admins see that a password is set, but never its value.
+            <span className="break-all font-mono text-xs text-muted">
+              {PASSWORD_MASK}
+            </span>
+          )
         ) : (
           <span className="text-muted">—</span>
         )}
@@ -227,36 +259,41 @@ export function CredentialRow({
         )}
       </td>
       <td className="px-3 py-2 text-right">
-        <div className="flex items-center justify-end gap-2.5 text-xs uppercase tracking-wide leading-none">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="text-muted transition hover:text-accent-text"
-          >
-            Edit
-          </button>
-          <span className="text-stone" aria-hidden="true">
-            |
-          </span>
-          <form action={deleteCredential} className="inline-flex">
-            <input type="hidden" name="id" value={credential.id} />
+        {/* Managing credentials is admin-only (enforced again server-side + in RLS). */}
+        {canReveal ? (
+          <div className="flex items-center justify-end gap-2.5 text-xs uppercase tracking-wide leading-none">
             <button
-              type="submit"
-              onClick={(e) => {
-                if (
-                  !confirm(
-                    `Delete the "${credential.service_name}" credential? This cannot be undone.`,
-                  )
-                ) {
-                  e.preventDefault();
-                }
-              }}
-              className="text-muted transition hover:text-red-700"
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-muted transition hover:text-accent-text"
             >
-              Delete
+              Edit
             </button>
-          </form>
-        </div>
+            <span className="text-stone" aria-hidden="true">
+              |
+            </span>
+            <form action={deleteCredential} className="inline-flex">
+              <input type="hidden" name="id" value={credential.id} />
+              <button
+                type="submit"
+                onClick={(e) => {
+                  if (
+                    !confirm(
+                      `Delete the "${credential.service_name}" credential? This cannot be undone.`,
+                    )
+                  ) {
+                    e.preventDefault();
+                  }
+                }}
+                className="text-muted transition hover:text-red-700"
+              >
+                Delete
+              </button>
+            </form>
+          </div>
+        ) : (
+          <span className="text-muted">—</span>
+        )}
       </td>
     </tr>
   );

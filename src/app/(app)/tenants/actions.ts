@@ -404,6 +404,8 @@ export async function setTenancyLeaseEndDate(
 ): Promise<{ ok: true } | { error: string }> {
   const value = date && date.trim() ? date.trim() : null;
   const supabase = await createClient();
+  const denied = await requireLedgerAdmin(supabase);
+  if (denied) return { error: denied };
   const { error } = await supabase
     .from("tenancies")
     .update({

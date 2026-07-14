@@ -419,7 +419,7 @@ export async function getCredentials(args: {
   let q = supabase
     .from("credentials")
     .select(
-      `id, category, service_name, property_id, username, password,
+      `id, category, service_name, property_id, username,
        login_url, account_number, owner_label, notes,
        properties(building_name, street_address, unit_number)`,
     )
@@ -428,18 +428,29 @@ export async function getCredentials(args: {
   if (args.category) q = q.eq("category", args.category);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((c) => ({
-    id: c.id,
-    category: c.category,
-    service_name: c.service_name,
-    property: c.properties ? propertyLabel(one(c.properties)!) : null,
-    username: c.username,
-    password: c.password,
-    login_url: c.login_url,
-    account_number: c.account_number,
-    owner_label: c.owner_label,
-    notes: c.notes,
-  }));
+  // Passwords are encrypted at rest; decrypt on demand via the service-role
+  // function (the bot uses the service role, which is authorized for it).
+  return Promise.all(
+    (data ?? []).map(async (c) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: pw } = await (supabase as any).rpc(
+        "credential_password_internal",
+        { cred_id: c.id },
+      );
+      return {
+        id: c.id,
+        category: c.category,
+        service_name: c.service_name,
+        property: c.properties ? propertyLabel(one(c.properties)!) : null,
+        username: c.username,
+        password: (pw as string | null) ?? null,
+        login_url: c.login_url,
+        account_number: c.account_number,
+        owner_label: c.owner_label,
+        notes: c.notes,
+      };
+    }),
+  );
 }
 
 type UtilityType = "electric" | "gas" | "water" | "internet" | "trash" | "other";
