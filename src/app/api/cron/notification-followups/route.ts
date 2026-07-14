@@ -5,7 +5,8 @@
  *   1. drain the deferred Resend email queue (FIFO, backlog first),
  *   2. send due 45-day lease-ending heads-ups,
  *   3. roll the 35-day cleaning cadence forward,
- *   4. roll board recurring cycles + email deadline reminders.
+ *   4. roll board recurring cycles + email deadline reminders,
+ *   5. apply the monthly $50 late fees (first run on/after the 7th ET).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -14,6 +15,7 @@ import { runLeaseReminders } from "@/lib/lease-reminders";
 import { runCleaningSchedule } from "@/lib/cleaning-reminders";
 import { flushEmailQueue } from "@/lib/resend-quota";
 import { processBoardDeadlines } from "@/lib/board";
+import { applyMonthlyLateFees } from "@/lib/late-fees";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,5 +59,13 @@ export async function GET(req: NextRequest) {
     error: e instanceof Error ? e.message : "board failed",
   }));
 
-  return NextResponse.json({ lease, cleaningSchedule, flush, board });
+  // Monthly $50 late fee for tenants whose balance isn't clear after the
+  // 6th — self-gated (from Aug 2026, day ≥ 7, once per month), so calling it
+  // daily is safe.
+  const lateFees = await applyMonthlyLateFees(supabase).catch((e) => ({
+    ran: false as const,
+    error: e instanceof Error ? e.message : "late fees failed",
+  }));
+
+  return NextResponse.json({ lease, cleaningSchedule, flush, board, lateFees });
 }
