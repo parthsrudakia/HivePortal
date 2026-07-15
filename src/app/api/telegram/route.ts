@@ -21,7 +21,7 @@ import { logTelegramEvent } from "@/lib/telegram-log";
 import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // Vercel: allow long agent loops
+export const maxDuration = 300; // Vercel: Fable turns on hard tasks can run minutes
 
 const SYSTEM_PROMPT = `You are the operations assistant for Hive — a co-living
 business in NYC that master-leases apartments and rents rooms individually.
@@ -421,11 +421,16 @@ export async function POST(req: Request) {
       },
       async () =>
         await client.beta.messages.toolRunner({
-          model: "claude-opus-4-7",
+          model: "claude-fable-5",
           max_tokens: 16000,
           system: SYSTEM_PROMPT,
           thinking: { type: "adaptive" },
           output_config: { effort: "high" },
+          // Fable's safety classifiers can decline a benign request
+          // (stop_reason "refusal"); fall back to Opus 4.8 in-call so the
+          // operator still gets an answer.
+          betas: ["server-side-fallback-2026-06-01"],
+          fallbacks: [{ model: "claude-opus-4-8" }],
           tools,
           messages,
         }),
@@ -497,7 +502,10 @@ export async function POST(req: Request) {
     },
   });
 
-  if (replyText.length === 0) {
+  if (finalMessage.stop_reason === "refusal") {
+    // Both Fable and the Opus fallback declined the request.
+    await sendMessage(msg.chat.id, "Sorry — I can't help with that request.");
+  } else if (replyText.length === 0) {
     await sendMessage(msg.chat.id, "(Done — no message to add.)");
   } else {
     await sendMessage(msg.chat.id, replyText, {
