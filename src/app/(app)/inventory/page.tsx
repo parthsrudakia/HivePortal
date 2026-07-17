@@ -302,7 +302,13 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           </h1>
           <p className="mt-1 text-sm text-muted">
             Rooms you can list right now — available today, and scheduled to open
-            up.
+            up.{" "}
+            <Link
+              href="/inventory/api-docs"
+              className="text-accent-text underline decoration-accent/40 underline-offset-2 hover:text-accent-dark"
+            >
+              API docs
+            </Link>
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">

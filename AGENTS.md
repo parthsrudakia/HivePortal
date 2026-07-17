@@ -54,7 +54,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 
 - `src/app/(app)/**` — the authenticated portal. One folder per feature (`tenants`, `properties`, `inventory`, `cleaning`, `utilities`, `reconciliation`, `agreements`, `credentials`, `projects`, `reports`, `settings`). Each typically has `page.tsx` (Server Component for reads) + `actions.ts` (`"use server"` mutations) + colocated client components.
 - `src/app/login`, `src/app/auth/**` — login, invite acceptance, password reset.
-- `src/app/api/**` — `telegram/route.ts` (bot webhook) and `cron/{rent-reminders,notification-followups}/route.ts` (Vercel cron, guarded by `CRON_SECRET`).
+- `src/app/api/**` — `telegram/route.ts` (bot webhook), `cron/{rent-reminders,notification-followups}/route.ts` (Vercel cron, guarded by `CRON_SECRET`), and `inventory/**` (read-only inventory API for internal scripts, bearer-token guarded by `INVENTORY_API_KEY`; core listing data only — no tenants/ads/listing actions).
 - `src/lib/**` — domain logic (see below).
 - `src/lib/supabase/{server,client,proxy}.ts` — Supabase clients. `types.ts` is **generated** — never edit by hand.
 - `src/proxy.ts` — middleware (`updateSession`) that refreshes the auth cookie on every request.
@@ -96,4 +96,4 @@ Supabase migrations in `supabase/migrations/` (timestamped SQL). Core tables: `p
 
 ## Environment
 
-See `.env.example`. Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Feature-gated: Resend (`RESEND_*`), Gmail (`GMAIL_*`), MS Graph (`MS_*`), Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ALLOWED_TELEGRAM_USER_IDS`), `ANTHROPIC_API_KEY`, cron (`CRON_SECRET`), `NEXT_PUBLIC_SITE_URL`.
+See `.env.example`. Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Feature-gated: Resend (`RESEND_*`), Gmail (`GMAIL_*`), MS Graph (`MS_*`), Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ALLOWED_TELEGRAM_USER_IDS`), `ANTHROPIC_API_KEY`, cron (`CRON_SECRET`), inventory API (`INVENTORY_API_KEY`), `NEXT_PUBLIC_SITE_URL`.
