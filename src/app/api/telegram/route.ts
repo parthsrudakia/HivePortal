@@ -402,7 +402,12 @@ export async function POST(req: Request) {
 
   await sendChatAction(msg.chat.id, "typing");
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // maxRetries 5 (SDK default 2): 529 overload windows often outlast the
+  // default ~2s of backoff; extra retries stay well under maxDuration.
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    maxRetries: 5,
+  });
 
   // Build the messages array: persisted history + this turn's user message.
   const history = await loadHistory(msg.chat.id);
@@ -454,7 +459,17 @@ export async function POST(req: Request) {
       latencyMs: Date.now() - turnStartedAt,
       error: errText,
     });
-    await sendMessage(msg.chat.id, `Sorry — agent error: ${errText}`);
+    // Transient API problems (overload, rate limit, 5xx) get a friendly
+    // resend prompt; the full error is already in the log above.
+    const transient =
+      e instanceof Anthropic.APIError &&
+      (e.status === 429 || e.status === 529 || (e.status ?? 0) >= 500);
+    await sendMessage(
+      msg.chat.id,
+      transient
+        ? "Claude is temporarily overloaded — please resend that in a minute."
+        : `Sorry — agent error: ${errText}`,
+    );
     return NextResponse.json({ ok: true });
   }
 
