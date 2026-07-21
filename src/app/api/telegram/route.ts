@@ -52,6 +52,12 @@ Style:
   before replying. Take the recipient and mailbox in your confirmation from the
   tool result, not from memory. If asked about an email from an earlier request,
   refer to it as a past send rather than confirming it as new.
+- Each of your past replies in this conversation ends with a bracketed marker
+  listing the tools that ran that turn (e.g. "[tools run this turn:
+  send_agreement ok]"). That marker is the ONLY evidence an action happened —
+  a past "Sent ✅" without a send tool in its marker was a mistake, not a send.
+  Never copy the shape of a past reply as a substitute for calling the tool
+  now. Don't write these markers yourself; they're appended automatically.
 - If you can't find what the operator's asking about, say so directly rather
   than guessing.
 
@@ -490,9 +496,35 @@ export async function POST(req: Request) {
   );
   const falseSendClaim = !sendToolSucceeded && claimsEmailSent(text);
   const replyText = falseSendClaim ? falseSendCorrection(text) : text;
+
+  // History only keeps each turn's FINAL assistant message — the runner's
+  // intermediate tool_use/tool_result messages are dropped. Without a marker,
+  // a successful send reads as `"send it" → "Sent ✅"` with no tool call in
+  // between, and the model imitates that pattern in later turns (observed
+  // 7/17–7/21/26: repeated "Sent ✅" replies with no tool run). Persist one
+  // line of tool evidence with every assistant turn so tool-backed and
+  // tool-less replies look different in context.
+  const toolMarker: Anthropic.Beta.BetaTextBlockParam = {
+    type: "text",
+    text:
+      calledTools.length > 0
+        ? `[tools run this turn: ${calledTools
+            .map((t) => `${t.name} ${t.ok ? "ok" : "FAILED"}`)
+            .join(", ")}]`
+        : "[no tools were run this turn]",
+  };
+  // On a false send claim, persist only a short admission — NOT the original
+  // fabricated "Sent to …" text, which would re-seed the exact pattern the
+  // guard exists to stop.
   const assistantContent: ConvoMessage["content"] = falseSendClaim
-    ? [{ type: "text", text: replyText }]
-    : finalMessage.content;
+    ? [
+        {
+          type: "text",
+          text: "⚠️ I claimed an email was sent, but no email-sending tool ran this turn — nothing was actually sent.",
+        },
+        toolMarker,
+      ]
+    : [...finalMessage.content, toolMarker];
   const credentialToolUsed = calledTools.some(
     (tool) => tool.name === "get_credentials",
   );
@@ -508,14 +540,17 @@ export async function POST(req: Request) {
     });
   }
 
-  // Persist this turn (user input + full final assistant content, so future
-  // turns have the tool-use chain in context if needed).
+  // Persist this turn (user input + the final assistant content with the
+  // tool-evidence marker appended).
   await appendHistory(msg.chat.id, "user", newUserMessage.content);
   await appendHistory(
     msg.chat.id,
     "assistant",
     credentialToolUsed
-      ? [{ type: "text", text: "[credential response omitted from history]" }]
+      ? [
+          { type: "text", text: "[credential response omitted from history]" },
+          toolMarker,
+        ]
       : assistantContent,
   );
 
