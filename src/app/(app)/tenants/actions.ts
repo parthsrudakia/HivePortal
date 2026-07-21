@@ -18,6 +18,7 @@ import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { buildBalanceDetail, type BalanceDetail } from "@/lib/balance-detail";
 import { updateTenancyRent } from "@/lib/rent-history";
 import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
+import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
 
 // Accrual-affecting mutations (rent amounts, tenancy dates, deleting
 // payments/tenants) change what a tenant owes just as directly as a charge
@@ -93,6 +94,10 @@ export async function createTenant(
     formData.get("first_month_rent") ?? "",
   ).trim();
   const leaseFile = formData.get("lease_pdf");
+  // Present when the form was opened from the signing tally's "Add a tenant"
+  // button — the request's signed PDF becomes the tenancy's lease PDF.
+  const agreement_request_id =
+    String(formData.get("agreement_request_id") ?? "").trim() || null;
 
   if (room_id) {
     if (!monthly_rent_str)
@@ -111,6 +116,13 @@ export async function createTenant(
     return {
       error:
         "Pick a room (so the lease attaches to the tenancy) or remove the PDF.",
+    };
+  }
+  // Same rule for a signed agreement: it attaches to the tenancy, so a room
+  // is required.
+  if (agreement_request_id && !room_id) {
+    return {
+      error: "Pick a room so the signed agreement attaches to the tenancy.",
     };
   }
   if (
@@ -142,7 +154,39 @@ export async function createTenant(
       : null;
 
     let lease_pdf_path: string | null = null;
-    if (leaseFile instanceof File && leaseFile.size > 0) {
+    if (agreement_request_id) {
+      // Copy the request's signed PDF into the leases bucket (the request's
+      // own copy stays immutable), same as the tally's Assign flow.
+      const { data: request } = await supabase
+        .from("agreement_requests")
+        .select("id, status, signed_pdf_path")
+        .eq("id", agreement_request_id)
+        .maybeSingle();
+      if (!request || request.status !== "signed" || !request.signed_pdf_path) {
+        await supabase.from("tenants").delete().eq("id", tenant.id);
+        return {
+          error: "That signed agreement could not be found — it may have been cleared.",
+        };
+      }
+      const { data: pdfBlob, error: downloadError } = await supabase.storage
+        .from(AGREEMENTS_BUCKET)
+        .download(request.signed_pdf_path);
+      if (downloadError || !pdfBlob) {
+        await supabase.from("tenants").delete().eq("id", tenant.id);
+        return { error: "The signed agreement PDF could not be read from storage." };
+      }
+      const filename = `${tenant.id}/${Date.now()}-signed-agreement.pdf`;
+      const { error: upErr } = await supabase.storage
+        .from("leases")
+        .upload(filename, Buffer.from(await pdfBlob.arrayBuffer()), {
+          contentType: "application/pdf",
+        });
+      if (upErr) {
+        await supabase.from("tenants").delete().eq("id", tenant.id);
+        return { error: `Failed to attach the signed agreement: ${upErr.message}` };
+      }
+      lease_pdf_path = filename;
+    } else if (leaseFile instanceof File && leaseFile.size > 0) {
       const filename = `${tenant.id}/${Date.now()}-${leaseFile.name.replace(/[^\w.\-]/g, "_")}`;
       const { error: upErr } = await supabase.storage
         .from("leases")
@@ -219,6 +263,20 @@ export async function createTenant(
           error: `Failed to post the security-deposit charge: ${depositError.message}`,
         };
       }
+    }
+
+    // Point the signing tally at the tenancy so the request shows as
+    // assigned instead of resurfacing in the assign picker. Best-effort,
+    // matching the tally's own Assign flow.
+    if (agreement_request_id && tenancy) {
+      await supabase
+        .from("agreement_requests")
+        .update({
+          assigned_tenancy_id: tenancy.id,
+          assigned_at: new Date().toISOString(),
+        })
+        .eq("id", agreement_request_id);
+      revalidatePath("/agreements");
     }
 
     // Future tenancies reserve the room but do not become billable/active

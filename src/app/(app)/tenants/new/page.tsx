@@ -22,16 +22,52 @@ type RoomRow = {
 };
 
 type PageProps = {
-  searchParams: Promise<{ room_id?: string }>;
+  searchParams: Promise<{ room_id?: string; agreement?: string }>;
+};
+
+// Shape of agreement_requests.input (the AgreementInput snapshot the signed
+// PDF was rendered from) — only the fields the prefill needs.
+type AgreementInputSnapshot = {
+  rent?: string;
+  securityDeposit?: string;
+  leaseStartDate?: string;
+  leaseEndDate?: string;
+  proRateRent?: string;
 };
 
 export default async function NewTenantPage({ searchParams }: PageProps) {
-  const { room_id } = await searchParams;
+  const { room_id, agreement } = await searchParams;
   const defaultRoomId =
     typeof room_id === "string" && room_id.length > 0 ? room_id : "";
+  const agreementId =
+    typeof agreement === "string" && agreement.length > 0 ? agreement : "";
 
   const supabase = await createClient();
   const today = todayISO();
+
+  // Coming from the signing tally's "Add a tenant" button: prefill the form
+  // from the signed agreement and attach its PDF on save.
+  let agreementPrefill = null;
+  if (agreementId) {
+    const { data: request } = await supabase
+      .from("agreement_requests")
+      .select("id, status, tenant_name, recipient_email, signed_pdf_path, input")
+      .eq("id", agreementId)
+      .maybeSingle();
+    if (request?.status === "signed" && request.signed_pdf_path) {
+      const input = (request.input ?? {}) as AgreementInputSnapshot;
+      agreementPrefill = {
+        agreementRequestId: request.id,
+        fullName: request.tenant_name,
+        email: request.recipient_email,
+        monthlyRent: input.rent ?? "",
+        securityDeposit: input.securityDeposit ?? "",
+        startDate: input.leaseStartDate ?? "",
+        leaseEndDate: input.leaseEndDate ?? "",
+        firstMonthRent: input.proRateRent ?? "",
+      };
+    }
+  }
 
   // Show rooms that are listable on /inventory: available now, or
   // currently occupied but with a future end-date so the tenant slot is
@@ -141,9 +177,10 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
 
       <div id="add-tenant" className="mt-8 scroll-mt-6">
         <AddTenantForm
-          key={defaultRoomId || "blank"}
+          key={`${agreementPrefill?.agreementRequestId ?? "none"}:${defaultRoomId || "blank"}`}
           rooms={rooms}
           defaultRoomId={defaultRoomId}
+          agreementPrefill={agreementPrefill}
         />
       </div>
     </div>

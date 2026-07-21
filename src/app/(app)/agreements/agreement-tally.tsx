@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/confirm-modal";
@@ -389,6 +390,13 @@ export function AgreementTally({
                       Assign
                     </button>
                   )}
+                  <span className="text-xs text-muted">or</span>
+                  <Link
+                    href={`/tenants/new?agreement=${r.id}`}
+                    className="rounded-full bg-ink px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-white transition hover:bg-accent-dark"
+                  >
+                    Add a tenant
+                  </Link>
                 </div>
               )}
               {r.status === "signed" && r.assignedTenancyId && (
