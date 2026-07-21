@@ -164,6 +164,44 @@ export async function undismissRequest(requestId: string): Promise<ActionResult>
   return { ok: true };
 }
 
+/**
+ * Permanently clear a tally list: deletes every request with the given status
+ * AND its stored PDFs from the agreements bucket. Copies already assigned to
+ * a tenant live in the leases bucket and are untouched.
+ */
+export async function clearRequests(
+  status: "signed" | "dismissed",
+): Promise<ActionResult & { cleared?: number }> {
+  const { supabase, user } = await requireUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: rows, error } = await supabase
+    .from("agreement_requests")
+    .select("id, unsigned_pdf_path, signed_pdf_path")
+    .eq("status", status);
+  if (error) return { ok: false, error: error.message };
+  if (!rows || rows.length === 0) return { ok: true, cleared: 0 };
+
+  // Files first (best-effort), then rows — a failed file delete must not
+  // leave the tally entry pointing at nothing.
+  const paths = rows.flatMap((r) =>
+    [r.unsigned_pdf_path, r.signed_pdf_path].filter(
+      (p): p is string => p != null,
+    ),
+  );
+  if (paths.length > 0) {
+    await supabase.storage.from(AGREEMENTS_BUCKET).remove(paths);
+  }
+  const { error: deleteError } = await supabase
+    .from("agreement_requests")
+    .delete()
+    .eq("status", status);
+  if (deleteError) return { ok: false, error: deleteError.message };
+
+  revalidatePath("/agreements");
+  return { ok: true, cleared: rows.length };
+}
+
 /** Rotate the token (+48h) and re-send the email with the stored PDF. */
 export async function resendRequest(requestId: string): Promise<ActionResult> {
   const { user } = await requireUser();
