@@ -204,38 +204,6 @@ export function AgreementTally({
         </div>
       </div>
 
-      {((filter === "signed" && counts.signed > 0) ||
-        (filter === "dismissed" && counts.dismissed > 0)) && (
-        <div className="mt-3 flex justify-end">
-          <ConfirmModal
-            trigger={
-              <button
-                type="button"
-                disabled={busy === "clear"}
-                className="text-xs font-medium text-red-700 hover:underline disabled:opacity-40"
-              >
-                Clear this list
-              </button>
-            }
-            title={`Clear all ${filter} agreements?`}
-            message={
-              filter === "signed"
-                ? `All ${counts.signed} signed ${counts.signed === 1 ? "entry" : "entries"} and their stored PDFs will be permanently deleted. Agreements already assigned to a tenant keep the copy on the tenant's profile — anything unassigned loses its signed PDF for good.`
-                : `All ${counts.dismissed} dismissed ${counts.dismissed === 1 ? "entry" : "entries"} and their stored PDFs will be permanently deleted.`
-            }
-            confirmLabel="Clear list"
-            destructive
-            onConfirm={() =>
-              run(
-                "clear",
-                () => clearRequests(filter as "signed" | "dismissed"),
-                "List cleared.",
-              )
-            }
-          />
-        </div>
-      )}
-
       {visible.length === 0 ? (
         <p className="mt-6 text-sm text-muted">
           {filter === "outstanding"
@@ -243,22 +211,9 @@ export function AgreementTally({
             : "Nothing here yet."}
         </p>
       ) : (
-        <ul className="mt-4 flex flex-col gap-3">
+        <ul className="mt-4 divide-y divide-stone/40">
           {visible.map((r) => (
-            <li
-              key={r.id}
-              // Each request is its own panel, edge-tinted by status so rows
-              // read at a glance instead of blending into one list.
-              className={`flex flex-col gap-3 rounded-xl border-l-4 bg-warm/50 p-4 ${
-                r.status === "dismissed"
-                  ? "border-stone/50 opacity-70"
-                  : r.status === "signed"
-                    ? "border-accent"
-                    : isExpired(r)
-                      ? "border-amber-400"
-                      : "border-stone"
-              }`}
-            >
+            <li key={r.id} className="flex flex-col gap-3 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-medium text-ink">{r.tenantName}</p>
@@ -341,7 +296,7 @@ export function AgreementTally({
               </div>
 
               {r.status === "signed" && !r.assignedTenancyId && (
-                <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white p-3">
+                <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warm/60 p-3">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted">
                     Assign to tenant
                   </span>
@@ -400,7 +355,6 @@ export function AgreementTally({
           ))}
         </ul>
       )}
-
     </section>
   );
 }
