@@ -38,16 +38,31 @@ type Row = {
  * a multi-month account ledger), extraction pre-fills the fields, the
  * operator corrects anything wrong, then submits. Each reviewed cycle
  * becomes its own bill; the screenshot is stored as every bill's statement.
+ *
+ * Everything the operator can edit is CONTROLLED state, and the screenshot
+ * lives in state rather than the input: React resets uncontrolled form
+ * fields after every form action, which would otherwise clear the file
+ * between the preview and the commit and silently block submission on the
+ * hidden required input.
  */
 export function ManualBillForm({ units }: { units: UnitOpt[] }) {
   const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [prefill, setPrefill] = useState<ManualPrefill | null>(null);
+  const [unitId, setUnitId] = useState("");
+  const [utilityType, setUtilityType] = useState("");
   const [nextRowId, setNextRowId] = useState(0);
   // Bumped after each successful save so the remounted form starts blank.
   const [resetKey, setResetKey] = useState(0);
 
-  const seedRows = (p: ManualPrefill) => {
+  const setRowField = (id: number, field: "start" | "end" | "amount", v: string) =>
+    setRows((r) => r.map((x) => (x.id === id ? { ...x, [field]: v } : x)));
+
+  const seedFromPrefill = (p: ManualPrefill) => {
+    setPrefill(p);
+    setUnitId(p.property_id ?? "");
+    setUtilityType(p.utility_type ?? "");
     const seeded: Row[] = (p.cycles.length > 0 ? p.cycles : [null]).map(
       (c, i) => ({
         id: i,
@@ -65,13 +80,15 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
     ManualPreviewState,
     FormData
   >(async (prev, formData) => {
+    if (!file) {
+      toast.error("Attach a screenshot first.");
+      return prev;
+    }
+    formData.set("screenshot", file);
     const result = await previewManualBill(prev, formData);
     if (result?.error) toast.error(result.error);
     if (result?.warning) toast.warning(result.warning);
-    if (result?.prefill) {
-      setPrefill(result.prefill);
-      seedRows(result.prefill);
-    }
+    if (result?.prefill) seedFromPrefill(result.prefill);
     return result;
   }, undefined);
 
@@ -79,12 +96,18 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
     UploadState,
     FormData
   >(async (prev, formData) => {
+    if (!file) {
+      toast.error("The screenshot went missing — attach it again.");
+      return prev;
+    }
+    formData.set("screenshot", file);
     const result = await commitManualBills(prev, formData);
     if (result?.warning) toast.warning(result.warning);
     if (result?.success) {
       setResetKey((k) => k + 1);
       setPrefill(null);
       setRows([]);
+      setFile(null);
       setOpen(false);
     }
     return result;
@@ -113,10 +136,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
   const reviewing = prefill !== null;
 
   return (
-    <form
-      key={resetKey}
-      className="mt-3 rounded-2xl bg-white p-6 shadow-sm"
-    >
+    <form key={resetKey} className="mt-3 rounded-2xl bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
           {reviewing ? "Review & correct, then log" : "Enter bills from a screenshot"}
@@ -127,6 +147,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
             setOpen(false);
             setPrefill(null);
             setRows([]);
+            setFile(null);
           }}
           className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
         >
@@ -134,33 +155,32 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
         </button>
       </div>
 
-      {/* The screenshot input stays mounted through both steps so the same
-          file rides along on the final submit. */}
-      <div className={reviewing ? "hidden" : "mt-4"}>
-        <label className="flex flex-col gap-1.5">
-          <span className={fieldLabel}>Bill screenshot</span>
-          <input
-            type="file"
-            name="screenshot"
-            required
-            accept="application/pdf,image/png,image/jpeg,image/webp"
-            className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-warm file:px-3 file:py-2 file:text-sm file:text-ink hover:file:bg-stone/40"
-          />
-          <span className="text-xs text-muted">
-            One statement or a multi-month account ledger — PDF or photo, up
-            to 20 MB. It&apos;s read to pre-fill the fields, and stored as the
-            statement of every bill it produces.
-          </span>
-        </label>
-        <button
-          type="submit"
-          formAction={previewAction}
-          disabled={previewPending}
-          className="mt-4 rounded-full bg-accent px-5 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-60"
-        >
-          {previewPending ? "Reading…" : "Read screenshot"}
-        </button>
-      </div>
+      {!reviewing && (
+        <div className="mt-4">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Bill screenshot</span>
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/webp"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-warm file:px-3 file:py-2 file:text-sm file:text-ink hover:file:bg-stone/40"
+            />
+            <span className="text-xs text-muted">
+              {file
+                ? `Holding ${file.name} — it's read to pre-fill the fields, and stored as the statement.`
+                : "One statement or a multi-month account ledger — PDF or photo, up to 20 MB."}
+            </span>
+          </label>
+          <button
+            type="submit"
+            formAction={previewAction}
+            disabled={previewPending || !file}
+            className="mt-4 rounded-full bg-accent px-5 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-60"
+          >
+            {previewPending ? "Reading…" : "Read screenshot"}
+          </button>
+        </div>
+      )}
 
       {reviewing && (
         <>
@@ -170,7 +190,8 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
               <select
                 name="property_id"
                 required
-                defaultValue={prefill.property_id ?? ""}
+                value={unitId}
+                onChange={(e) => setUnitId(e.target.value)}
                 className={fieldInput}
               >
                 <option value="" disabled>
@@ -188,7 +209,8 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
               <select
                 name="utility_type"
                 required
-                defaultValue={prefill.utility_type ?? ""}
+                value={utilityType}
+                onChange={(e) => setUtilityType(e.target.value)}
                 className={fieldInput}
               >
                 <option value="" disabled>
@@ -228,14 +250,16 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
                   type="date"
                   name={`period_start:${row.id}`}
                   required
-                  defaultValue={row.start}
+                  value={row.start}
+                  onChange={(e) => setRowField(row.id, "start", e.target.value)}
                   className={fieldInput}
                 />
                 <input
                   type="date"
                   name={`period_end:${row.id}`}
                   required
-                  defaultValue={row.end}
+                  value={row.end}
+                  onChange={(e) => setRowField(row.id, "end", e.target.value)}
                   className={fieldInput}
                 />
                 <input
@@ -243,7 +267,8 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
                   required
                   inputMode="decimal"
                   placeholder="$123.45"
-                  defaultValue={row.amount}
+                  value={row.amount}
+                  onChange={(e) => setRowField(row.id, "amount", e.target.value)}
                   className={fieldInput}
                 />
                 <input
@@ -322,6 +347,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
               onClick={() => {
                 setPrefill(null);
                 setRows([]);
+                setFile(null);
               }}
               className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
             >

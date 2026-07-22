@@ -419,6 +419,29 @@ export async function previewManualBill(
     const knownUnit =
       extracted.property_id &&
       units.some((u) => u.id === extracted.property_id);
+    // Extraction sometimes splits one bill into several "cycles" with the
+    // same period (e.g. a combined statement's electric + gas portions).
+    // Same period = same bill: merge them so the overlap guard doesn't
+    // reject the operator's own prefill.
+    const merged: ManualPrefill["cycles"] = [];
+    for (const c of extracted.cycles) {
+      const twin = merged.find(
+        (m) =>
+          m.period_start === c.period_start && m.period_end === c.period_end,
+      );
+      if (twin) {
+        twin.amount =
+          Math.round(((twin.amount ?? 0) + c.amount) * 100) / 100;
+        twin.charges = [...twin.charges, ...c.charges];
+      } else {
+        merged.push({
+          period_start: c.period_start,
+          period_end: c.period_end,
+          amount: c.amount,
+          charges: c.charges,
+        });
+      }
+    }
     return {
       prefill: {
         property_id: knownUnit ? extracted.property_id : null,
@@ -428,12 +451,7 @@ export async function previewManualBill(
         service_address: extracted.service_address,
         statement_date: extracted.statement_date,
         notes: extracted.notes,
-        cycles: extracted.cycles.slice(0, MAX_MANUAL_CYCLES).map((c) => ({
-          period_start: c.period_start,
-          period_end: c.period_end,
-          amount: c.amount,
-          charges: c.charges,
-        })),
+        cycles: merged.slice(0, MAX_MANUAL_CYCLES),
       },
     };
   } catch {
