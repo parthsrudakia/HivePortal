@@ -24,6 +24,18 @@ const GENDER_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+// Shown label for a profile link: drop protocol, "www." and tracking params
+// so pasted share-URLs don't overflow the card. The href keeps the full URL.
+function displayUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return `${host}${u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return url;
+  }
+}
+
 const fieldInput =
   "rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none";
 const fieldLabel = "text-xs font-medium uppercase tracking-wide text-muted";
@@ -77,7 +89,7 @@ export function TenantInfo(props: Props) {
           <dt className="text-muted">Profession</dt>
           <dd className="col-span-2 text-ink">{props.profession ?? "—"}</dd>
           <dt className="text-muted">LinkedIn</dt>
-          <dd className="col-span-2 text-ink">
+          <dd className="col-span-2 break-all text-ink">
             {props.linkedin_url ? (
               <a
                 href={props.linkedin_url}
@@ -85,14 +97,14 @@ export function TenantInfo(props: Props) {
                 rel="noopener noreferrer"
                 className="text-accent-text hover:underline"
               >
-                {props.linkedin_url}
+                {displayUrl(props.linkedin_url)}
               </a>
             ) : (
               "—"
             )}
           </dd>
           <dt className="text-muted">Instagram</dt>
-          <dd className="col-span-2 text-ink">
+          <dd className="col-span-2 break-all text-ink">
             {props.instagram_url ? (
               <a
                 href={props.instagram_url}
@@ -100,7 +112,7 @@ export function TenantInfo(props: Props) {
                 rel="noopener noreferrer"
                 className="text-accent-text hover:underline"
               >
-                {props.instagram_url}
+                {displayUrl(props.instagram_url)}
               </a>
             ) : (
               "—"
