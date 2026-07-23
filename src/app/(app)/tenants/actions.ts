@@ -78,6 +78,10 @@ export async function createTenant(
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const pays_as = String(formData.get("pays_as") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const linkedin_url =
+    String(formData.get("linkedin_url") ?? "").trim() || null;
+  const instagram_url =
+    String(formData.get("instagram_url") ?? "").trim() || null;
 
   if (!full_name) return { error: "Tenant name is required." };
 
@@ -141,7 +145,15 @@ export async function createTenant(
   if (denied) return { error: denied };
   const { data: tenant, error: tErr } = await supabase
     .from("tenants")
-    .insert({ full_name, email, phone, pays_as, notes })
+    .insert({
+      full_name,
+      email,
+      phone,
+      pays_as,
+      notes,
+      linkedin_url,
+      instagram_url,
+    })
     .select("id")
     .single();
 

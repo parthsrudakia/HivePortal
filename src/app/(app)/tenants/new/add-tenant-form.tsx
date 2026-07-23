@@ -104,6 +104,24 @@ export function AddTenantForm({
               the bank statement, e.g. <em>JANE DOE</em> or <em>J DOE</em>.
             </span>
           </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>LinkedIn</span>
+            <input
+              type="url"
+              name="linkedin_url"
+              placeholder="https://www.linkedin.com/in/…"
+              className={fieldInput}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Instagram</span>
+            <input
+              type="url"
+              name="instagram_url"
+              placeholder="https://www.instagram.com/…"
+              className={fieldInput}
+            />
+          </label>
           <label className="flex flex-col gap-1.5 sm:col-span-2">
             <span className={fieldLabel}>Notes</span>
             <textarea name="notes" rows={2} className={`${fieldInput} resize-y`} />
