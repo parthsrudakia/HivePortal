@@ -575,11 +575,13 @@ function utilityChargeText(n: UtilityChargeNotice, signoff: string): string {
   const amount = `$${n.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   return `Hi,
 
-Your unit's utility usage went over the monthly allowance, and your share of the bill comes to ${amount} (${n.period}, ${n.unitLabel}). This has been added to your account.
+Your unit's utility usage went over the monthly allowance, and your share of the bill comes to ${amount}* (${n.period}, ${n.unitLabel}). This has been added to your account.
 
 Please include it with your ${n.nextMonthLabel} rent payment.${
     n.statementUrl ? `\n\nYou can see the bill here: ${n.statementUrl}` : ""
   }
+
+* The utility overage is divided among the tenants with AC in their room.
 
 ${signoff}`;
 }
@@ -599,10 +601,11 @@ export async function sendUtilityChargeNotice(
       <p style="margin:0; font-size:15px; color:#8a8378;">${escapeHtml(n.period)} · ${escapeHtml(n.unitLabel)}</p>
       <div style="margin:20px 0; background:#f5f2ed; border-radius:12px; padding:16px 18px;">
         <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Your share</p>
-        <p style="margin:4px 0 0; font-size:24px; font-weight:600; color:#1a1a18;">${amount}</p>
+        <p style="margin:4px 0 0; font-size:24px; font-weight:600; color:#1a1a18;">${amount}*</p>
       </div>
       <p style="margin:0; font-size:15px; color:#1a1a18; line-height:1.5;">Your unit&rsquo;s utility usage went over the monthly allowance, and this is your share of the bill. It has been added to your account &mdash; please include it with your <strong>${escapeHtml(n.nextMonthLabel)} rent payment</strong>.</p>
       ${n.statementUrl ? `<p style="margin:16px 0 0;"><a href="${n.statementUrl}" style="font-size:14px; color:#9a6f08; font-weight:600;">View the bill statement →</a></p>` : ""}
+      <p style="margin:16px 0 0; font-size:13px; color:#8a8378;">* The utility overage is divided among the tenants with AC in their room.</p>
       <p style="margin:16px 0 0; font-size:15px; color:#1a1a18;">Thanks</p>
     </div>
   </div>
