@@ -2,35 +2,18 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
 import { canEditLedger } from "@/lib/access";
+import { todayISO, addDaysISO } from "@/lib/date";
+import {
+  monthBounds,
+  loadMonthTenancies,
+  computeMonthMatches,
+  type MatchRow,
+} from "@/lib/reconciliation/matching";
 
 export const dynamic = "force-dynamic";
 // Building the workbook scales with match count; lift the ceiling off Vercel's
 // default so a large export can't get hard-killed mid-write.
 export const maxDuration = 60;
-
-type RouteContext = { params: Promise<{ id: string }> };
-
-type RunRow = {
-  id: string;
-  month: string;
-  total_expected: number | null;
-  total_actual: number | null;
-};
-
-type MatchRow = {
-  tenant_name: string;
-  pays_as: string;
-  property_label: string | null;
-  room_label: string | null;
-  expected_rent: number;
-  actual_amount: number;
-  difference: number;
-  status: "match" | "mismatch" | "missing";
-  tenants:
-    | { email: string | null; phone: string | null }
-    | { email: string | null; phone: string | null }[]
-    | null;
-};
 
 function monthLabel(monthIso: string) {
   const [y, m] = monthIso.split("-").map(Number);
@@ -38,12 +21,17 @@ function monthLabel(monthIso: string) {
   return d.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-export async function GET(req: Request, context: RouteContext) {
-  const { id } = await context.params;
+export async function GET(req: Request) {
+  const url = new URL(req.url);
   // ?filter=issues → only mismatched and missing rows (the ones needing
-  // follow-up), leaving clean matches out of the sheet.
-  const issuesOnly =
-    new URL(req.url).searchParams.get("filter") === "issues";
+  // follow-up). ?month=YYYY-MM exports a past month; default is the current
+  // one (matching the page's KPIs).
+  const issuesOnly = url.searchParams.get("filter") === "issues";
+  const monthParam = url.searchParams.get("month");
+  const month =
+    monthParam && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam)
+      ? monthParam
+      : todayISO().slice(0, 7);
 
   const supabase = await createClient();
   // The sheet carries the money totals and tenant emails/phones the UI
@@ -54,27 +42,44 @@ export async function GET(req: Request, context: RouteContext) {
   if (!canEditLedger(user?.email)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
-  const [{ data: run }, { data: matches }] = await Promise.all([
-    supabase
-      .from("reconciliation_runs")
-      .select("id, month, total_expected, total_actual")
-      .eq("id", id)
-      .maybeSingle<RunRow>(),
-    supabase
-      .from("reconciliation_matches")
-      .select(
-        `tenant_name, pays_as, property_label, room_label,
-         expected_rent, actual_amount, difference, status,
-         tenants(email, phone)`,
-      )
-      .eq("run_id", id)
-      .returns<MatchRow[]>(),
-  ]);
 
-  if (!run) {
-    return NextResponse.json({ error: "Run not found" }, { status: 404 });
+  // Same live computation as the page: expected rent per tenancy vs posted
+  // bank payments (6-day early window) plus manually recorded rent.
+  const { start, end } = monthBounds(month);
+  const { tenancies, error: tErr } = await loadMonthTenancies(supabase, start, end);
+  if (tErr) {
+    return NextResponse.json({ error: tErr }, { status: 500 });
   }
-  const rows = (matches ?? []).filter(
+  const { data: bankPayRows } = await supabase
+    .from("payments")
+    .select("tenancy_id, amount")
+    .eq("payment_type", "rent")
+    .not("external_ref", "is", null)
+    .gte("paid_on", addDaysISO(start, -6))
+    .lte("paid_on", end);
+  const bankPaid = new Map<string, number>();
+  for (const p of bankPayRows ?? []) {
+    if (!p.tenancy_id) continue;
+    bankPaid.set(p.tenancy_id, (bankPaid.get(p.tenancy_id) ?? 0) + Number(p.amount));
+  }
+  const { matches } = computeMonthMatches(tenancies, bankPaid, start, end);
+
+  // Contact columns.
+  const tenantIds = [
+    ...new Set(matches.map((m) => m.tenant_id).filter((x): x is string => !!x)),
+  ];
+  const contactByTenant = new Map<string, { email: string | null; phone: string | null }>();
+  if (tenantIds.length > 0) {
+    const { data: tenantRows } = await supabase
+      .from("tenants")
+      .select("id, email, phone")
+      .in("id", tenantIds);
+    for (const t of tenantRows ?? []) {
+      contactByTenant.set(t.id, { email: t.email, phone: t.phone });
+    }
+  }
+
+  const rows = matches.filter(
     (m) => !issuesOnly || m.status === "mismatch" || m.status === "missing",
   );
 
@@ -93,7 +98,7 @@ export async function GET(req: Request, context: RouteContext) {
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(
-    `Reconciliation ${monthLabel(run.month)}${issuesOnly ? " — issues" : ""}`,
+    `Reconciliation ${monthLabel(month)}${issuesOnly ? " — issues" : ""}`,
   );
 
   ws.columns = [
@@ -123,15 +128,15 @@ export async function GET(req: Request, context: RouteContext) {
     let n = 1;
     for (const m of items) {
       const matched = m.status === "match";
-      const tenant = Array.isArray(m.tenants) ? m.tenants[0] : m.tenants;
+      const contact = m.tenant_id ? contactByTenant.get(m.tenant_id) : null;
       const row = ws.addRow({
         n,
         unit: group,
         room: m.room_label ?? "",
         tenant: m.tenant_name,
         pays_as: m.pays_as,
-        email: tenant?.email ?? "",
-        phone: tenant?.phone ?? "",
+        email: contact?.email ?? "",
+        phone: contact?.phone ?? "",
         expected: m.expected_rent ?? 0,
         actual: m.actual_amount ?? 0,
         diff: m.difference ?? 0,
@@ -199,8 +204,7 @@ export async function GET(req: Request, context: RouteContext) {
   ws.views = [{ state: "frozen", ySplit: 1 }];
 
   const buffer = await wb.xlsx.writeBuffer();
-  const monthSlug = run.month.slice(0, 7);
-  const filename = `reconciliation-${monthSlug}${issuesOnly ? "-issues" : ""}.xlsx`;
+  const filename = `reconciliation-${month}${issuesOnly ? "-issues" : ""}.xlsx`;
   return new NextResponse(buffer, {
     status: 200,
     headers: {

@@ -761,7 +761,6 @@ export type Database = {
           notes: string | null
           paid_on: string
           payment_type: Database["public"]["Enums"]["payment_type"]
-          reconciliation_run_id: string | null
           tenancy_id: string
         }
         Insert: {
@@ -773,7 +772,6 @@ export type Database = {
           notes?: string | null
           paid_on: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
-          reconciliation_run_id?: string | null
           tenancy_id: string
         }
         Update: {
@@ -785,17 +783,9 @@ export type Database = {
           notes?: string | null
           paid_on?: string
           payment_type?: Database["public"]["Enums"]["payment_type"]
-          reconciliation_run_id?: string | null
           tenancy_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "payments_reconciliation_run_id_fkey"
-            columns: ["reconciliation_run_id"]
-            isOneToOne: false
-            referencedRelation: "reconciliation_runs"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "payments_tenancy_id_fkey"
             columns: ["tenancy_id"]
@@ -1014,36 +1004,42 @@ export type Database = {
           amount: number
           created_at: string
           deposit_date: string | null
+          dismissed_at: string | null
+          dismissed_by: string | null
           external_ref: string
           id: string
           payer_key: string
           payment_id: string | null
           raw_description: string
-          run_id: string
+          statement_id: string | null
           tenancy_id: string | null
         }
         Insert: {
           amount: number
           created_at?: string
           deposit_date?: string | null
+          dismissed_at?: string | null
+          dismissed_by?: string | null
           external_ref: string
           id?: string
           payer_key: string
           payment_id?: string | null
           raw_description: string
-          run_id: string
+          statement_id?: string | null
           tenancy_id?: string | null
         }
         Update: {
           amount?: number
           created_at?: string
           deposit_date?: string | null
+          dismissed_at?: string | null
+          dismissed_by?: string | null
           external_ref?: string
           id?: string
           payer_key?: string
           payment_id?: string | null
           raw_description?: string
-          run_id?: string
+          statement_id?: string | null
           tenancy_id?: string | null
         }
         Relationships: [
@@ -1055,10 +1051,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "reconciliation_deposits_run_id_fkey"
-            columns: ["run_id"]
+            foreignKeyName: "reconciliation_deposits_statement_id_fkey"
+            columns: ["statement_id"]
             isOneToOne: false
-            referencedRelation: "reconciliation_runs"
+            referencedRelation: "reconciliation_statements"
             referencedColumns: ["id"]
           },
           {
@@ -1081,90 +1077,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_room_occupancy"
             referencedColumns: ["tenancy_id"]
-          },
-        ]
-      }
-      reconciliation_matches: {
-        Row: {
-          actual_amount: number | null
-          created_at: string
-          difference: number | null
-          expected_rent: number | null
-          id: string
-          pays_as: string | null
-          property_label: string | null
-          room_label: string | null
-          run_id: string
-          status: string | null
-          tenancy_id: string | null
-          tenant_id: string | null
-          tenant_name: string | null
-        }
-        Insert: {
-          actual_amount?: number | null
-          created_at?: string
-          difference?: number | null
-          expected_rent?: number | null
-          id?: string
-          pays_as?: string | null
-          property_label?: string | null
-          room_label?: string | null
-          run_id: string
-          status?: string | null
-          tenancy_id?: string | null
-          tenant_id?: string | null
-          tenant_name?: string | null
-        }
-        Update: {
-          actual_amount?: number | null
-          created_at?: string
-          difference?: number | null
-          expected_rent?: number | null
-          id?: string
-          pays_as?: string | null
-          property_label?: string | null
-          room_label?: string | null
-          run_id?: string
-          status?: string | null
-          tenancy_id?: string | null
-          tenant_id?: string | null
-          tenant_name?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "reconciliation_matches_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "reconciliation_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reconciliation_matches_tenancy_id_fkey"
-            columns: ["tenancy_id"]
-            isOneToOne: false
-            referencedRelation: "tenancies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reconciliation_matches_tenancy_id_fkey"
-            columns: ["tenancy_id"]
-            isOneToOne: false
-            referencedRelation: "v_current_month_status"
-            referencedColumns: ["tenancy_id"]
-          },
-          {
-            foreignKeyName: "reconciliation_matches_tenancy_id_fkey"
-            columns: ["tenancy_id"]
-            isOneToOne: false
-            referencedRelation: "v_room_occupancy"
-            referencedColumns: ["tenancy_id"]
-          },
-          {
-            foreignKeyName: "reconciliation_matches_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
           },
         ]
       }
@@ -1181,7 +1093,6 @@ export type Database = {
           resolution: string | null
           resolved_at: string | null
           resolved_by: string | null
-          run_id: string
           suspect_payment_id: string | null
         }
         Insert: {
@@ -1196,7 +1107,6 @@ export type Database = {
           resolution?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
-          run_id: string
           suspect_payment_id?: string | null
         }
         Update: {
@@ -1211,7 +1121,6 @@ export type Database = {
           resolution?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
-          run_id?: string
           suspect_payment_id?: string | null
         }
         Relationships: [
@@ -1223,13 +1132,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "reconciliation_reversals_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "reconciliation_runs"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "reconciliation_reversals_suspect_payment_id_fkey"
             columns: ["suspect_payment_id"]
             isOneToOne: false
@@ -1238,51 +1140,48 @@ export type Database = {
           },
         ]
       }
-      reconciliation_runs: {
+      reconciliation_statements: {
         Row: {
-          bank_statement_path: string | null
           created_at: string
+          deposit_count: number | null
+          duplicate_count: number | null
+          file_name: string | null
+          file_path: string
           id: string
-          match_count: number | null
-          mismatch_count: number | null
-          missing_count: number | null
-          month: string
-          notes: string | null
-          other_payments_path: string | null
-          posted_at: string | null
-          total_actual: number | null
-          total_expected: number | null
-          unmatched_deposits: Json | null
+          max_deposit_date: string | null
+          min_deposit_date: string | null
+          note: string | null
+          parsed_row_count: number | null
+          source: string
+          uploaded_by: string | null
         }
         Insert: {
-          bank_statement_path?: string | null
           created_at?: string
+          deposit_count?: number | null
+          duplicate_count?: number | null
+          file_name?: string | null
+          file_path: string
           id?: string
-          match_count?: number | null
-          mismatch_count?: number | null
-          missing_count?: number | null
-          month: string
-          notes?: string | null
-          other_payments_path?: string | null
-          posted_at?: string | null
-          total_actual?: number | null
-          total_expected?: number | null
-          unmatched_deposits?: Json | null
+          max_deposit_date?: string | null
+          min_deposit_date?: string | null
+          note?: string | null
+          parsed_row_count?: number | null
+          source?: string
+          uploaded_by?: string | null
         }
         Update: {
-          bank_statement_path?: string | null
           created_at?: string
+          deposit_count?: number | null
+          duplicate_count?: number | null
+          file_name?: string | null
+          file_path?: string
           id?: string
-          match_count?: number | null
-          mismatch_count?: number | null
-          missing_count?: number | null
-          month?: string
-          notes?: string | null
-          other_payments_path?: string | null
-          posted_at?: string | null
-          total_actual?: number | null
-          total_expected?: number | null
-          unmatched_deposits?: Json | null
+          max_deposit_date?: string | null
+          min_deposit_date?: string | null
+          note?: string | null
+          parsed_row_count?: number | null
+          source?: string
+          uploaded_by?: string | null
         }
         Relationships: []
       }
@@ -2240,14 +2139,14 @@ export type Database = {
         Args: { cred_id: string }
         Returns: string
       }
-      delete_reconciliation_run: {
-        Args: { p_run_id: string }
-        Returns: undefined
+      ingest_reconciliation_statement: {
+        Args: { p_deposits: Json; p_statement: Json }
+        Returns: Json
       }
       is_financial_operator: { Args: never; Returns: boolean }
-      post_reconciliation_run: {
-        Args: { p_run_id: string }
-        Returns: undefined
+      post_reconciliation_deposit: {
+        Args: { p_deposit_id: string; p_tenancy_id: string }
+        Returns: string
       }
       property_display_name: {
         Args: {
@@ -2257,31 +2156,12 @@ export type Database = {
         }
         Returns: string
       }
-      replace_reconciliation_snapshot: {
-        Args: {
-          p_deposit_assignments: Json
-          p_match_count: number
-          p_matches: Json
-          p_mismatch_count: number
-          p_missing_count: number
-          p_post_payments?: boolean
-          p_run_id: string
-          p_total_actual: number
-          p_total_expected: number
-          p_unmatched: Json
-        }
-        Returns: undefined
-      }
       resolve_reconciliation_reversal: {
         Args: { p_mode: string; p_resolved_by: string; p_reversal_id: string }
         Returns: Json
       }
       set_credential_password: {
         Args: { cred_id: string; plaintext: string }
-        Returns: undefined
-      }
-      unpost_reconciliation_run: {
-        Args: { p_run_id: string }
         Returns: undefined
       }
       update_tenancy_rent: {

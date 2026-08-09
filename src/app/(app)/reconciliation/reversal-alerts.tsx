@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { resolveReversal } from "../actions";
+import { resolveReversal } from "./actions";
 
 export type ReversalAlert = {
   id: string;

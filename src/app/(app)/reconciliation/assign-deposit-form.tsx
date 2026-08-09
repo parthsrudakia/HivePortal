@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { assignUnmatchedDeposit, ignoreUnmatchedPayer } from "../actions";
+import {
+  assignDeposit,
+  dismissDeposit,
+  restoreDeposit,
+  ignoreUnmatchedPayer,
+} from "./actions";
 
 export type AssignTenantOption = { tenancyId: string; label: string };
 
@@ -16,22 +21,27 @@ function fmtDate(s: string | null | undefined) {
   return y && m && d ? `${m}/${d}/${y.slice(2)}` : s;
 }
 
-/** One unmatched deposit with an inline "assign to tenant" control. Assigning
- *  records the bank's payer name as that tenant's pays_as so it matches now and
- *  on every future statement. */
+/** One unassigned transaction with inline controls. Assigning posts the money
+ *  to the tenant's ledger immediately and records the bank's payer name as
+ *  their alias so future statements match automatically. Dismiss tucks the
+ *  row into the collapsed Dismissed sub-list (restorable, searchable). */
 export function AssignDepositForm({
-  runId,
+  depositId,
   payerKey,
   label,
   amount,
   date,
+  dismissed,
+  ignored,
   tenants,
 }: {
-  runId: string;
+  depositId: string;
   payerKey: string;
   label: string;
   amount: number;
   date: string | null;
+  dismissed: boolean;
+  ignored: boolean;
   tenants: AssignTenantOption[];
 }) {
   const [tenancyId, setTenancyId] = useState("");
@@ -64,7 +74,6 @@ export function AssignDepositForm({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
-
 
   // Keep the highlighted row visible while arrow-keying through a long list.
   useEffect(() => {
@@ -104,40 +113,67 @@ export function AssignDepositForm({
     }
   }
 
+  function run(action: () => Promise<{ error?: string; success?: string } | undefined>) {
+    startTransition(async () => {
+      const res = await action();
+      if (res?.error) toast.error(res.error);
+      else toast.success(res?.success ?? "Done.");
+    });
+  }
+
   function assign() {
     if (!tenancyId) {
       toast.error("Pick a tenant to assign this deposit to.");
       return;
     }
     const fd = new FormData();
-    fd.set("run_id", runId);
-    fd.set("payer_key", payerKey);
+    fd.set("deposit_id", depositId);
     fd.set("tenancy_id", tenancyId);
-    startTransition(async () => {
-      const res = await assignUnmatchedDeposit(undefined, fd);
-      if (res?.error) toast.error(res.error);
-      else toast.success(res?.success ?? "Assigned.");
-    });
+    run(() => assignDeposit(undefined, fd));
+  }
+
+  function dismiss() {
+    const fd = new FormData();
+    fd.set("deposit_id", depositId);
+    run(() => dismissDeposit(undefined, fd));
+  }
+
+  function restore() {
+    const fd = new FormData();
+    fd.set("deposit_id", depositId);
+    run(() => restoreDeposit(undefined, fd));
   }
 
   function ignore() {
     const fd = new FormData();
-    fd.set("run_id", runId);
     fd.set("payer_key", payerKey);
-    startTransition(async () => {
-      const res = await ignoreUnmatchedPayer(undefined, fd);
-      if (res?.error) toast.error(res.error);
-      else toast.success(res?.success ?? "Marked not-rent.");
-    });
+    run(() => ignoreUnmatchedPayer(undefined, fd));
   }
 
   const dateLabel = fmtDate(date);
+  const inDismissedList = dismissed || ignored;
 
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg bg-cream/60 px-3 py-2 text-sm">
+    <li
+      className={`flex flex-wrap items-center gap-3 rounded-lg px-3 py-2 text-sm ${
+        inDismissedList ? "bg-warm/40 opacity-80" : "bg-cream/60"
+      }`}
+    >
       <div className="min-w-0 flex-1">
         <p className="truncate text-ink">{label}</p>
-        {dateLabel && <p className="text-xs text-muted">{dateLabel}</p>}
+        <p className="text-xs text-muted">
+          {dateLabel}
+          {ignored && (
+            <span className="ml-2 rounded-full bg-warm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Not rent
+            </span>
+          )}
+          {dismissed && !ignored && (
+            <span className="ml-2 rounded-full bg-warm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Dismissed
+            </span>
+          )}
+        </p>
       </div>
       <span className="shrink-0 font-medium text-ink tabular-nums">
         {fmtMoney(amount)}
@@ -160,7 +196,7 @@ export function AssignDepositForm({
           placeholder="Assign to…"
           role="combobox"
           aria-expanded={open}
-          aria-controls="assign-tenant-list"
+          aria-controls={`assign-tenant-list-${depositId}`}
           className="w-full rounded-lg border border-stone bg-white px-2 py-1.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
         {tenancyId && !open && (
@@ -179,7 +215,7 @@ export function AssignDepositForm({
         )}
         {open && (
           <ul
-            id="assign-tenant-list"
+            id={`assign-tenant-list-${depositId}`}
             ref={listRef}
             role="listbox"
             className="absolute left-0 right-0 top-full z-10 mt-1 max-h-60 overflow-auto rounded-lg border border-stone bg-white py-1 shadow-lg"
@@ -213,17 +249,42 @@ export function AssignDepositForm({
         disabled={pending || !tenancyId}
         className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
       >
-        {pending ? "Assigning…" : "Assign"}
+        {pending ? "Working…" : "Assign"}
       </button>
-      <button
-        type="button"
-        onClick={ignore}
-        disabled={pending}
-        title="Not rent — hide this payer from every run's unmatched list (undo from the Ignored payers list below)"
-        className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
-      >
-        Not rent
-      </button>
+      {inDismissedList ? (
+        dismissed ? (
+          <button
+            type="button"
+            onClick={restore}
+            disabled={pending}
+            title="Bring this transaction back to the unassigned list"
+            className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
+          >
+            Restore
+          </button>
+        ) : null
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={dismiss}
+            disabled={pending}
+            title="Dismiss this transaction — it stays here under Dismissed, searchable and restorable"
+            className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
+          >
+            Dismiss
+          </button>
+          <button
+            type="button"
+            onClick={ignore}
+            disabled={pending}
+            title="Not rent — hide every transaction from this payer (undo from the payer chips below)"
+            className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
+          >
+            Not rent
+          </button>
+        </>
+      )}
     </li>
   );
 }

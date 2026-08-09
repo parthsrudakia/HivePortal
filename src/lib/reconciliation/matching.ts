@@ -1,17 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { one } from "@/lib/relations";
-import {
-  aggregateByDescription,
-  unmatchedDeposits,
-  tenantKey,
-  type Deposit,
-} from "@/lib/reconciliation/parsers";
+import { tenantKey, type Deposit } from "@/lib/reconciliation/parsers";
 import { rateForMonthISO, type RentChange } from "@/lib/rent";
 
-// The matching engine shared by the reconciliation server actions (create /
-// assign) and the run page, which re-derives a run's matches on view so the
-// stored snapshot never goes stale. Lives outside actions.ts because a
-// "use server" module can only export public action endpoints.
+// The matching engine behind the continuous reconciliation: payer-key
+// auto-matching happens once at statement-ingest time (buildPayerIndex /
+// autoAssign), and the /reconciliation page derives the current month's
+// match table live from tenancies + posted payments (computeMonthMatches).
+// Lives outside actions.ts because a "use server" module can only export
+// public action endpoints.
 
 export function monthBounds(monthIso: string): { start: string; end: string } {
   const [y, m] = monthIso.split("-").map(Number);
@@ -211,7 +208,6 @@ export async function loadMonthTenancies(
 }
 
 export type MatchRow = {
-  run_id: string;
   tenancy_id: string;
   tenant_id: string | null;
   tenant_name: string;
@@ -224,12 +220,6 @@ export type MatchRow = {
   status: "match" | "mismatch" | "missing";
 };
 
-// Every payer key a tenancy answers to: its pays_as/full-name key plus each
-// remembered alias of its tenant (operator-assigned in an earlier run).
-function keysOf(t: TenancyInfo): string[] {
-  return [...new Set([tenantKey(t.pays_as, t.full_name), ...t.alias_keys])];
-}
-
 /** Payer keys marked "not rent" (personal transfers, other ventures) —
  *  excluded from every run's unmatched list. */
 export async function loadIgnoredPayerKeys(
@@ -241,45 +231,144 @@ export async function loadIgnoredPayerKeys(
   );
 }
 
-// Pure matcher shared by the initial run and by recompute-after-assign. Sums
-// deposits by payer key — plus rent recorded outside a bank posting — and
-// lines the total up against each tenancy's expected rent. Ignored payer
-// keys are left out of the unmatched list (they never match a tenant, and
-// they aren't rent — so they aren't "waiting for assignment" either).
-export function buildMatches(
+
+// ---------------------------------------------------------------------------
+// Ingest-time auto-matching. Runs once per uploaded statement: each deposit's
+// payer key is resolved to a tenancy (or left null for the unassigned list),
+// and matched deposits post to the ledger immediately. There is deliberately
+// NO month filter here — a tenancy that starts after the deposit's month is a
+// legitimate target (prepayment), which the old per-month runs excluded.
+// ---------------------------------------------------------------------------
+
+export type PayerTenancy = {
+  tenancy_id: string;
+  status: "active" | "ended";
+  start_date: string;
+  /** Every payer key this tenancy answers to: tenantKey(pays_as, full_name)
+   *  plus each remembered tenant_payer_aliases key. */
+  keys: string[];
+};
+
+/** All tenancies a payer key could resolve to, with their match keys. */
+export async function loadPayerTenancies(
+  supabase: SupabaseClient,
+): Promise<{ rows: PayerTenancy[]; error?: string }> {
+  type TenantRel = { id: string; full_name: string; pays_as: string | null };
+  const { data, error } = await supabase
+    .from("tenancies")
+    .select("id, tenant_id, status, start_date, tenants(id, full_name, pays_as)")
+    .in("status", ["active", "ended"])
+    .returns<
+      {
+        id: string;
+        tenant_id: string;
+        status: "active" | "ended";
+        start_date: string;
+        tenants: TenantRel | TenantRel[] | null;
+      }[]
+    >();
+  if (error) return { rows: [], error: error.message };
+
+  const tenantIds = [...new Set((data ?? []).map((t) => t.tenant_id))];
+  const aliasesByTenant = new Map<string, string[]>();
+  if (tenantIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any;
+    const { data: aliasRows } = await sb
+      .from("tenant_payer_aliases")
+      .select("tenant_id, payer_key")
+      .in("tenant_id", tenantIds);
+    for (const r of aliasRows ?? []) {
+      const list = aliasesByTenant.get(r.tenant_id);
+      if (list) list.push(r.payer_key);
+      else aliasesByTenant.set(r.tenant_id, [r.payer_key]);
+    }
+  }
+
+  const rows = (data ?? []).flatMap((t): PayerTenancy[] => {
+    const tenant = one(t.tenants);
+    if (!tenant) return [];
+    return [
+      {
+        tenancy_id: t.id,
+        status: t.status,
+        start_date: t.start_date,
+        keys: [
+          ...new Set([
+            tenantKey(tenant.pays_as, tenant.full_name),
+            ...(aliasesByTenant.get(t.tenant_id) ?? []),
+          ]),
+        ],
+      },
+    ];
+  });
+  return { rows };
+}
+
+/** payer key → tenancy id. Contested keys (a tenant who moved rooms, two
+ *  tenants with identical names) go to one tenancy deterministically:
+ *  active beats ended, then the latest start_date. */
+export function buildPayerIndex(rows: PayerTenancy[]): Map<string, string> {
+  const ordered = [...rows].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    return b.start_date.localeCompare(a.start_date);
+  });
+  const index = new Map<string, string>();
+  for (const t of ordered) {
+    for (const k of t.keys) {
+      if (!index.has(k)) index.set(k, t.tenancy_id);
+    }
+  }
+  return index;
+}
+
+/** Resolve each deposit to a tenancy (null = lands in the unassigned list).
+ *  Ignored payers never auto-assign — their money isn't rent until an
+ *  operator explicitly says otherwise. */
+export function autoAssign(
   deposits: Deposit[],
+  index: Map<string, string>,
+  ignoredKeys: Set<string> = new Set(),
+): (Deposit & { tenancyId: string | null })[] {
+  return deposits.map((d) => ({
+    ...d,
+    tenancyId: ignoredKeys.has(d.description)
+      ? null
+      : (index.get(d.description) ?? null),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Current-month match table. Posting is immediate, so the payments table is
+// the source of truth for "collected" — no stored snapshot to go stale.
+// ---------------------------------------------------------------------------
+
+export type MonthTotals = {
+  totalExpected: number;
+  totalActual: number;
+  matchCount: number;
+  mismatchCount: number;
+  missingCount: number;
+};
+
+/** Line the month's tenancies up against what the bank actually delivered
+ *  (bankPaidByTenancy = posted external_ref payments in the month window,
+ *  summed per tenancy). recorded_paid (manual entries) counts too, exactly
+ *  as the per-month runs did. */
+export function computeMonthMatches(
   tenancies: TenancyInfo[],
+  bankPaidByTenancy: Map<string, number>,
   monthStart: string,
   monthEnd: string,
-  runId: string,
-  ignoredKeys: Set<string> = new Set(),
-) {
-  const aggregate = aggregateByDescription(deposits);
+): { matches: MatchRow[]; totals: MonthTotals } {
   const matches: MatchRow[] = [];
-  const claimedKeys = new Set<string>();
-  const tenancyByKey = new Map<string, string>();
   let totalExpected = 0;
   let totalActual = 0;
   let matchCount = 0;
   let mismatchCount = 0;
   let missingCount = 0;
 
-  // Two tenancies can share a payer key (a tenant who moved rooms mid-month,
-  // or two tenants with identical names). The deposits are one pot of money —
-  // credit it to ONE tenancy (the most recent, deterministically) instead of
-  // showing the full sum on every row and double-counting the totals.
-  const ordered = [...tenancies].sort((a, b) =>
-    b.start_date.localeCompare(a.start_date),
-  );
-  const keyClaimedBy = new Map<string, string>();
-  for (const t of ordered) {
-    for (const k of keysOf(t)) {
-      if (!keyClaimedBy.has(k)) keyClaimedBy.set(k, t.id);
-    }
-  }
-
   for (const t of tenancies) {
-    const rawKey = tenantKey(t.pays_as, t.full_name);
     const expected = expectedForMonth(
       t.start_date,
       t.monthly_rent,
@@ -289,22 +378,7 @@ export function buildMatches(
       t.rent_changes,
       t.paused_at,
     );
-    // Sum the deposits under every key this tenancy claims — a tenant can pay
-    // under their own name one month and a remembered alias the next.
-    let actual = 0;
-    for (const k of keysOf(t)) {
-      if (keyClaimedBy.get(k) !== t.id) continue;
-      const sum = aggregate.get(k) ?? 0;
-      if (sum > 0) {
-        actual += sum;
-        claimedKeys.add(k);
-        tenancyByKey.set(k, t.id);
-      }
-    }
-    // Plus rent already recorded in the system for this month outside a bank
-    // posting — a tenant who paid through another channel isn't missing.
-    actual += t.recorded_paid;
-
+    const actual = (bankPaidByTenancy.get(t.id) ?? 0) + t.recorded_paid;
     const difference = actual - expected;
     let status: MatchRow["status"];
     if (actual <= 0) status = "missing";
@@ -318,11 +392,10 @@ export function buildMatches(
     else missingCount++;
 
     matches.push({
-      run_id: runId,
       tenancy_id: t.id,
       tenant_id: t.tenant_id,
       tenant_name: t.tenant_name,
-      pays_as: rawKey,
+      pays_as: tenantKey(t.pays_as, t.full_name),
       property_label: t.property_label,
       room_label: t.room_label,
       expected_rent: expected,
@@ -332,14 +405,8 @@ export function buildMatches(
     });
   }
 
-  const unmatched = unmatchedDeposits(
-    deposits,
-    new Set([...claimedKeys, ...ignoredKeys]),
-  );
   return {
     matches,
-    tenancyByKey,
-    unmatched,
     totals: {
       totalExpected,
       totalActual,
@@ -350,135 +417,69 @@ export function buildMatches(
   };
 }
 
-// A match row's identity for change detection, independent of row id and
-// insertion order. Amounts are compared at cent precision.
-function matchSignature(rows: MatchRow[]): string {
-  const cents = (n: number) => Math.round(Number(n) * 100);
-  return JSON.stringify(
-    rows
-      .map((m) =>
-        [
-          m.tenancy_id,
-          m.tenant_id ?? "",
-          m.tenant_name,
-          m.pays_as,
-          m.property_label ?? "",
-          m.room_label ?? "",
-          cents(m.expected_rent),
-          cents(m.actual_amount),
-          m.status,
-        ].join("|"),
-      )
-      .sort(),
-  );
+// ---------------------------------------------------------------------------
+// Fingerprint hygiene for rows without a Conf#. Identical rows (same date,
+// raw text, amount) are distinguished by an occurrence ordinal so two real
+// same-day cash rows both survive, while a re-uploaded copy of an already-
+// stored row is recognised as a duplicate. Historical refs used a
+// `:{month}:{ordinal}` suffix; new refs use plain `:{ordinal}` — both formats
+// are consulted so a re-upload can't sneak past the dedupe in either era.
+// ---------------------------------------------------------------------------
+
+const LEGACY_ORDINAL_RE = /^(.*):(\d{4}-\d{2}-\d{2}):(\d+)$/;
+const ORDINAL_RE = /^(.*):(\d+)$/;
+
+function existingOrdinals(existingRefs: Iterable<string>): Map<string, Set<number>> {
+  const byBase = new Map<string, Set<number>>();
+  const add = (base: string, n: number) => {
+    const set = byBase.get(base);
+    if (set) set.add(n);
+    else byBase.set(base, new Set([n]));
+  };
+  for (const ref of existingRefs) {
+    const legacy = ref.match(LEGACY_ORDINAL_RE);
+    if (legacy) {
+      add(legacy[1], Number(legacy[3]));
+      continue;
+    }
+    const plain = ref.match(ORDINAL_RE);
+    if (plain) add(plain[1], Number(plain[2]));
+  }
+  return byBase;
 }
 
-/**
- * Re-derive a run's matches, totals, and unmatched list from its saved
- * deposits against CURRENT tenancy/payment data. Preview runs may refresh on
- * view; posted runs are immutable unless an explicit operator action passes
- * `allowPosted`. Snapshot replacement (and any required ledger repost) is one
- * database transaction via `replace_reconciliation_snapshot`.
- */
-export async function recomputeRun(
-  supabase: SupabaseClient,
-  runId: string,
-  options: { allowPosted?: boolean } = {},
-) {
-  const { data: run } = await supabase
-    .from("reconciliation_runs")
-    .select("month, unmatched_deposits, posted_at")
-    .eq("id", runId)
-    .maybeSingle<{
-      month: string;
-      unmatched_deposits: unknown;
-      posted_at: string | null;
-    }>();
-  if (!run) throw new Error("Run not found.");
-  if (run.posted_at && !options.allowPosted) return;
-  const { start, end } = monthBounds(run.month);
+/** Prepare an upload's deposits for ingest: drop repeated Conf# rows within
+ *  the file, and give synthetic-fingerprint rows their occurrence ordinal —
+ *  skipping occurrences already stored (in either ref format) so overlapping
+ *  exports never double-post a dateless-format row. Conf# rows already in the
+ *  database are left in place for the ingest RPC's ON CONFLICT to count. */
+export function assignSyntheticOrdinals(
+  deposits: Deposit[],
+  existingRefs: Iterable<string>,
+): { deposits: Deposit[]; duplicates: number } {
+  const taken = existingOrdinals(existingRefs);
+  const seenConf = new Set<string>();
+  const occurrence = new Map<string, number>();
+  const out: Deposit[] = [];
+  let duplicates = 0;
 
-  const { data: depRows, error: depErr } = await supabase
-    .from("reconciliation_deposits")
-    .select(
-      "payer_key, raw_description, amount, deposit_date, external_ref, tenancy_id",
-    )
-    .eq("run_id", runId);
-  if (depErr) throw new Error(`Failed to load deposits: ${depErr.message}`);
-
-  const deposits: Deposit[] = (depRows ?? []).map((d) => ({
-    description: d.payer_key,
-    raw: d.raw_description ?? "",
-    amount: Number(d.amount),
-    date: d.deposit_date,
-    source: "bank",
-    externalRef: d.external_ref,
-  }));
-
-  const { tenancies, error: tErr } = await loadMonthTenancies(
-    supabase,
-    start,
-    end,
-  );
-  if (tErr) throw new Error(`Failed to load tenancies: ${tErr}`);
-
-  const ignoredKeys = await loadIgnoredPayerKeys(supabase);
-  const { matches, tenancyByKey, unmatched, totals } = buildMatches(
-    deposits,
-    tenancies,
-    start,
-    end,
-    runId,
-    ignoredKeys,
-  );
-
-  // Track whether a payer assignment changed. The actual writes happen below
-  // in one transaction with the match snapshot and totals.
-  const staleKeys = new Set<string>();
-  for (const d of depRows ?? []) {
-    if ((d.tenancy_id ?? null) !== (tenancyByKey.get(d.payer_key) ?? null)) {
-      staleKeys.add(d.payer_key);
+  for (const d of deposits) {
+    if (d.externalRef.startsWith("zelle:")) {
+      if (seenConf.has(d.externalRef)) {
+        duplicates++;
+        continue;
+      }
+      seenConf.add(d.externalRef);
+      out.push(d);
+      continue;
     }
+    const n = (occurrence.get(d.externalRef) ?? 0) + 1;
+    occurrence.set(d.externalRef, n);
+    if (taken.get(d.externalRef)?.has(n)) {
+      duplicates++;
+      continue;
+    }
+    out.push({ ...d, externalRef: `${d.externalRef}:${n}` });
   }
-  // Replace only when the result differs, preserving match-row ids when a
-  // preview refresh is genuinely unchanged.
-  const { data: existing } = await supabase
-    .from("reconciliation_matches")
-    .select(
-      `run_id, tenancy_id, tenant_id, tenant_name, pays_as,
-       property_label, room_label, expected_rent, actual_amount, difference, status`,
-    )
-    .eq("run_id", runId)
-    .returns<MatchRow[]>();
-  const unchanged =
-    matchSignature(existing ?? []) === matchSignature(matches) &&
-    JSON.stringify(run.unmatched_deposits ?? []) ===
-      JSON.stringify(unmatched ?? []);
-  if (unchanged && staleKeys.size === 0) return;
-
-  const assignments = Array.from(
-    new Set((depRows ?? []).map((d) => d.payer_key)),
-  ).map((payerKey) => ({
-    payer_key: payerKey,
-    tenancy_id: tenancyByKey.get(payerKey) ?? null,
-  }));
-
-  // The function post-dates generated Supabase types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).rpc(
-    "replace_reconciliation_snapshot",
-    {
-      p_run_id: runId,
-      p_matches: matches,
-      p_deposit_assignments: assignments,
-      p_unmatched: unmatched,
-      p_total_expected: totals.totalExpected,
-      p_total_actual: totals.totalActual,
-      p_match_count: totals.matchCount,
-      p_mismatch_count: totals.mismatchCount,
-      p_missing_count: totals.missingCount,
-      p_post_payments: Boolean(run.posted_at),
-    },
-  );
-  if (error) throw new Error(`Failed to rewrite matches: ${error.message}`);
+  return { deposits: out, duplicates };
 }

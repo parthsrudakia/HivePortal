@@ -9,7 +9,7 @@ import {
   recordPayment,
   type ChargeFormState,
   type PaymentFormState,
-} from "../../tenants/actions";
+} from "../tenants/actions";
 
 /**
  * Row-level quick action on the recon run table (mismatch / missing rows):
