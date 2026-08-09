@@ -140,6 +140,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   };
   type ActiveTenancyRow = {
     id: string;
+    status: "active" | "ended";
     monthly_rent: number;
     tenants: { full_name: string } | { full_name: string }[] | null;
     rooms:
@@ -199,15 +200,17 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       .select("id, raw_description, amount, deposit_date, suspect_payment_id")
       .is("resolved_at", null)
       .order("created_at"),
+    // Ended tenancies stay assignable — a late payment or a prepayment can
+    // belong to a past tenant. The bulk form below filters back to active.
     supabase
       .from("tenancies")
       .select(
-        `id, monthly_rent,
+        `id, status, monthly_rent,
          tenants(full_name),
          rooms(room_number, properties(building_name, street_address, unit_number)),
          payments(amount, paid_on, payment_type)`,
       )
-      .eq("status", "active")
+      .in("status", ["active", "ended"])
       .returns<ActiveTenancyRow[]>(),
     fetchLedgerSidecars(supabase),
   ]);
@@ -344,7 +347,8 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       : null,
   }));
 
-  // Assign options + bulk-payment tenants share the active-tenancies query.
+  // Assign options + bulk-payment tenants share the tenancies query. Current
+  // tenants list first; past tenants follow, flagged "ended".
   const assignTenants: AssignTenantOption[] = (activeTenancyData ?? [])
     .map((t) => {
       const tenant = one(t.tenants);
@@ -356,11 +360,19 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       const parts = [tenant?.full_name ?? "—", unit, room?.room_number ?? ""]
         .filter(Boolean)
         .join(" · ");
-      return { tenancyId: t.id, label: parts };
+      return {
+        tenancyId: t.id,
+        label: t.status === "ended" ? `${parts} · ended` : parts,
+        ended: t.status === "ended",
+      };
     })
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort(
+      (a, b) =>
+        Number(a.ended) - Number(b.ended) || a.label.localeCompare(b.label),
+    );
 
   const bulkTenants: BulkTenant[] = (activeTenancyData ?? [])
+    .filter((t) => t.status === "active")
     .map((t) => {
       const tenant = one(t.tenants);
       const room = one(t.rooms);

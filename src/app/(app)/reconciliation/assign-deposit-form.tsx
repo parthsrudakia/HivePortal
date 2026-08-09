@@ -9,7 +9,12 @@ import {
   ignoreUnmatchedPayer,
 } from "./actions";
 
-export type AssignTenantOption = { tenancyId: string; label: string };
+export type AssignTenantOption = {
+  tenancyId: string;
+  label: string;
+  /** Past tenant — assignable (late payments, prepayments), shown muted. */
+  ended?: boolean;
+};
 
 function fmtMoney(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -231,9 +236,11 @@ export function AssignDepositForm({
                     aria-selected={i === activeIndex}
                     onClick={() => pick(t)}
                     onMouseEnter={() => setActiveIndex(i)}
-                    className={`block w-full truncate px-2 py-1.5 text-left text-sm text-ink ${
-                      i === activeIndex ? "bg-cream" : ""
-                    } ${t.tenancyId === tenancyId ? "font-medium" : ""}`}
+                    className={`block w-full truncate px-2 py-1.5 text-left text-sm ${
+                      t.ended ? "text-muted" : "text-ink"
+                    } ${i === activeIndex ? "bg-cream" : ""} ${
+                      t.tenancyId === tenancyId ? "font-medium" : ""
+                    }`}
                   >
                     {t.label}
                   </button>
