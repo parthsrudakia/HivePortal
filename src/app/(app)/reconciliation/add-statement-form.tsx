@@ -41,12 +41,6 @@ export function AddStatementForm({
 
   return (
     <div className="relative flex items-center gap-3">
-      {coversThrough && (
-        <p className="whitespace-nowrap text-xs text-muted">
-          Last statement covers till{" "}
-          <span className="font-medium text-ink">{fmtDate(coversThrough)}</span>
-        </p>
-      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -55,6 +49,12 @@ export function AddStatementForm({
       >
         {open ? "× Cancel" : "+ Add statement"}
       </button>
+      {coversThrough && (
+        <p className="whitespace-nowrap text-xs text-muted">
+          Last statement covers till{" "}
+          <span className="font-medium text-ink">{fmtDate(coversThrough)}</span>
+        </p>
+      )}
       {open && (
         <form
           ref={formRef}
