@@ -9,12 +9,6 @@ function fmtDate(s: string) {
   return y && m && d ? `${m}/${d}/${y}` : s;
 }
 
-function nextDay(s: string): string {
-  const d = new Date(`${s}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
 /**
  * "Add statement" disclosure: upload the next bank export (overlapping is
  * fine — known transactions are skipped) and matched deposits post to tenant
@@ -46,7 +40,13 @@ export function AddStatementForm({
   );
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center gap-3">
+      {coversThrough && (
+        <p className="whitespace-nowrap text-xs text-muted">
+          Last statement covers till{" "}
+          <span className="font-medium text-ink">{fmtDate(coversThrough)}</span>
+        </p>
+      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -62,16 +62,8 @@ export function AddStatementForm({
           className="absolute right-0 top-full z-30 mt-2 flex w-80 flex-col gap-3 rounded-2xl bg-white p-4 shadow-lg ring-1 ring-stone/40"
         >
           <p className="text-xs text-muted">
-            {coversThrough ? (
-              <>
-                Last statement covers through{" "}
-                <strong className="text-ink">{fmtDate(coversThrough)}</strong> —
-                export your bank history from {fmtDate(nextDay(coversThrough))}{" "}
-                onward. Overlap is fine: known transactions are skipped.
-              </>
-            ) : (
-              "Upload a bank export. Matched deposits post to tenant ledgers immediately."
-            )}
+            Upload a bank export. Matched deposits post to tenant ledgers
+            immediately. Overlap is fine: known transactions are skipped.
           </p>
           <input
             type="file"
