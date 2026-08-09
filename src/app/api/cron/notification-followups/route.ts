@@ -6,7 +6,8 @@
  *   2. send due 45-day lease-ending heads-ups,
  *   3. roll the 35-day cleaning cadence forward,
  *   4. roll board recurring cycles + email deadline reminders,
- *   5. apply the monthly $50 late fees (first run on/after the 7th ET).
+ *   5. apply the monthly $50 late fees (first run on/after the 7th ET),
+ *   6. auto-dismiss duplicate signing requests (same person, within 15 days).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -17,6 +18,7 @@ import { flushEmailQueue } from "@/lib/resend-quota";
 import { processBoardDeadlines } from "@/lib/board";
 import { applyMonthlyLateFees } from "@/lib/late-fees";
 import { processExpiredTenancies } from "@/lib/tenancy-lifecycle";
+import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -76,6 +78,15 @@ export async function GET(req: NextRequest) {
     error: e instanceof Error ? e.message : "late fees failed",
   }));
 
+  // Dismiss superseded duplicate signing requests so the agreements tally
+  // only shows one live agreement per person per 15-day window.
+  const agreementDedupe = await dedupeAgreementRequests(supabase).catch(
+    (e) => ({
+      dismissed: [],
+      error: e instanceof Error ? e.message : "agreement dedupe failed",
+    }),
+  );
+
   return NextResponse.json({
     tenancyLifecycle,
     lease,
@@ -83,5 +94,6 @@ export async function GET(req: NextRequest) {
     flush,
     board,
     lateFees,
+    agreementDedupe,
   });
 }
