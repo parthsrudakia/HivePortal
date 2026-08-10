@@ -23,6 +23,7 @@ export function DevelopersTabs({
   // hash, so the initial state must be deterministic to avoid a hydration
   // mismatch).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync from the URL hash, which the server render cannot see
     if (window.location.hash === "#inventory") setTab("inventory");
   }, []);
 
