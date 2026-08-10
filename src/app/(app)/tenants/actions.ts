@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { isValid, zUuid, zUuidArray } from "@/lib/validation";
 import { getSessionUser } from "@/lib/session";
 import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
@@ -51,6 +53,9 @@ const VALID_CHARGE_KINDS = [
   "other",
 ] as const;
 type ChargeKind = (typeof VALID_CHARGE_KINDS)[number];
+
+// Date-only strings (YYYY-MM-DD) headed for date columns / date comparisons.
+const zIsoDate = z.iso.date();
 
 export type TenantFormState = { error?: string } | undefined;
 export type PaymentFormState = { error?: string } | undefined;
@@ -107,6 +112,22 @@ export async function createTenant(
       return { error: "Monthly rent must be a number greater than 0." };
     if (!start_date)
       return { error: "Start date is required when assigning a room." };
+  }
+
+  if (room_id && !isValid(zUuid, room_id))
+    return { error: "Invalid room id." };
+  if (agreement_request_id && !isValid(zUuid, agreement_request_id))
+    return { error: "Invalid agreement request id." };
+  if (start_date && !isValid(zIsoDate, start_date))
+    return { error: "Start date must be YYYY-MM-DD." };
+  if (lease_end_date && !isValid(zIsoDate, lease_end_date))
+    return { error: "Lease end date must be YYYY-MM-DD." };
+  // Checked before anything is inserted: a NaN deposit would otherwise land
+  // in the tenancy row (Postgres numeric accepts NaN).
+  if (security_deposit_str) {
+    const dep = Number(security_deposit_str);
+    if (!Number.isFinite(dep) || dep < 0)
+      return { error: "Security deposit must be a non-negative number." };
   }
 
   // If a lease was provided but no room, the file would be orphaned.
@@ -280,8 +301,7 @@ export async function createTenant(
     // metadata. Post the matching charge dated at move-in; future-dated rows
     // stay out of the running balance until that date.
     if (security_deposit !== null && security_deposit > 0 && tenancy) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: depositError } = await (supabase as any)
+      const { error: depositError } = await supabase
         .from("tenancy_charges")
         .insert({
           tenancy_id: tenancy.id,
@@ -335,6 +355,7 @@ export async function createTenant(
 export async function getLeaseDownloadUrl(
   tenancyId: string,
 ): Promise<{ url?: string; error?: string }> {
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
   const supabase = await createClient();
   const { data: tenancy, error } = await supabase
     .from("tenancies")
@@ -390,6 +411,7 @@ export async function updateTenant(
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
+  if (!isValid(zUuid, id)) return { error: "Invalid tenant id." };
   const { error } = await supabase
     .from("tenants")
     .update({
@@ -426,6 +448,11 @@ export async function setTenancyStartDate(
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
+  if (!isValid(zIsoDate, value))
+    return { error: "Lease start date must be YYYY-MM-DD." };
   // The profile shows lease_start_date ?? start_date, so edit whichever is
   // currently displayed. Before any renewal that's start_date (the move-in,
   // which also anchors ledger accrual — pre-renewal they're the same lease);
@@ -503,6 +530,16 @@ export async function setTenancyRentAmount(
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
+  if (
+    !isValid(
+      z.enum(["monthly_rent", "first_month_rent", "security_deposit"]),
+      field,
+    )
+  )
+    return { error: "Invalid rent field." };
 
   // The rate-history row and tenancy terms are committed together by the
   // database. A failure cannot leave one updated without the other.
@@ -540,6 +577,11 @@ export async function setTenancyLeaseEndDate(
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
+  if (value !== null && !isValid(zIsoDate, value))
+    return { error: "Lease end date must be YYYY-MM-DD." };
   const { error } = await supabase
     .from("tenancies")
     .update({
@@ -565,6 +607,12 @@ export async function endTenancy(formData: FormData) {
 
   const supabase = await createClient();
   if (await requireLedgerAdmin()) return;
+  if (
+    !isValid(zUuid, tenancy_id) ||
+    !isValid(zIsoDate, move_out_date) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
   const result = await applyMoveOut(supabase, tenancy_id, move_out_date);
   if (result.error) throw new Error(result.error);
 
@@ -586,6 +634,11 @@ export async function setTenancyMoveOutDate(
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
+  if (value !== null && !isValid(zIsoDate, value))
+    return { error: "Move-out date must be YYYY-MM-DD." };
 
   if (value) {
     const result = await applyMoveOut(supabase, tenancyId, value);
@@ -624,6 +677,11 @@ export async function reactivateTenancy(formData: FormData) {
 
   const supabase = await createClient();
   if (await requireLedgerAdmin()) return;
+  if (
+    !isValid(zUuid, tenancy_id) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
 
   const { data: tenancy } = await supabase
     .from("tenancies")
@@ -672,6 +730,7 @@ export async function deleteTenant(formData: FormData) {
   // Deleting a tenant is operator-only; payment history blocks it entirely
   // (payments are on delete RESTRICT — the books outlive the tenant).
   if (await requireLedgerAdmin()) return;
+  if (!isValid(zUuid, id)) return;
 
   // Free up any rooms that were occupied by this tenant
   const { data: rooms } = await supabase
@@ -718,6 +777,7 @@ export async function dismissEndedBalance(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!isValid(zUuid, tenancy_id)) return;
 
   await supabase
     .from("tenancies")
@@ -737,6 +797,7 @@ export async function undismissEndedBalance(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!isValid(zUuid, tenancy_id)) return;
 
   await supabase
     .from("tenancies")
@@ -761,6 +822,7 @@ export async function settleEndedBalance(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!isValid(zUuid, tenancy_id)) return;
 
   const { data: t } = await supabase
     .from("tenancies")
@@ -794,8 +856,7 @@ export async function settleEndedBalance(formData: FormData) {
           minimumFractionDigits: 2,
         })} security deposit applied toward the balance; remainder written off.`
       : "Settled at move-out — balance written off.";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from("tenancy_charges").insert({
+  const { error } = await supabase.from("tenancy_charges").insert({
     tenancy_id,
     kind: "settlement",
     amount: netBalance,
@@ -850,6 +911,9 @@ export async function recordPayment(
   if (payment_type === "refund" && !canEditLedger(user.email)) {
     return { error: LEDGER_ADMIN_ERROR };
   }
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
   const { error } = await supabase.from("payments").insert({
     tenancy_id: tenancyId,
     paid_on,
@@ -874,6 +938,11 @@ export async function deletePayment(formData: FormData) {
 
   const supabase = await createClient();
   if (await requireLedgerAdmin()) return;
+  if (
+    !isValid(zUuid, payment_id) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
   await supabase.from("payments").delete().eq("id", payment_id);
 
   revalidatePath("/tenants");
@@ -908,8 +977,10 @@ export async function addCharge(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  if (tenantId && !isValid(zUuid, tenantId))
+    return { error: "Invalid tenant id." };
+  const { error } = await supabase
     .from("tenancy_charges")
     .insert({
       tenancy_id: tenancyId,
@@ -938,8 +1009,8 @@ export async function acknowledgeOverageAlerts(ids: string[]) {
   const user = await getSessionUser();
   // The popup is operator-facing; only the ledger admins may dismiss it.
   if (!canEditLedger(user?.email)) return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  if (!isValid(zUuidArray, ids)) return;
+  await supabase
     .from("utility_overage_alerts")
     .update({ acknowledged_at: new Date().toISOString() })
     .in("id", ids);
@@ -959,8 +1030,12 @@ export async function deleteCharge(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from("tenancy_charges").delete().in("id", ids);
+  if (
+    !isValid(zUuidArray, ids) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
+  await supabase.from("tenancy_charges").delete().in("id", ids);
 
   revalidatePath("/tenants");
   if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
@@ -984,6 +1059,9 @@ export async function sendBalanceReminders(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  // An unknown channel would send nothing yet still log a batch row.
+  if (!isValid(z.enum(["email", "sms", "both"]), channel))
+    return { error: "Invalid channel." };
 
   const now = new Date();
   const y = now.getFullYear();
@@ -1129,8 +1207,7 @@ export async function sendBalanceReminders(
   }
 
   // Record the batch so the page can show when balance reminders last ran.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from("rent_reminder_batches").insert({
+  await supabase.from("rent_reminder_batches").insert({
     kind: "balance",
     channel: doEmail && doSms ? "both" : doEmail ? "email" : "sms",
     period_month: period,
@@ -1171,6 +1248,11 @@ export async function pauseTenancy(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (
+    !isValid(zUuid, tenancy_id) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
 
   const { error } = await supabase
     .from("tenancies")
@@ -1191,6 +1273,11 @@ export async function resumeTenancy(formData: FormData) {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (
+    !isValid(zUuid, tenancy_id) ||
+    (tenant_id !== "" && !isValid(zUuid, tenant_id))
+  )
+    return;
 
   const { error } = await supabase
     .from("tenancies")

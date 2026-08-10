@@ -21,6 +21,7 @@ import {
   assignSyntheticOrdinals,
 } from "@/lib/reconciliation/matching";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isValid, zUuid } from "@/lib/validation";
 
 // Store a statement's negative Zelle rows (chargebacks) as reversal alerts,
 // each matched to its best-guess original payment: the most recent posted
@@ -207,8 +208,7 @@ export async function addStatement(
     }
     uploadedPaths.push(path);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any).rpc(
+    const { data, error } = await supabase.rpc(
       "ingest_reconciliation_statement",
       {
         p_statement: {
@@ -317,6 +317,9 @@ export async function assignDeposit(
   if (!depositId || !tenancyId) {
     return { error: "Pick a tenant to assign this deposit to." };
   }
+  if (!isValid(zUuid, depositId) || !isValid(zUuid, tenancyId)) {
+    return { error: "Invalid deposit or tenant id." };
+  }
 
   const supabase = await createClient();
   // Posts money into a tenant ledger and permanently maps the payer —
@@ -351,8 +354,7 @@ export async function assignDeposit(
   const alias = dep.raw_description
     ? bankPayerNameDisplay(dep.raw_description)
     : dep.payer_key;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: upErr } = await (supabase as any)
+  const { error: upErr } = await supabase
     .from("tenant_payer_aliases")
     .upsert(
       { tenant_id: ten.tenant_id, payer_key: dep.payer_key, display_name: alias },
@@ -386,8 +388,7 @@ export async function assignDeposit(
 
   let postedCount = 0;
   for (const id of toPost) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).rpc("post_reconciliation_deposit", {
+    const { error } = await supabase.rpc("post_reconciliation_deposit", {
       p_deposit_id: id,
       p_tenancy_id: tenancyId,
     });
@@ -425,6 +426,7 @@ export async function dismissDeposit(
 ): Promise<DismissState> {
   const depositId = String(formData.get("deposit_id") ?? "");
   if (!depositId) return { error: "Missing deposit." };
+  if (!isValid(zUuid, depositId)) return { error: "Invalid deposit id." };
 
   const supabase = await createClient();
   const user = await getSessionUser();
@@ -433,9 +435,7 @@ export async function dismissDeposit(
   // The payment_id guard backs up the DB check constraint: a posted deposit
   // can't be dismissed (delete its payment from the tenant ledger instead —
   // that automatically returns the deposit to the unassigned list).
-  // Cast: dismissed_at/dismissed_by post-date the generated types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("reconciliation_deposits")
     .update({ dismissed_at: new Date().toISOString(), dismissed_by: user?.email ?? null })
     .eq("id", depositId)
@@ -455,14 +455,13 @@ export async function restoreDeposit(
 ): Promise<DismissState> {
   const depositId = String(formData.get("deposit_id") ?? "");
   if (!depositId) return { error: "Missing deposit." };
+  if (!isValid(zUuid, depositId)) return { error: "Invalid deposit id." };
 
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
 
-  // Cast: dismissed_at/dismissed_by post-date the generated types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("reconciliation_deposits")
     .update({ dismissed_at: null, dismissed_by: null })
     .eq("id", depositId);
@@ -514,8 +513,11 @@ export async function recordManualPayments(
     if (!raw) continue;
     const amount = Number(raw);
     if (!Number.isFinite(amount) || amount <= 0) continue;
+    const tenancyId = key.slice("amount:".length);
+    if (!isValid(zUuid, tenancyId))
+      return { error: "A payment row has an invalid tenancy id." };
     rows.push({
-      tenancy_id: key.slice("amount:".length),
+      tenancy_id: tenancyId,
       paid_on,
       amount,
       payment_type: "rent",
@@ -616,7 +618,7 @@ export async function resolveReversal(
 ): Promise<ReversalState> {
   const id = String(formData.get("id") ?? "");
   const mode = String(formData.get("mode") ?? "");
-  if (!id || (mode !== "refund" && mode !== "dismiss")) {
+  if (!isValid(zUuid, id) || (mode !== "refund" && mode !== "dismiss")) {
     return { error: "Invalid reversal action." };
   }
 
@@ -626,8 +628,7 @@ export async function resolveReversal(
 
   // The refund payment and alert resolution commit together. The database
   // also verifies any pre-existing external_ref matches amount/date/type.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc(
+  const { data, error } = await supabase.rpc(
     "resolve_reconciliation_reversal",
     {
       p_reversal_id: id,

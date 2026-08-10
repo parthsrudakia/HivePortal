@@ -2,7 +2,9 @@
 
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { isValid, zUuid, zUuidArray } from "@/lib/validation";
 import { getSessionUser } from "@/lib/session";
 import {
   extractUtilityBill,
@@ -82,8 +84,7 @@ export async function uploadStatement(
   // before extraction so a re-drop doesn't burn an extraction call.
   const fileHash = createHash("sha256").update(buf).digest("hex");
   {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: dup } = await (sb as any)
+    const { data: dup } = await sb
       .from("utility_bills")
       .select("id, provider, statement_date")
       .eq("file_sha256", fileHash)
@@ -125,8 +126,7 @@ export async function uploadStatement(
   const keys = hintKeys(extracted);
   let learned = false;
   if (keys.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: hints } = await (sb as any)
+    const { data: hints } = await sb
       .from("utility_unit_hints")
       .select("key, property_id")
       .in("key", keys);
@@ -168,9 +168,14 @@ export async function uploadStatement(
       return ms / 86_400_000;
     };
     const acct = extracted.account_number?.replace(/\D/g, "") || null;
-    if (acct && (extracted.period_start || extracted.statement_date)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q = (sb as any)
+    // Without a full billing period or a statement date there is nothing to
+    // key the duplicate check on — skip it rather than query on null.
+    if (
+      acct &&
+      ((extracted.period_start && extracted.period_end) ||
+        extracted.statement_date)
+    ) {
+      let q = sb
         .from("utility_bills")
         .select(
           "id, account_number, provider, utility_type, period_start, period_end",
@@ -179,7 +184,7 @@ export async function uploadStatement(
         q = q
           .lt("period_start", extracted.period_end)
           .gt("period_end", extracted.period_start);
-      } else {
+      } else if (extracted.statement_date) {
         q = q.eq("statement_date", extracted.statement_date);
       }
       const { data: candidates } = await q;
@@ -241,8 +246,7 @@ export async function uploadStatement(
   const total =
     Math.round(extracted.charges.reduce((s, c) => s + c.amount, 0) * 100) /
     100;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill, error: insErr } = await (sb as any)
+  const { data: bill, error: insErr } = await sb
     .from("utility_bills")
     .insert({
       property_id: extracted.property_id,
@@ -265,8 +269,7 @@ export async function uploadStatement(
     return { error: insErr.message };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: chErr } = await (sb as any).from("utility_bill_charges").insert(
+  const { error: chErr } = await sb.from("utility_bill_charges").insert(
     extracted.charges.map((c) => ({
       bill_id: bill.id,
       kind: c.kind,
@@ -278,8 +281,7 @@ export async function uploadStatement(
     // Don't strand a bill with a total but no charge rows: it would show in
     // the log yet never trip the over-$200 check, and its file hash would
     // block re-uploading the statement.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (sb as any).from("utility_bills").delete().eq("id", bill.id);
+    await sb.from("utility_bills").delete().eq("id", bill.id);
     await sb.storage.from("utilities").remove([path]);
     return { error: chErr.message };
   }
@@ -323,7 +325,12 @@ const MANUAL_TYPES = new Set([
 
 const MAX_MANUAL_CYCLES = 24;
 
-type ManualCharge = { kind: string; description: string; amount: number };
+const ManualChargeSchema = z.object({
+  kind: z.enum(["current", "late_fee", "other"]),
+  description: z.string(),
+  amount: z.number().finite(),
+});
+type ManualCharge = z.infer<typeof ManualChargeSchema>;
 
 export type ManualPrefill = {
   property_id: string | null;
@@ -385,8 +392,7 @@ export async function previewManualBill(
   const buf = Buffer.from(await screenshot.arrayBuffer());
   const fileHash = createHash("sha256").update(buf).digest("hex");
   {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: dup } = await (supabase as any)
+    const { data: dup } = await supabase
       .from("utility_bills")
       .select("id")
       .eq("file_sha256", fileHash)
@@ -475,6 +481,7 @@ export async function commitManualBills(
   const file = formData.get("screenshot");
 
   if (!propertyId) return { error: "Pick the unit." };
+  if (!isValid(zUuid, propertyId)) return { error: "Invalid unit id." };
   if (!MANUAL_TYPES.has(utilityType))
     return { error: "Pick the utility type." };
   const problem = screenshotProblem(file);
@@ -519,15 +526,10 @@ export async function commitManualBills(
     try {
       const parsed = JSON.parse(String(formData.get(`charges:${id}`) ?? "[]"));
       if (Array.isArray(parsed)) {
-        charges = parsed.filter(
-          (c): c is ManualCharge =>
-            !!c &&
-            typeof c.kind === "string" &&
-            ["current", "late_fee", "other"].includes(c.kind) &&
-            typeof c.description === "string" &&
-            typeof c.amount === "number" &&
-            Number.isFinite(c.amount),
-        );
+        charges = parsed
+          .map((c) => ManualChargeSchema.safeParse(c))
+          .filter((r) => r.success)
+          .map((r) => r.data);
       }
     } catch {
       charges = [];
@@ -567,8 +569,7 @@ export async function commitManualBills(
   const buf = Buffer.from(await screenshot.arrayBuffer());
   const fileHash = createHash("sha256").update(buf).digest("hex");
   {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: dup } = await (supabase as any)
+    const { data: dup } = await supabase
       .from("utility_bills")
       .select("id")
       .eq("file_sha256", fileHash)
@@ -592,8 +593,7 @@ export async function commitManualBills(
       (m, c) => (c.end > m ? c.end : m),
       cycles[0].end,
     );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: candidates } = await (supabase as any)
+    const { data: candidates } = await supabase
       .from("utility_bills")
       .select("id, provider, period_start, period_end")
       .eq("property_id", propertyId)
@@ -651,8 +651,7 @@ export async function commitManualBills(
   const insertedBillIds: string[] = [];
   const rollback = async () => {
     if (insertedBillIds.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      await supabase
         .from("utility_bills")
         .delete()
         .in("id", insertedBillIds);
@@ -662,8 +661,7 @@ export async function commitManualBills(
 
   for (let i = 0; i < cycles.length; i++) {
     const c = cycles[i];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: bill, error: insErr } = await (supabase as any)
+    const { data: bill, error: insErr } = await supabase
       .from("utility_bills")
       .insert({
         property_id: propertyId,
@@ -710,8 +708,7 @@ export async function commitManualBills(
               amount: c.amount,
             },
           ];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: chErr } = await (supabase as any)
+    const { error: chErr } = await supabase
       .from("utility_bill_charges")
       .insert(chargeRows);
     if (chErr) {
@@ -738,12 +735,13 @@ export async function assignBillProperty(
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
   if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuid, billId) || !isValid(zUuid.nullable(), propertyId))
+    return { error: "Invalid bill or unit id." };
 
   const sb = supabase;
   // A charged bill's ledger charges belong to the current unit's tenants —
   // reassigning it would silently misattribute them.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existing } = await (sb as any)
+  const { data: existing } = await sb
     .from("utility_bills")
     .select("overage_charged_at")
     .eq("id", billId)
@@ -753,8 +751,7 @@ export async function assignBillProperty(
       error:
         "This bill's overage is charged to tenants — unpost it before reassigning the unit.",
     };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill, error } = await (sb as any)
+  const { data: bill, error } = await sb
     .from("utility_bills")
     .update({ property_id: propertyId })
     .eq("id", billId)
@@ -767,15 +764,13 @@ export async function assignBillProperty(
   const keys = bill ? hintKeys(bill) : [];
   if (keys.length > 0) {
     if (propertyId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (sb as any).from("utility_unit_hints").upsert(
+      await sb.from("utility_unit_hints").upsert(
         keys.map((key) => ({ key, property_id: propertyId })),
         { onConflict: "key" },
       );
     } else {
       // Un-assigning means the learned mapping was wrong — forget it.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (sb as any).from("utility_unit_hints").delete().in("key", keys);
+      await sb.from("utility_unit_hints").delete().in("key", keys);
     }
   }
   revalidatePath("/utilities");
@@ -787,10 +782,10 @@ export async function deleteBill(billId: string): Promise<UploadState> {
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
   if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   const sb = supabase;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill } = await (sb as any)
+  const { data: bill } = await sb
     .from("utility_bills")
     .select("statement_path, overage_charged_at")
     .eq("id", billId)
@@ -803,8 +798,7 @@ export async function deleteBill(billId: string): Promise<UploadState> {
       error:
         "This bill's overage is charged to tenants — unpost it before deleting the bill.",
     };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (sb as any).from("utility_bills").delete().eq("id", billId);
+  const { error } = await sb.from("utility_bills").delete().eq("id", billId);
   if (error) return { error: error.message };
   if (bill?.statement_path) {
     await sb.storage.from("utilities").remove([bill.statement_path]);
@@ -823,10 +817,10 @@ export async function dismissOverage(
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
   if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuidArray, billIds)) return { error: "Invalid bill ids." };
   if (billIds.length === 0) return undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("utility_bills")
     .update({ overage_dismissed: dismissed })
     .in("id", billIds);
@@ -910,8 +904,7 @@ async function computeOverageSplit(
     result: { ...result, error },
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill, error: billErr } = await (sb as any)
+  const { data: bill, error: billErr } = await sb
     .from("utility_bills")
     .select("*, utility_bill_charges(id, kind, description, amount)")
     .eq("id", billId)
@@ -1100,8 +1093,7 @@ async function chargeOverageCore(
   // the same bill (double click, second session, overlapping Charge All)
   // loses the race here instead of double-billing the tenants. The partial
   // unique index tenancy_charges_overage_once is the DB-level backstop.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimed, error: claimErr } = await (sb as any)
+  const { data: claimed, error: claimErr } = await sb
     .from("utility_bills")
     .update({
       overage_charged_at: new Date().toISOString(),
@@ -1116,8 +1108,7 @@ async function chargeOverageCore(
 
   // If a later write fails, put the bill back exactly as it was.
   const releaseClaim = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (sb as any)
+    await sb
       .from("utility_bills")
       .update({
         overage_charged_at: null,
@@ -1130,8 +1121,7 @@ async function chargeOverageCore(
   // included; their ended tenancy's ledger carries the balance.
   const allCharged = [...charged, ...movedOut];
   if (allCharged.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (sb as any).from("tenancy_charges").insert(
+    const { error } = await sb.from("tenancy_charges").insert(
       allCharged.map((c) => ({
         tenancy_id: c.tenancyId,
         kind: "utility_overage",
@@ -1148,8 +1138,7 @@ async function chargeOverageCore(
   }
 
   if (movedOut.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (sb as any).from("utility_overage_alerts").insert(
+    const { error } = await sb.from("utility_overage_alerts").insert(
       movedOut.map((m) => ({
         bill_id: b.id,
         tenancy_id: m.tenancyId,
@@ -1161,8 +1150,7 @@ async function chargeOverageCore(
     );
     if (error) {
       // Roll the whole run back: charges out, claim released.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (sb as any)
+      await sb
         .from("tenancy_charges")
         .delete()
         .eq("bill_id", b.id)
@@ -1316,6 +1304,7 @@ export async function previewOverage(billId: string): Promise<OveragePreview> {
   const user = await getSessionUser();
   if (!user) return { ...empty, error: "Not signed in." };
   if (!canEditLedger(user.email)) return { ...empty, error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuid, billId)) return { ...empty, error: "Invalid bill id." };
 
   const split = await computeOverageSplit(supabase, billId);
   if (!split.ok)
@@ -1348,6 +1337,10 @@ export async function previewOverage(billId: string): Promise<OveragePreview> {
   };
 }
 
+const SharesSchema = z
+  .array(z.object({ tenancyId: z.uuid(), amount: z.number().nonnegative() }))
+  .optional();
+
 export async function chargeOverage(
   billId: string,
   /** Operator-edited shares from the preview popup; omit to use the split. */
@@ -1358,6 +1351,8 @@ export async function chargeOverage(
   if (!user) return deniedResult(billId, "Not signed in.");
   if (!canEditLedger(user.email))
     return deniedResult(billId, LEDGER_ADMIN_ERROR);
+  if (!isValid(zUuid, billId) || !isValid(SharesSchema, shares))
+    return deniedResult(billId, "Invalid charge input.");
 
   const result = await chargeOverageCore(supabase, billId, shares);
   revalidatePath("/utilities");
@@ -1379,6 +1374,8 @@ export async function chargeAllOverages(
   if (!user) return billIds.map((id) => deniedResult(id, "Not signed in."));
   if (!canEditLedger(user.email))
     return billIds.map((id) => deniedResult(id, LEDGER_ADMIN_ERROR));
+  if (!isValid(zUuidArray, billIds))
+    return billIds.map((id) => deniedResult(id, "Invalid bill id."));
 
   const sb = supabase;
   const results: OverageChargeResult[] = [];
@@ -1400,10 +1397,10 @@ export async function unpostOverage(billId: string): Promise<UploadState> {
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
   if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   const sb = supabase;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill } = await (sb as any)
+  const { data: bill } = await sb
     .from("utility_bills")
     .select("id, overage_charged_at")
     .eq("id", billId)
@@ -1412,19 +1409,16 @@ export async function unpostOverage(billId: string): Promise<UploadState> {
   if (!bill.overage_charged_at)
     return { error: "This bill's overage hasn't been charged." };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: chErr } = await (sb as any)
+  const { error: chErr } = await sb
     .from("tenancy_charges")
     .delete()
     .eq("bill_id", billId)
     .eq("kind", "utility_overage");
   if (chErr) return { error: chErr.message };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (sb as any).from("utility_overage_alerts").delete().eq("bill_id", billId);
+  await sb.from("utility_overage_alerts").delete().eq("bill_id", billId);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: billErr } = await (sb as any)
+  const { error: billErr } = await sb
     .from("utility_bills")
     .update({ overage_charged_at: null, overage_dismissed: false })
     .eq("id", billId);
@@ -1444,12 +1438,12 @@ export async function getStatementUrl(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
+  if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   // Session client so the read and signed URL honor RLS if it's ever
   // tightened per-property.
   const sb = supabase;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bill, error } = await (sb as any)
+  const { data: bill, error } = await sb
     .from("utility_bills")
     .select("statement_path")
     .eq("id", billId)
