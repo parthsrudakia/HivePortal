@@ -96,9 +96,8 @@ export async function GET(request: Request) {
     .eq("pending_tenant", false)
     .returns<Omit<Row, "ads">[]>();
 
-  // Attach each room's ads (room_ads post-dates the generated types).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: adRowsData } = await (supabase as any)
+  // Attach each room's ads.
+  const { data: adRowsData } = await supabase
     .from("room_ads")
     .select("room_id, url, posted_by")
     .order("created_at", { ascending: true });

@@ -48,8 +48,7 @@ export async function addRecipient(
   }
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("notification_recipients")
     .insert({ email, label, enabled: true });
   if (error) return { error: error.message };
@@ -65,8 +64,7 @@ export async function toggleRecipient(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  await supabase
     .from("notification_recipients")
     .update({ enabled: !enabled })
     .eq("id", id);
@@ -80,8 +78,7 @@ export async function deleteRecipient(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  await supabase
     .from("notification_recipients")
     .delete()
     .eq("id", id);

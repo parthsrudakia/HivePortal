@@ -104,27 +104,25 @@ export async function GET(
     return new NextResponse("No tenancy to export", { status: 400 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
   const [chargeRes, allocRes, rentHistRes] = await Promise.all([
-    sb
+    supabase
       .from("tenancy_charges")
       .select("id, kind, amount, charged_on, note")
       .eq("tenancy_id", active.id)
       .order("charged_on", { ascending: false }),
-    sb
+    supabase
       .from("credit_allocations")
       .select("id, kind, amount, note, created_at")
       .eq("tenancy_id", active.id)
       .order("created_at", { ascending: false }),
-    sb
+    supabase
       .from("tenancy_rent_history")
       .select("effective_month, monthly_rent")
       .eq("tenancy_id", active.id),
   ]);
-  const charges = (chargeRes.data ?? []) as Charge[];
-  const allocations = (allocRes.data ?? []) as Allocation[];
-  const rentChanges = (rentHistRes.data ?? []) as RentChange[];
+  const charges: Charge[] = chargeRes.data ?? [];
+  const allocations: Allocation[] = allocRes.data ?? [];
+  const rentChanges: RentChange[] = rentHistRes.data ?? [];
   const activePayments = (payments ?? []).filter((p) => p.tenancy_id === active.id);
 
   const ledger = computeLedger(

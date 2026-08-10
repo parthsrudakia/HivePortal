@@ -112,16 +112,13 @@ type CollectionPayment = {
 };
 
 // Attach each tenancy's rent-rate history so dueForMonth can bill past months
-// at the rate in effect back then. Accessed via `as any` because the table
-// post-dates the generated types (same pattern as rent-data.ts).
+// at the rate in effect back then (same pattern as rent-data.ts).
 async function withRentChanges(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenancies: RawTenancy[],
 ): Promise<TenancyForMonth[]> {
   if (tenancies.length === 0) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
-  const { data: histRows } = await sb
+  const { data: histRows } = await supabase
     .from("tenancy_rent_history")
     .select("tenancy_id, effective_month, monthly_rent")
     .in("tenancy_id", tenancies.map((t) => t.id));

@@ -12,6 +12,7 @@
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./supabase/types";
 import { sendViaResend } from "./resend-quota";
 import { isMaster } from "./access";
 import { todayISO } from "./date";
@@ -53,7 +54,7 @@ export type BoardMember = {
 export function boardAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -236,13 +237,12 @@ function addDaysISO(iso: string, days: number): string {
  * cron runs once per day.
  */
 export async function processBoardDeadlines(
-  sb: SupabaseClient,
+  sb: SupabaseClient<Database>,
 ): Promise<{ rolled: number; remindersSent: number }> {
   const today = todayISO();
   const tomorrow = addDaysISO(today, 1);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tasksTable = () => (sb as any).from("board_tasks");
+  const tasksTable = () => sb.from("board_tasks");
 
   // 1. Roll expired recurring cycles.
   const { data: expired } = await tasksTable()
@@ -252,7 +252,8 @@ export async function processBoardDeadlines(
     .neq("status", "pending_review");
   let rolled = 0;
   for (const t of expired ?? []) {
-    const cycleMonth = String(t.deadline).slice(0, 7);
+    if (!t.deadline) continue; // .lt("deadline", …) already excludes nulls
+    const cycleMonth = t.deadline.slice(0, 7);
     const missed: string[] = t.missed_months ?? [];
     const wasCompleted = t.last_completed_month === cycleMonth;
     const newMissed =

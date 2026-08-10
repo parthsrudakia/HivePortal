@@ -130,9 +130,6 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   const windowStart = addDaysISO(start, -6);
   const cycle = currentRentCycle();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
-
   type PropRel = {
     building_name: string | null;
     street_address: string;
@@ -178,13 +175,13 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       .lte("paid_on", end),
     // Every deposit not yet in the ledger: the unassigned list (dismissed
     // ones included — they render in the collapsed sub-list).
-    sb
+    supabase
       .from("reconciliation_deposits")
       .select("id, payer_key, raw_description, amount, deposit_date, dismissed_at")
       .is("payment_id", null)
       .order("deposit_date", { ascending: false })
       .order("created_at", { ascending: false }),
-    sb
+    supabase
       .from("reconciliation_statements")
       .select("max_deposit_date, created_at")
       .eq("source", "bank")

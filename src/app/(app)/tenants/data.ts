@@ -113,8 +113,7 @@ export const getUpcomingTenancies = cache(async () => {
 // Utility-overage shares that hit already-moved-out tenants (admin-only UI).
 export const getOverageAlerts = cache(async () => {
   const supabase = await getCachedClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (supabase as any)
+  return supabase
     .from("utility_overage_alerts")
     .select("id, tenant_name, unit_label, amount, period_label")
     .is("acknowledged_at", null)

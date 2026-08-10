@@ -160,10 +160,9 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       .is("properties.archived_at", null)
       .order("available_from", { ascending: true, nullsFirst: true })
       .returns<Omit<Row, "ads">[]>(),
-    // All ads across every room (room_ads post-dates the generated types). Used
-    // both to attach each room's ads and to tally ads-per-poster below.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    // All ads across every room — used both to attach each room's ads and to
+    // tally ads-per-poster below.
+    supabase
       .from("room_ads")
       .select("id, room_id, url, posted_by")
       .order("created_at", { ascending: true }),

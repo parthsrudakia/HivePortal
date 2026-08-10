@@ -115,11 +115,9 @@ export const getAllPayments = cache(async () => {
     .select("tenancy_id, amount, paid_on, payment_type");
 });
 
-// room_ads post-dates the generated types — query it untyped.
 export const getRoomAds = cache(async () => {
   const supabase = await getCachedClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (supabase as any).from("room_ads").select("room_id, posted_by");
+  return supabase.from("room_ads").select("room_id, posted_by");
 });
 
 export const getDashSidecars = cache(async () =>

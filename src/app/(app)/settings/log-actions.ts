@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { getSessionUser } from "@/lib/session";
 import { isMaster } from "@/lib/access";
 
@@ -10,7 +11,7 @@ type Result = { ok: true; deleted: number } | { error: string };
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -29,8 +30,7 @@ async function clearTable(
   const denied = await requireMaster();
   if (denied) return { error: denied };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error, count } = await (admin() as any)
+  const { error, count } = await admin()
     .from(table)
     .delete({ count: "exact" })
     .not("id", "is", null);

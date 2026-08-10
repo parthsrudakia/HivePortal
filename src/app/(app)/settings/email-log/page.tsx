@@ -67,9 +67,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
   const statusFilter =
     sp.status === "sent" || sp.status === "failed" ? sp.status : null;
 
-  // email_log is new; types.ts is regenerated after the migration push.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
+  let query = supabase
     .from("email_log")
     .select("id, type, recipient, subject, status, error, context, created_at")
     .order("created_at", { ascending: false })
@@ -82,8 +80,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
   // the migration is applied, so these read as 0 until db:push.
   const [usage, backlogRes, { data, error }] = await Promise.all([
     resendUsage(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from("email_queue")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),

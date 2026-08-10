@@ -13,8 +13,7 @@ export default async function NewPropertyPage() {
       .select("name")
       .eq("active", true)
       .order("name"),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from("cleaners")
       .select("id, name, email")
       .eq("enabled", true)

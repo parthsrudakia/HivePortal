@@ -68,9 +68,7 @@ export default async function SmsLogPage({ searchParams }: PageProps) {
       ? sp.status
       : null;
 
-  // sms_log is new; types.ts isn't regenerated, so cast through any.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
+  let query = supabase
     .from("sms_log")
     .select("id, type, recipient, body, status, error, context, created_at")
     .order("created_at", { ascending: false })

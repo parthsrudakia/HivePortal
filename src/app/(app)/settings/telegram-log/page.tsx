@@ -144,9 +144,7 @@ export default async function TelegramLogPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const failedOnly = sp.failed === "1";
 
-  // telegram_activity_log post-dates the generated types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("telegram_activity_log")
     .select(
       "id, turn_id, chat_id, telegram_user_id, username, kind, tool_name, ok, latency_ms, error, text, detail, created_at",

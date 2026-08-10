@@ -178,29 +178,27 @@ export default async function TenantDetailPage({
   let allocations: Allocation[] = [];
   let rentChanges: RentChange[] = [];
   if (ledgerTenancy) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any;
     const [chargeRes, allocRes, rentHistRes] = await Promise.all([
-      sb
+      supabase
         .from("tenancy_charges")
         .select("id, kind, amount, charged_on, note")
         .eq("tenancy_id", ledgerTenancy.id)
         .order("charged_on", { ascending: false }),
       // Legacy credit allocations are no longer created, but existing rows are
       // still fed to computeLedger so historical balances stay consistent.
-      sb
+      supabase
         .from("credit_allocations")
         .select("id, kind, amount, note, created_at")
         .eq("tenancy_id", ledgerTenancy.id)
         .order("created_at", { ascending: false }),
-      sb
+      supabase
         .from("tenancy_rent_history")
         .select("effective_month, monthly_rent")
         .eq("tenancy_id", ledgerTenancy.id),
     ]);
-    charges = (chargeRes.data ?? []) as Charge[];
-    allocations = (allocRes.data ?? []) as Allocation[];
-    rentChanges = (rentHistRes.data ?? []) as RentChange[];
+    charges = chargeRes.data ?? [];
+    allocations = allocRes.data ?? [];
+    rentChanges = rentHistRes.data ?? [];
   }
   const activePayments = ledgerTenancy
     ? (payments ?? []).filter((p) => p.tenancy_id === ledgerTenancy.id)

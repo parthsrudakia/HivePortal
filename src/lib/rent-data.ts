@@ -3,9 +3,6 @@
  * groups them by tenancy id, so callers can hand each tenancy's rows to
  * {@link computeLedger}. Both tables are small (a handful of rows per tenancy),
  * so a single fetch of each is cheaper than per-tenancy round-trips.
- *
- * Accessed via `as any` because the two tables post-date the generated
- * Supabase types (same pattern as `rent_reminder_batches`).
  */
 
 import { cache } from "react";
@@ -51,15 +48,13 @@ function groupByTenancy<T extends { tenancy_id: string }>(
 export const fetchLedgerSidecars = cache(async (
   supabase: SupabaseServer,
 ): Promise<LedgerSidecars> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
   const [{ data: charges }, { data: allocations }, { data: rentChanges }] =
     await Promise.all([
-      sb
+      supabase
         .from("tenancy_charges")
         .select("id, tenancy_id, kind, amount, charged_on, note, bill_id"),
-      sb.from("credit_allocations").select("tenancy_id, kind, amount"),
-      sb
+      supabase.from("credit_allocations").select("tenancy_id, kind, amount"),
+      supabase
         .from("tenancy_rent_history")
         .select("tenancy_id, effective_month, monthly_rent"),
     ]);

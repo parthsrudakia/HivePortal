@@ -11,8 +11,7 @@ export default async function ProjectsPage() {
   const sb = boardAdmin();
   const [user, { data }, members] = await Promise.all([
     getSessionUser(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sb as any)
+    sb
       .from("board_tasks")
       .select(
         "*, board_comments(id, author, author_label, text, created_at)",

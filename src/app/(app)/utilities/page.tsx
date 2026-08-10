@@ -1,4 +1,5 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { canEditLedger } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { one } from "@/lib/relations";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export default async function UtilitiesPage() {
-  const sb = createServiceClient(
+  const sb = createServiceClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } },
@@ -23,8 +24,7 @@ export default async function UtilitiesPage() {
       .from("properties")
       .select("id, building_name, street_address, unit_number")
       .order("street_address"),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sb as any)
+    sb
       .from("utility_bills")
       .select("*, utility_bill_charges(id, kind, description, amount)")
       .order("statement_date", { ascending: false, nullsFirst: false })

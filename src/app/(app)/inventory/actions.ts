@@ -82,10 +82,7 @@ export async function addRoomAd(
   const supabase = await createClient();
   const posted_by = await currentPosterName();
 
-  // room_ads post-dates the generated types — access it untyped (project
-  // convention for new tables).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("room_ads")
     .insert({ room_id: roomId, url: ad_url, posted_by });
 
@@ -103,8 +100,7 @@ export async function deleteRoomAd(
   roomId: string,
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("room_ads")
     .delete()
     .eq("id", adId);

@@ -29,10 +29,8 @@ async function caller() {
   return { id: user.id, email: user.email ?? null, name, admin: isMaster(user.email) };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tasks = () => (boardAdmin() as any).from("board_tasks");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const comments = () => (boardAdmin() as any).from("board_comments");
+const tasks = () => boardAdmin().from("board_tasks");
+const comments = () => boardAdmin().from("board_comments");
 
 async function getTask(id: string): Promise<BoardTask> {
   const { data, error } = await tasks().select("*").eq("id", id).single();
@@ -440,8 +438,7 @@ export async function markSeen(taskId: string): Promise<void> {
 export async function setBoardEmailPref(enabled: boolean): Promise<BoardActionState> {
   try {
     const me = await caller();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (boardAdmin() as any)
+    const { error } = await boardAdmin()
       .from("board_prefs")
       .upsert({ user_id: me.id, email_notifications: enabled }, { onConflict: "user_id" });
     if (error) return { error: error.message };

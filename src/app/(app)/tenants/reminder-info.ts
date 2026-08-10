@@ -79,8 +79,7 @@ export async function getReminderInfo(
         .maybeSingle(),
       // Recent balance batches (with channel) — newest first; we pick the
       // latest overall and the latest per channel from this list.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
+      supabase
         .from("rent_reminder_batches")
         .select("created_at, recipient_count, channel")
         .eq("kind", "balance")

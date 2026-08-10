@@ -118,8 +118,7 @@ async function ScheduleSection() {
         .is("paused_at", null)
         .order("street_address", { ascending: true }),
       supabase.from("cleaners").select("id, name"),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
+      supabase
         .from("property_cleaners")
         .select("property_id, cleaner_id"),
     ]);
@@ -193,8 +192,7 @@ async function CleanersSection() {
       .select("id, name, email, phone, enabled, created_at, schedule_token")
       .order("enabled", { ascending: false })
       .order("created_at", { ascending: true }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("property_cleaners").select("cleaner_id"),
+    supabase.from("property_cleaners").select("cleaner_id"),
   ]);
 
   return (

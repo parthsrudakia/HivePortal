@@ -88,9 +88,7 @@ export default async function VacancyDetailPage({ params }: PageProps) {
         .eq("room_id", roomId)
         .order("start_date", { ascending: false })
         .returns<Tenancy[]>(),
-      // room_ads post-dates the generated types — query it untyped.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
+      supabase
         .from("room_ads")
         .select("id, url, posted_by")
         .eq("room_id", roomId)

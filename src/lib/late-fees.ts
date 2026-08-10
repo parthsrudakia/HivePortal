@@ -14,6 +14,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
 import { one } from "@/lib/relations";
@@ -41,7 +42,7 @@ export type LateFeeResult = {
 };
 
 export async function applyMonthlyLateFees(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   today: string = todayISO(),
 ): Promise<LateFeeResult> {
   const period = today.slice(0, 7);
@@ -57,9 +58,7 @@ export async function applyMonthlyLateFees(
   // Claim the month before calculating or inserting anything. The partial
   // unique index makes concurrent cron invocations race safely: exactly one
   // wins, and a failed winner removes its marker so tomorrow can retry.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
-  const { data: claimedBatch, error: claimError } = await sb
+  const { data: claimedBatch, error: claimError } = await supabase
     .from("rent_reminder_batches")
     .insert({
       kind: "late_fee",
@@ -101,7 +100,10 @@ export async function applyMonthlyLateFees(
     .eq("status", "active")
     .returns<TenancyRow[]>();
   if (error) {
-    await sb.from("rent_reminder_batches").delete().eq("id", claimedBatch.id);
+    await supabase
+      .from("rent_reminder_batches")
+      .delete()
+      .eq("id", claimedBatch.id);
     return { ran: false, error: error.message, period };
   }
 
@@ -160,7 +162,7 @@ export async function applyMonthlyLateFees(
     }
 
     const name = one(row.tenants)?.full_name ?? row.id;
-    const { error: insErr } = await sb.from("tenancy_charges").insert({
+    const { error: insErr } = await supabase.from("tenancy_charges").insert({
       tenancy_id: row.id,
       kind: "late_fee",
       amount: LATE_FEE_AMOUNT,
@@ -184,7 +186,7 @@ export async function applyMonthlyLateFees(
   // Finalize the marker only if every insert succeeded. On failure, release
   // the claim; the per-tenancy unique index keeps tomorrow's retry safe.
   if (failures.length === 0) {
-    const { error: markerError } = await sb
+    const { error: markerError } = await supabase
       .from("rent_reminder_batches")
       .update({ recipient_count: chargedCount })
       .eq("id", claimedBatch.id);
@@ -192,7 +194,10 @@ export async function applyMonthlyLateFees(
       return { ran: true, period, charged: chargedCount, error: markerError.message };
     }
   } else {
-    await sb.from("rent_reminder_batches").delete().eq("id", claimedBatch.id);
+    await supabase
+      .from("rent_reminder_batches")
+      .delete()
+      .eq("id", claimedBatch.id);
   }
 
   return {

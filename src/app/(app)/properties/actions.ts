@@ -126,12 +126,12 @@ async function syncPropertyCleaners(
   propertyId: string,
   cleanerIds: string[],
 ) {
-  // property_cleaners is new; types.ts is regenerated after the migration push.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
-  await sb.from("property_cleaners").delete().eq("property_id", propertyId);
+  await supabase
+    .from("property_cleaners")
+    .delete()
+    .eq("property_id", propertyId);
   if (cleanerIds.length > 0) {
-    await sb.from("property_cleaners").insert(
+    await supabase.from("property_cleaners").insert(
       cleanerIds.map((cleaner_id) => ({
         property_id: propertyId,
         cleaner_id,
@@ -299,18 +299,16 @@ export async function deleteProperty(
   // "For the books" = money actually moved. Unpaid charges alone don't count.
   let hasBooks = false;
   if (tenancyIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any;
     const [payments, credits, rentHistory] = await Promise.all([
       supabase
         .from("payments")
         .select("id", { count: "exact", head: true })
         .in("tenancy_id", tenancyIds),
-      sb
+      supabase
         .from("credit_allocations")
         .select("id", { count: "exact", head: true })
         .in("tenancy_id", tenancyIds),
-      sb
+      supabase
         .from("tenancy_rent_history")
         .select("id", { count: "exact", head: true })
         .in("tenancy_id", tenancyIds),
@@ -375,8 +373,7 @@ export async function deleteProperty(
   // that are about to disappear. Clear unpaid ledger charges (RESTRICT FK)
   // so the cascade can proceed.
   if (tenancyIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: chargesError } = await (supabase as any)
+    const { error: chargesError } = await supabase
       .from("tenancy_charges")
       .delete()
       .in("tenancy_id", tenancyIds);

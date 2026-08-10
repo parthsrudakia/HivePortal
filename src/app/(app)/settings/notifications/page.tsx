@@ -33,8 +33,7 @@ export default async function NotificationsPage() {
   // Recipients can only be people who already have a portal account: pull the
   // recipient list and the system (auth) users in parallel.
   const [{ data }, { data: usersData }] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from("notification_recipients")
       .select("id, email, label, enabled, created_at")
       .order("enabled", { ascending: false })

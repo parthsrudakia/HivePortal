@@ -3,15 +3,14 @@
  * makes a monthly-rent edit apply to FUTURE months only. Every code path that
  * writes `tenancies.monthly_rent` must use {@link updateTenancyRent}, or the
  * ledger (and everything downstream) can retroactively reprice past months.
- *
- * Accessed via `as any` because the table post-dates the generated Supabase
- * types (same pattern as rent-data.ts).
  */
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 
 // Accepts either the user-scoped server client or the service-role admin
 // client — both expose the same query builder surface.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnySupabase = any;
+type AnySupabase = SupabaseClient<Database>;
 
 /**
  * Atomically records the effective rate and updates the tenancy's current

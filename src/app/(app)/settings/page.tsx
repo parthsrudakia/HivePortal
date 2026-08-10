@@ -74,8 +74,7 @@ export default async function AdminSettingsPage() {
   // Projects board email pref (default on when no row exists yet).
   let boardEmails = true;
   if (user) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: pref } = await (boardAdmin() as any)
+    const { data: pref } = await boardAdmin()
       .from("board_prefs")
       .select("email_notifications")
       .eq("user_id", user.id)

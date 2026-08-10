@@ -41,9 +41,7 @@ const getProjectsBadgeCount = cache(async (): Promise<number> => {
   if (!user) return 0;
 
   const supabase = await createClient();
-  // board_tasks post-dates the generated types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = (supabase as any)
+  const q = supabase
     .from("board_tasks")
     .select("id", { count: "exact", head: true });
   const { count } = isMaster(user.email)

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
 import { tenantKey, type Deposit } from "@/lib/reconciliation/parsers";
 import { rateForMonthISO, type RentChange } from "@/lib/rent";
@@ -71,7 +72,7 @@ export type TenancyInfo = {
 // ENDED mid-month (status 'ended' with a move_out_date inside the window), which
 // the old active-only filter dropped, leaving their payments unattributed.
 export async function loadMonthTenancies(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   monthStart: string,
   monthEnd: string,
 ): Promise<{ tenancies: TenancyInfo[]; error?: string }> {
@@ -111,14 +112,11 @@ export async function loadMonthTenancies(
   if (error) return { tenancies: [], error: error.message };
 
   // Rent-rate history for these tenancies, so the month bills the rate that
-  // was in effect back then rather than today's monthly_rent. Accessed via
-  // `as any` because the table post-dates the generated types (rent-data.ts).
+  // was in effect back then rather than today's monthly_rent (rent-data.ts).
   const ids = (data ?? []).map((t) => t.id);
   const changesByTenancy = new Map<string, RentChange[]>();
   if (ids.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any;
-    const { data: histRows } = await sb
+    const { data: histRows } = await supabase
       .from("tenancy_rent_history")
       .select("tenancy_id, effective_month, monthly_rent")
       .in("tenancy_id", ids);
@@ -164,9 +162,7 @@ export async function loadMonthTenancies(
   ];
   const aliasesByTenant = new Map<string, string[]>();
   if (tenantIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any;
-    const { data: aliasRows } = await sb
+    const { data: aliasRows } = await supabase
       .from("tenant_payer_aliases")
       .select("tenant_id, payer_key")
       .in("tenant_id", tenantIds);
@@ -223,7 +219,7 @@ export type MatchRow = {
 /** Payer keys marked "not rent" (personal transfers, other ventures) —
  *  excluded from every run's unmatched list. */
 export async function loadIgnoredPayerKeys(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
 ): Promise<Set<string>> {
   const { data } = await supabase.from("ignored_payers").select("payer_key");
   return new Set(
@@ -251,7 +247,7 @@ export type PayerTenancy = {
 
 /** All tenancies a payer key could resolve to, with their match keys. */
 export async function loadPayerTenancies(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
 ): Promise<{ rows: PayerTenancy[]; error?: string }> {
   type TenantRel = { id: string; full_name: string; pays_as: string | null };
   const { data, error } = await supabase
@@ -272,9 +268,7 @@ export async function loadPayerTenancies(
   const tenantIds = [...new Set((data ?? []).map((t) => t.tenant_id))];
   const aliasesByTenant = new Map<string, string[]>();
   if (tenantIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any;
-    const { data: aliasRows } = await sb
+    const { data: aliasRows } = await supabase
       .from("tenant_payer_aliases")
       .select("tenant_id, payer_key")
       .in("tenant_id", tenantIds);

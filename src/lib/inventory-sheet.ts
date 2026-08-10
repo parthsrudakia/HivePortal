@@ -7,6 +7,7 @@
 
 import ExcelJS from "exceljs";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 import {
@@ -75,7 +76,7 @@ function amenitiesFor(room: Row, p: PropertyRel | null): string {
  * Telegram bot) for the default: every listable room, available-date ascending.
  */
 export async function buildInventorySheet(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   view: InventoryView = DEFAULT_VIEW,
 ): Promise<{ buffer: Buffer; filename: string; count: number }> {
   const today = todayISO();
@@ -95,18 +96,14 @@ export async function buildInventorySheet(
     .eq("pending_tenant", false)
     .returns<Omit<Row, "ads">[]>();
 
-  // Attach each room's ad posters for the poster filter (room_ads post-dates
-  // the generated types). Only fetched when a poster filter is active.
+  // Attach each room's ad posters for the poster filter. Only fetched when a
+  // poster filter is active.
   const adsByRoom = new Map<string, { posted_by: string | null }[]>();
   if (view.posterKeys) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: adRowsData } = await (supabase as any)
+    const { data: adRowsData } = await supabase
       .from("room_ads")
       .select("room_id, posted_by");
-    for (const a of (adRowsData ?? []) as {
-      room_id: string;
-      posted_by: string | null;
-    }[]) {
+    for (const a of adRowsData ?? []) {
       const list = adsByRoom.get(a.room_id) ?? [];
       list.push({ posted_by: a.posted_by });
       adsByRoom.set(a.room_id, list);

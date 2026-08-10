@@ -67,7 +67,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 - Mutate rooms through `updateRoomsWithNotification()` (`src/lib/notifications.ts`), not raw `rooms.update()` — it fires room-change notifications and logs events.
 - Dates: server is ET (see `instrumentation.ts`); for date-only "today" math use `todayISO()` from `@/lib/date`, not `toISOString()`.
 - `one()` from `@/lib/relations` normalizes PostgREST joins that come back as object-or-array.
-- Some tables post-date the generated types and are accessed via `as any` (e.g. `tenancy_charges`, `credit_allocations`, `rent_reminder_batches`).
+- The generated types cover every table — never use `as any` on a Supabase query. After adding a migration, run `npm run db:types` so new tables/columns are typed.
 - Access control is a stub: `isMaster()` in `src/lib/access.ts` gates `/reports` to the master operator. No general roles system yet.
 
 ## Key domain modules (`src/lib/`)

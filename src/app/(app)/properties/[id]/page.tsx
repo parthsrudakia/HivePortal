@@ -107,8 +107,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
       .eq("rooms.property_id", id)
       .eq("status", "active"),
     // Cleaners assigned to this property — to populate the "Cleaned by" dropdown.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from("property_cleaners")
       .select("cleaners(name, enabled)")
       .eq("property_id", id),

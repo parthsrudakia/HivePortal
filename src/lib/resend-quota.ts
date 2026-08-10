@@ -18,6 +18,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { logEmail, type EmailType } from "./email-log";
 import { todayISO } from "./date";
+import type { Database } from "./supabase/types";
 
 export const DAILY_CAP = Number(process.env.RESEND_DAILY_CAP) || 90;
 export const MONTHLY_CAP = Number(process.env.RESEND_MONTHLY_CAP) || 3000;
@@ -46,11 +47,11 @@ export type SendResult =
 
 type DispatchResult = { ok: true; id: string } | { ok: false; error: string };
 
-function admin(): SupabaseClient | null {
+function admin(): SupabaseClient<Database> | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -66,7 +67,7 @@ function monthStartISO(): string {
 }
 
 async function countResendSent(
-  sb: SupabaseClient,
+  sb: SupabaseClient<Database>,
   sinceISO: string,
 ): Promise<number> {
   const { count } = await sb
@@ -85,7 +86,9 @@ export type ResendUsage = {
   monthlyCap: number;
 };
 
-export async function resendUsage(sb?: SupabaseClient): Promise<ResendUsage> {
+export async function resendUsage(
+  sb?: SupabaseClient<Database>,
+): Promise<ResendUsage> {
   const client = sb ?? admin();
   if (!client) {
     return { today: 0, month: 0, dailyCap: DAILY_CAP, monthlyCap: MONTHLY_CAP };
@@ -191,7 +194,7 @@ async function dispatch(
 }
 
 async function enqueue(
-  sb: SupabaseClient,
+  sb: SupabaseClient<Database>,
   payload: ResendPayload,
   meta: ResendLogMeta,
 ): Promise<void> {
@@ -202,9 +205,7 @@ async function enqueue(
       : Array.isArray(payload.bcc)
         ? payload.bcc
         : [payload.bcc];
-  // email_queue post-dates the generated Supabase types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (sb as any).from("email_queue").insert({
+  await sb.from("email_queue").insert({
     type: meta.type,
     to_addrs: to,
     bcc_addrs: bcc,
@@ -272,7 +273,9 @@ export type FlushResult = {
  * that errors is retried on later runs up to {@link MAX_ATTEMPTS}, then parked
  * as 'failed'.
  */
-export async function flushEmailQueue(sb: SupabaseClient): Promise<FlushResult> {
+export async function flushEmailQueue(
+  sb: SupabaseClient<Database>,
+): Promise<FlushResult> {
   const usage = await resendUsage(sb);
   const budget = Math.max(
     0,
@@ -283,8 +286,7 @@ export async function flushEmailQueue(sb: SupabaseClient): Promise<FlushResult> 
   let failed = 0;
 
   if (budget > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: rows } = await (sb as any)
+    const { data: rows } = await sb
       .from("email_queue")
       .select(
         "id, type, to_addrs, bcc_addrs, from_addr, reply_to, subject, text_body, html_body, context, attempts",
@@ -308,8 +310,7 @@ export async function flushEmailQueue(sb: SupabaseClient): Promise<FlushResult> 
       );
 
       const attempts = row.attempts + 1;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (sb as any)
+      await sb
         .from("email_queue")
         .update(
           result.ok
@@ -327,8 +328,7 @@ export async function flushEmailQueue(sb: SupabaseClient): Promise<FlushResult> 
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (sb as any)
+  const { count } = await sb
     .from("email_queue")
     .select("id", { count: "exact", head: true })
     .eq("status", "pending");
