@@ -44,6 +44,7 @@ export function AssistantLauncher() {
 
 export function AssistantWidget() {
   const [open, setOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
@@ -51,11 +52,29 @@ export function AssistantWidget() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // The header launcher toggles the panel via a window event.
+  // The header launcher toggles the panel via a window event. Toggling always
+  // brings it up expanded (never re-opens straight into a minimized bar).
   useEffect(() => {
-    const toggle = () => setOpen((o) => !o);
+    const toggle = () =>
+      setOpen((o) => {
+        if (!o) setMinimized(false);
+        return !o;
+      });
     window.addEventListener(TOGGLE_EVENT, toggle);
     return () => window.removeEventListener(TOGGLE_EVENT, toggle);
+  }, []);
+
+  // Session scope: the conversation survives refreshes but resets when the
+  // window/tab is closed. sessionStorage persists across reloads within a tab
+  // and is cleared on close — so a missing marker means a fresh window, and we
+  // wipe the server-side history to start clean. A refresh keeps the marker and
+  // the prior conversation loads normally.
+  useEffect(() => {
+    const KEY = "hive_assistant_session";
+    if (sessionStorage.getItem(KEY)) return; // refresh within the same tab
+    sessionStorage.setItem(KEY, "1");
+    loadedRef.current = true; // fresh window — nothing to load
+    fetch("/api/assistant", { method: "DELETE" }).catch(() => {});
   }, []);
 
   // Load prior conversation the first time the panel opens (async setState in
@@ -114,6 +133,21 @@ export function AssistantWidget() {
 
   if (!open) return null;
 
+  // Minimized: just the title bar, click it to expand again. The panel stays
+  // mounted so the conversation and any draft are preserved.
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        onClick={() => setMinimized(false)}
+        className="fixed bottom-5 left-5 z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] items-center justify-between rounded-xl border border-stone/60 bg-cream px-4 py-3 shadow-lg transition hover:bg-warm"
+      >
+        <span className="text-sm font-medium text-ink">Hive Assistant</span>
+        <span className="text-muted">▴</span>
+      </button>
+    );
+  }
+
   return (
     <>
       {open && (
@@ -135,8 +169,18 @@ export function AssistantWidget() {
               </button>
               <button
                 type="button"
+                onClick={() => setMinimized(true)}
+                aria-label="Minimize assistant"
+                title="Minimize"
+                className="text-muted transition hover:text-ink"
+              >
+                ▾
+              </button>
+              <button
+                type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close assistant"
+                title="Close"
                 className="text-muted transition hover:text-ink"
               >
                 ✕
