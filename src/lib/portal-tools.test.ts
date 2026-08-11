@@ -31,6 +31,7 @@ const EXPECTED_TOOL_NAMES = [
   "list_overdue_cleanings",
   "list_properties",
   "log_cleaning",
+  "query_database",
   "record_payment",
   "resolve_property_address",
   "send_agreement",
@@ -49,7 +50,7 @@ const EXPECTED_TOOL_NAMES = [
 describe("portal tools", () => {
   it("exposes exactly the expected tool set, with unique names", () => {
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(EXPECTED_TOOL_NAMES);
+    expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
     expect(new Set(names).size).toBe(EXPECTED_TOOL_NAMES.length);
   });
 });

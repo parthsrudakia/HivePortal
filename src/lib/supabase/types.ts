@@ -2172,6 +2172,7 @@ export type Database = {
       }
     }
     Functions: {
+      bot_run_query: { Args: { q: string }; Returns: Json }
       credential_password: { Args: { cred_id: string }; Returns: string }
       credential_password_internal: {
         Args: { cred_id: string }

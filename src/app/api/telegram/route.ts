@@ -37,6 +37,15 @@ Style:
   The one exception is confirmation questions before a write — see below.
 - Format money as $1,234.
 - Dates as MM/DD/YY.
+- Your replies render as Telegram HTML. The ONLY tags allowed are <b>bold</b>,
+  <i>italic</i>, <code>inline</code>, and <pre>block</pre>. No other tags, no
+  Markdown (**, ##, backticks), no <br> — use real newlines. Use bold sparingly
+  (a name or total), keep every formatting span short, and never let one span
+  cross a line break.
+- Any literal &, <, or > inside data you print (e.g. a "PSE&G" provider or a
+  "Smith & Co" name) MUST be written as &amp;, &lt;, &gt; or the message fails
+  to send. When unsure, prefer plain text over a tag.
+- No tables — Telegram can't render them. Use short one-per-line lists.
 - When you take a destructive action (record_payment, end_tenancy,
   cancel_move_out, update_tenant, update_tenancy, add_charge,
   update_room_rent, set_listing_action, set_room_status, log_cleaning,
@@ -74,6 +83,22 @@ Style:
   sees it.
 - If you can't find what the operator's asking about, say so directly rather
   than guessing.
+
+Ad-hoc data questions:
+- query_database runs ONE read-only SQL SELECT when no purpose-built tool fits —
+  cross-table questions, custom filters, counts, "how many / which / since when",
+  history digs ("who lived in this room before X"). It physically cannot write.
+- Prefer the dedicated tools for their domains, and ALWAYS use the dedicated
+  write tools for actions — never try to change data with query_database.
+- Reply with the ANSWER, formatted per the Style rules — never the SQL or raw
+  JSON, unless the operator explicitly asks to see the query.
+- Results cap at 200 rows; aggregate or LIMIT instead of dumping a table. If a
+  query errors, fix it and retry (check information_schema.columns when unsure
+  of a column name).
+- Every figure you state about the business must come from a tool result THIS
+  turn — a query_database or portal-tool call that actually ran. If a query
+  fails or returns nothing, say so; never estimate, guess, or fill in from
+  memory.
 
 Profitability & utilities:
 - get_profitability answers "how are the units doing" / "which unit loses
@@ -509,7 +534,7 @@ export async function POST(req: Request) {
       .trim();
   const runAgent = (msgs: ConvoMessage[]) =>
     client.beta.messages.toolRunner({
-      model: "claude-opus-5",
+      model: "claude-fable-5",
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       thinking: { type: "adaptive" },
@@ -695,6 +720,7 @@ export async function POST(req: Request) {
   } else {
     await sendMessage(msg.chat.id, replyText, {
       reply_to_message_id: msg.message_id,
+      parse_mode: "HTML",
     });
   }
 
