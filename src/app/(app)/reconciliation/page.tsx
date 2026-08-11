@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type PageProps = {
-  searchParams: Promise<{ filter?: string; q?: string }>;
+  searchParams: Promise<{ filter?: string; q?: string; new?: string }>;
 };
 
 type FilterKey = "match" | "mismatch" | "missing";
@@ -95,19 +95,24 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const activeFilters = parseFilters(sp.filter);
   const query = (sp.q ?? "").trim().toLowerCase();
-  const hrefWith = (filters: Set<FilterKey>) => {
+  // "New" filter: only transactions from the most recent statement upload.
+  const newActive = sp.new === "1";
+  const buildHref = (filters: Set<FilterKey>, newFlag: boolean) => {
     const params = new URLSearchParams();
     if (filters.size > 0) params.set("filter", [...filters].join(","));
     if (query) params.set("q", (sp.q ?? "").trim());
+    if (newFlag) params.set("new", "1");
     const qs = params.toString();
     return qs ? `/reconciliation?${qs}` : "/reconciliation";
   };
+  const hrefWith = (filters: Set<FilterKey>) => buildHref(filters, newActive);
   const toggleHref = (key: FilterKey) => {
     const next = new Set(activeFilters);
     if (next.has(key)) next.delete(key);
     else next.add(key);
     return hrefWith(next);
   };
+  const toggleNewHref = buildHref(activeFilters, !newActive);
 
   const supabase = await createClient();
   const user = await getSessionUser();
@@ -160,6 +165,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     { data: bankPayRows },
     { data: depositRows },
     { data: latestStatement },
+    { data: latestStatementAny },
     { data: ignoredData },
     { data: reversalRows },
     { data: activeTenancyData },
@@ -185,6 +191,13 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       .from("reconciliation_statements")
       .select("max_deposit_date, created_at")
       .eq("source", "bank")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // The most recent statement of ANY source, to power the "New" filter.
+    supabase
+      .from("reconciliation_statements")
+      .select("id")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -265,6 +278,21 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     }
   }
 
+  // Tenancies that received a posted payment from the most recent statement —
+  // powers the "New" filter and the per-row NEW badge.
+  const newTenancyIds = new Set<string>();
+  if (latestStatementAny?.id) {
+    const { data: newDeps } = await supabase
+      .from("reconciliation_deposits")
+      .select("tenancy_id")
+      .eq("statement_id", latestStatementAny.id)
+      .not("payment_id", "is", null)
+      .not("tenancy_id", "is", null);
+    for (const d of newDeps ?? []) {
+      if (d.tenancy_id) newTenancyIds.add(d.tenancy_id);
+    }
+  }
+
   const matchesQuery = (m: MatchRow) =>
     !query ||
     [m.tenant_name, m.pays_as, m.property_label, m.room_label]
@@ -275,8 +303,13 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   const filtered = matches.filter(
     (m) =>
       (activeFilters.size === 0 || activeFilters.has(m.status)) &&
+      (!newActive || newTenancyIds.has(m.tenancy_id)) &&
       matchesQuery(m),
   );
+  // Count of current-month rows the latest statement touched (drives the pill).
+  const newCount = matches.filter((m) =>
+    newTenancyIds.has(m.tenancy_id),
+  ).length;
 
   // Row order: problems first, worst first.
   //   0 missing money AND the tenant still owes — chase these
@@ -508,11 +541,24 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
 
       <BulkPaymentForm tenants={bulkTenants} defaultDate={today} admin={admin} />
 
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <ServerSearchInput
           placeholder="Search by tenant, payer, unit, or room…"
           ariaLabel="Search reconciliation rows"
         />
+        {newCount > 0 && (
+          <Link
+            href={toggleNewHref}
+            title="Transactions posted from the most recent statement"
+            className={`rounded-full border px-4 py-2 text-sm shadow-sm transition ${
+              newActive
+                ? "border-accent bg-accent text-white hover:bg-accent-dark"
+                : "border-stone bg-white text-ink hover:bg-warm"
+            }`}
+          >
+            {newActive ? "✓ " : ""}New ({newCount})
+          </Link>
+        )}
       </div>
 
       <section className="mt-4 rounded-2xl bg-white shadow-sm">
@@ -558,6 +604,14 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
                       </Link>
                     ) : (
                       <span className="text-ink">{m.tenant_name}</span>
+                    )}
+                    {newTenancyIds.has(m.tenancy_id) && (
+                      <span
+                        className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-800"
+                        title="Posted from the most recent statement"
+                      >
+                        New
+                      </span>
                     )}
                   </td>
                   <td className="px-5 py-2 text-ink">{m.property_label ?? "—"}</td>
