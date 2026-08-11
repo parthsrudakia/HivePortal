@@ -149,22 +149,22 @@ export function AssistantWidget() {
         <div className="fixed bottom-5 left-5 z-40 flex h-[32rem] max-h-[75vh] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-stone/60 bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b border-stone/40 bg-cream px-4 py-3">
             <p className="text-sm font-medium text-ink">Hive Assistant</p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={() => setMinimized(true)}
                 aria-label="Minimize assistant"
                 title="Minimize"
-                className="text-muted transition hover:text-ink"
+                className="flex h-7 w-7 items-center justify-center text-ink transition hover:text-accent-text"
               >
-                ▾
+                <span className="block h-1 w-5 rounded-full bg-current" />
               </button>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close assistant"
                 title="Close"
-                className="text-muted transition hover:text-ink"
+                className="flex h-7 w-7 items-center justify-center text-2xl font-bold leading-none text-ink transition hover:text-accent-text"
               >
                 ✕
               </button>
