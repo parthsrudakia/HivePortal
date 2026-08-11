@@ -318,6 +318,8 @@ export type LedgerEntryCharge = {
   amount: number | string;
   charged_on: string;
   note: string | null;
+  /** Source utility bill, when the charge was posted from one. */
+  bill_id?: string | null;
 };
 
 export type LedgerEntryPayment = {
@@ -342,6 +344,8 @@ export type LedgerEntry = {
   deletable: "charge" | "payment" | null;
   /** DB row id(s) this line deletes — more than one when charges consolidate. */
   refIds: string[];
+  /** Utility bill behind this line (utility overcharges) — linked in the UI. */
+  billId?: string | null;
 };
 
 /**
@@ -451,6 +455,7 @@ export function buildLedgerEntries(
       // via Unpost on the Utilities page instead.
       deletable: c.kind === "utility_overage" ? null : "charge",
       refIds: [c.id],
+      billId: c.bill_id ?? null,
     });
   }
   for (const [key, g] of otherGroups) {

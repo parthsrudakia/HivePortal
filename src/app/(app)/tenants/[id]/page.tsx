@@ -522,7 +522,19 @@ export default async function TenantDetailPage({
                       <td className="whitespace-nowrap px-5 py-3 text-ink">
                         {formatDate(e.date)}
                       </td>
-                      <td className="px-5 py-3 text-ink">{e.description}</td>
+                      <td className="px-5 py-3 text-ink">
+                        {e.billId ? (
+                          <Link
+                            href={`/utilities?bill=${e.billId}`}
+                            title="Open the utility bill behind this charge"
+                            className="underline decoration-stone underline-offset-2 hover:text-accent-text"
+                          >
+                            {e.description}
+                          </Link>
+                        ) : (
+                          e.description
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-right tabular-nums text-ink">
                         {e.charge > 0 ? fmtMoney(e.charge) : ""}
                       </td>

@@ -16,6 +16,7 @@ export function UtilitiesView({
   units,
   canCharge,
   billTenants,
+  focusBillId,
 }: {
   bills: BillRow[];
   units: UnitOpt[];
@@ -23,6 +24,8 @@ export function UtilitiesView({
   canCharge: boolean;
   /** Per over-$200 bill: first names of the tenants sharing the overage. */
   billTenants: Record<string, string[]>;
+  /** Deep link (?bill=…): expand and scroll to this bill on load. */
+  focusBillId?: string;
 }) {
   const [filter, setFilter] = useState("");
   const [overOnly, setOverOnly] = useState(false);
@@ -69,6 +72,7 @@ export function UtilitiesView({
           setChargedOnly={setChargedOnly}
           canCharge={canCharge}
           billTenants={billTenants}
+          focusBillId={focusBillId}
         />
       </section>
     </>

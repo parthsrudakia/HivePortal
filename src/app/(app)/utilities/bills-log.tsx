@@ -51,6 +51,7 @@ export function BillsLog({
   setChargedOnly,
   canCharge,
   billTenants,
+  focusBillId,
 }: {
   bills: BillRow[];
   units: UnitOpt[];
@@ -63,11 +64,21 @@ export function BillsLog({
   canCharge: boolean;
   /** Per over-$200 bill: first names of the tenants sharing the overage. */
   billTenants: Record<string, string[]>;
+  /** Deep link (?bill=…): expand and scroll to this bill on load. */
+  focusBillId?: string;
 }) {
-  const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
+  // A ?bill=… deep link (from a tenant's ledger) starts with that bill's
+  // month open and the card queued for the same scroll-and-highlight jump
+  // the over-$200 banner uses.
+  const focusBill = focusBillId
+    ? bills.find((b) => b.id === focusBillId)
+    : undefined;
+  const [openMonths, setOpenMonths] = useState<Set<string>>(
+    () => new Set(focusBill ? [billMonth(focusBill)] : []),
+  );
   // Bill the user jumped to from the over-$200 banner: its card is scrolled
   // into view, expanded, and briefly highlighted.
-  const [jumpTo, setJumpTo] = useState<string | null>(null);
+  const [jumpTo, setJumpTo] = useState<string | null>(focusBill?.id ?? null);
   const unitName = useMemo(
     () => new Map(units.map((u) => [u.id, u.label])),
     [units],

@@ -11,7 +11,12 @@ export const dynamic = "force-dynamic";
 // Extraction calls Claude with the full statement; give it breathing room.
 export const maxDuration = 60;
 
-export default async function UtilitiesPage() {
+export default async function UtilitiesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ bill?: string }>;
+}) {
+  const { bill: focusBillId } = await searchParams;
   const sb = createServiceClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -119,6 +124,7 @@ export default async function UtilitiesPage() {
         units={units}
         canCharge={canCharge}
         billTenants={billTenants}
+        focusBillId={focusBillId}
       />
     </div>
   );
