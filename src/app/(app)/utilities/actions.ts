@@ -6,11 +6,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isValid, zUuid, zUuidArray } from "@/lib/validation";
 import { getSessionUser } from "@/lib/session";
-import {
-  extractUtilityBill,
-  extractUtilityCycles,
-  type UnitOption,
-} from "@/lib/utility-extract";
+import { extractUtilityBill, type UnitOption } from "@/lib/utility-extract";
 import { compressStatement } from "@/lib/compress-statement";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
@@ -307,11 +303,10 @@ export async function uploadStatement(
 }
 
 // ----------------------------------------------------------------------------
-// Manual bill entry, two steps:
-//   1. previewManualBill — reads the screenshot (single statement OR a
-//      multi-month account ledger) into prefill the operator reviews/corrects.
-//   2. commitManualBills — saves the corrected rows; the screenshot is stored
-//      once and shared as the statement of every bill it produced.
+// Manual bill entry — commitManualBills saves rows the operator typed in
+// themselves. The attached screenshot is never read or extracted; it is
+// stored once and shared as the statement of every bill it produced (and its
+// hash blocks re-uploading the same file).
 // ----------------------------------------------------------------------------
 
 const MANUAL_TYPES = new Set([
@@ -332,26 +327,6 @@ const ManualChargeSchema = z.object({
 });
 type ManualCharge = z.infer<typeof ManualChargeSchema>;
 
-export type ManualPrefill = {
-  property_id: string | null;
-  utility_type: string | null;
-  provider: string | null;
-  account_number: string | null;
-  service_address: string | null;
-  statement_date: string | null;
-  notes: string | null;
-  cycles: {
-    period_start: string | null;
-    period_end: string | null;
-    amount: number | null;
-    charges: ManualCharge[];
-  }[];
-};
-
-export type ManualPreviewState =
-  | { error?: string; warning?: string; prefill?: ManualPrefill }
-  | undefined;
-
 function screenshotProblem(file: unknown): string | null {
   if (!(file instanceof File) || file.size === 0)
     return "Attach a screenshot of the bill first.";
@@ -361,110 +336,6 @@ function screenshotProblem(file: unknown): string | null {
   if (!/^(application\/pdf|image\/(png|jpeg|webp))$/.test(mediaType))
     return "Screenshot must be a PDF or a PNG/JPEG/WebP image.";
   return null;
-}
-
-const EMPTY_PREFILL: ManualPrefill = {
-  property_id: null,
-  utility_type: null,
-  provider: null,
-  account_number: null,
-  service_address: null,
-  statement_date: null,
-  notes: null,
-  cycles: [],
-};
-
-export async function previewManualBill(
-  _prev: ManualPreviewState,
-  formData: FormData,
-): Promise<ManualPreviewState> {
-  const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
-
-  const file = formData.get("screenshot");
-  const problem = screenshotProblem(file);
-  if (problem) return { error: problem };
-  const screenshot = file as File;
-  const mediaType = screenshot.type || "application/pdf";
-
-  const buf = Buffer.from(await screenshot.arrayBuffer());
-  const fileHash = createHash("sha256").update(buf).digest("hex");
-  {
-    const { data: dup } = await supabase
-      .from("utility_bills")
-      .select("id")
-      .eq("file_sha256", fileHash)
-      .maybeSingle();
-    if (dup)
-      return {
-        error:
-          "Duplicate — this exact file is already attached to a logged bill.",
-      };
-  }
-
-  const { data: props } = await supabase
-    .from("properties")
-    .select("id, building_name, street_address, unit_number");
-  const units: UnitOption[] = (props ?? []).map((p) => ({
-    id: p.id,
-    label: `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`,
-    street_address: p.street_address,
-    unit_number: p.unit_number,
-  }));
-
-  try {
-    const extracted = await extractUtilityCycles(
-      { base64: buf.toString("base64"), mediaType },
-      units,
-    );
-    const knownUnit =
-      extracted.property_id &&
-      units.some((u) => u.id === extracted.property_id);
-    // Extraction sometimes splits one bill into several "cycles" with the
-    // same period (e.g. a combined statement's electric + gas portions).
-    // Same period = same bill: merge them so the overlap guard doesn't
-    // reject the operator's own prefill.
-    const merged: ManualPrefill["cycles"] = [];
-    for (const c of extracted.cycles) {
-      const twin = merged.find(
-        (m) =>
-          m.period_start === c.period_start && m.period_end === c.period_end,
-      );
-      if (twin) {
-        twin.amount =
-          Math.round(((twin.amount ?? 0) + c.amount) * 100) / 100;
-        twin.charges = [...twin.charges, ...c.charges];
-      } else {
-        merged.push({
-          period_start: c.period_start,
-          period_end: c.period_end,
-          amount: c.amount,
-          charges: c.charges,
-        });
-      }
-    }
-    return {
-      prefill: {
-        property_id: knownUnit ? extracted.property_id : null,
-        utility_type: extracted.utility_type,
-        provider: extracted.provider,
-        account_number: extracted.account_number,
-        service_address: extracted.service_address,
-        statement_date: extracted.statement_date,
-        notes: extracted.notes,
-        cycles: merged.slice(0, MAX_MANUAL_CYCLES),
-      },
-    };
-  } catch {
-    return {
-      prefill: EMPTY_PREFILL,
-      warning:
-        "Couldn't read the screenshot — fill the fields in yourself; the " +
-        "file is still saved as the statement.",
-    };
-  }
 }
 
 export async function commitManualBills(
