@@ -32,27 +32,6 @@ function groupByTenant(alerts: OverageAlert[]) {
   }));
 }
 
-function DismissButton({
-  pending,
-  label,
-  onClick,
-}: {
-  pending: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={onClick}
-      className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
-      aria-label={label}
-    >
-      ✕
-    </button>
-  );
-}
 
 /**
  * Popup shown on the Rent Tracker when a utility-overage split included
@@ -103,22 +82,9 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
                     {rows[0].unit_label}
                   </p>
                 </div>
-                {rows.length === 1 ? (
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm font-semibold tabular-nums text-ink">
-                      {fmtMoney(total)}
-                    </span>
-                    <DismissButton
-                      pending={pending}
-                      label={`Dismiss alert for ${rows[0].tenant_name}`}
-                      onClick={() => acknowledge([rows[0].id])}
-                    />
-                  </div>
-                ) : (
-                  <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">
-                    {fmtMoney(total)}
-                  </span>
-                )}
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+                  {fmtMoney(total)}
+                </span>
               </div>
               {rows.length === 1 ? (
                 <p className="mt-1 truncate text-xs text-muted">
@@ -134,15 +100,8 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
                       <span className="min-w-0 truncate text-xs text-muted">
                         {a.period_label}
                       </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="text-sm tabular-nums text-ink">
-                          {fmtMoney(a.amount)}
-                        </span>
-                        <DismissButton
-                          pending={pending}
-                          label={`Dismiss ${a.period_label} alert for ${a.tenant_name}`}
-                          onClick={() => acknowledge([a.id])}
-                        />
+                      <span className="shrink-0 text-sm tabular-nums text-ink">
+                        {fmtMoney(a.amount)}
                       </span>
                     </li>
                   ))}
@@ -159,7 +118,7 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
             onClick={() => acknowledge(visible.map((a) => a.id))}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
           >
-            {pending ? "Dismissing…" : "Dismiss all"}
+            {pending ? "Dismissing…" : "Dismiss"}
           </button>
         </div>
       </div>
