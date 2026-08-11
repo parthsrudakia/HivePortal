@@ -24,6 +24,12 @@ export type BillRow = {
     description: string | null;
     amount: number;
   }[];
+  /** Extra attachments beyond the primary statement (manual multi-upload). */
+  utility_bill_files?: {
+    id: string;
+    file_name: string | null;
+    sort_order: number;
+  }[];
 };
 
 /**

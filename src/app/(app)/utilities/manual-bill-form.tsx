@@ -38,9 +38,11 @@ const FIRST_ROW: Row = { id: 0, start: "", end: "", amount: "" };
  * uncontrolled form fields after every form action, which would otherwise
  * clear the file on a failed submit and silently block resubmission.
  */
+const MAX_FILES = 5;
+
 export function ManualBillForm({ units }: { units: UnitOpt[] }) {
   const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [rows, setRows] = useState<Row[]>([FIRST_ROW]);
   const [nextRowId, setNextRowId] = useState(1);
   // Bumped after each successful save so the remounted form starts blank.
@@ -53,14 +55,30 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
     setOpen(false);
     setRows([FIRST_ROW]);
     setNextRowId(1);
-    setFile(null);
+    setFiles([]);
+  };
+
+  const addFiles = (picked: FileList | null) => {
+    if (!picked) return;
+    setFiles((prev) => {
+      const merged = [...prev];
+      for (const f of Array.from(picked)) {
+        if (merged.some((m) => m.name === f.name && m.size === f.size)) continue;
+        merged.push(f);
+      }
+      if (merged.length > MAX_FILES) {
+        toast.error(`At most ${MAX_FILES} screenshots per entry.`);
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
+    });
   };
 
   const [commitState, commitAction, commitPending] = useActionState<
     UploadState,
     FormData
   >(async (prev, formData) => {
-    if (file) formData.set("screenshot", file);
+    for (const f of files) formData.append("screenshot", f);
     const result = await commitManualBills(prev, formData);
     if (result?.warning) toast.warning(result.warning);
     if (result?.success) {
@@ -151,18 +169,43 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className={fieldLabel}>Bill screenshot (optional)</span>
+          <span className={fieldLabel}>Bill screenshots (optional)</span>
           <input
             type="file"
+            multiple
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = "";
+            }}
             className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-warm file:px-3 file:py-2 file:text-sm file:text-ink hover:file:bg-stone/40"
           />
           <span className="text-xs text-muted">
-            {file
-              ? `Holding ${file.name} — stored as the bill's statement.`
-              : "Not read — only stored as the statement, if you attach one. PDF or photo, up to 20 MB."}
+            Not read — only stored with the bill. Up to {MAX_FILES} PDFs or
+            photos, 20 MB each.
           </span>
+          {files.length > 0 && (
+            <ul className="mt-1 flex flex-wrap gap-1.5">
+              {files.map((f) => (
+                <li
+                  key={`${f.name}:${f.size}`}
+                  className="flex items-center gap-1.5 rounded-full bg-warm px-2.5 py-1 text-xs text-ink"
+                >
+                  <span className="max-w-48 truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFiles((prev) => prev.filter((x) => x !== f))
+                    }
+                    className="text-muted transition hover:text-red-700"
+                    aria-label={`Remove ${f.name}`}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </label>
       </div>
 

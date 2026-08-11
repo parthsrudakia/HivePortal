@@ -9,6 +9,7 @@ import {
   chargeOverage,
   deleteBill,
   dismissOverage,
+  getBillFileUrl,
   getStatementUrl,
   previewOverage,
   unpostOverage,
@@ -945,6 +946,26 @@ function BillCard({
             >
               View statement
             </button>
+            {[...(bill.utility_bill_files ?? [])]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((f, i) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  disabled={pending}
+                  title={f.file_name ?? undefined}
+                  onClick={() =>
+                    startTransition(async () => {
+                      const r = await getBillFileUrl(f.id);
+                      if (r.error) toast.error(r.error);
+                      else if (r.url) window.open(r.url, "_blank");
+                    })
+                  }
+                  className="rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-accent-text"
+                >
+                  File {i + 2}
+                </button>
+              ))}
             {bill.overage_charged_at &&
               canCharge &&
               (!confirmingUnpost ? (

@@ -1896,6 +1896,44 @@ export type Database = {
           },
         ]
       }
+      utility_bill_files: {
+        Row: {
+          bill_id: string
+          created_at: string
+          file_name: string | null
+          file_path: string
+          file_sha256: string | null
+          id: string
+          sort_order: number
+        }
+        Insert: {
+          bill_id: string
+          created_at?: string
+          file_name?: string | null
+          file_path: string
+          file_sha256?: string | null
+          id?: string
+          sort_order?: number
+        }
+        Update: {
+          bill_id?: string
+          created_at?: string
+          file_name?: string | null
+          file_path?: string
+          file_sha256?: string | null
+          id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utility_bill_files_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "utility_bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       utility_bills: {
         Row: {
           account_number: string | null

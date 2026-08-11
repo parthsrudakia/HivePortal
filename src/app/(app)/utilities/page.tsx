@@ -26,7 +26,9 @@ export default async function UtilitiesPage() {
       .order("street_address"),
     sb
       .from("utility_bills")
-      .select("*, utility_bill_charges(id, kind, description, amount)")
+      .select(
+        "*, utility_bill_charges(id, kind, description, amount), utility_bill_files(id, file_name, sort_order)",
+      )
       .order("statement_date", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
   ]);

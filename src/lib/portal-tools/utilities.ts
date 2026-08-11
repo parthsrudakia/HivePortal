@@ -187,8 +187,24 @@ export async function getUtilityStatementUrl(args: { bill_id: string }) {
   if (signErr || !signed?.signedUrl) {
     throw new Error(signErr?.message ?? "Failed to sign the statement URL.");
   }
+
+  // Extra attachments (manual entries can carry several screenshots).
+  const { data: extraRows } = await supabase
+    .from("utility_bill_files")
+    .select("file_path, file_name, sort_order")
+    .eq("bill_id", args.bill_id)
+    .order("sort_order");
+  const attachments: { name: string | null; url: string }[] = [];
+  for (const f of extraRows ?? []) {
+    const { data: s } = await supabase.storage
+      .from("utilities")
+      .createSignedUrl(f.file_path, 3600);
+    if (s?.signedUrl) attachments.push({ name: f.file_name, url: s.signedUrl });
+  }
+
   return {
     url: signed.signedUrl,
+    ...(attachments.length > 0 ? { attachments } : {}),
     expires_in: "1 hour",
     provider: bill.provider,
     utility_type: bill.utility_type,

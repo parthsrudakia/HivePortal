@@ -319,6 +319,7 @@ const MANUAL_TYPES = new Set([
 ]);
 
 const MAX_MANUAL_CYCLES = 24;
+const MAX_MANUAL_FILES = 5;
 
 const ManualChargeSchema = z.object({
   kind: z.enum(["current", "late_fee", "other"]),
@@ -347,18 +348,21 @@ export async function commitManualBills(
 
   const propertyId = String(formData.get("property_id") ?? "");
   const utilityType = String(formData.get("utility_type") ?? "");
-  const file = formData.get("screenshot");
 
   if (!propertyId) return { error: "Pick the unit." };
   if (!isValid(zUuid, propertyId)) return { error: "Invalid unit id." };
   if (!MANUAL_TYPES.has(utilityType))
     return { error: "Pick the utility type." };
-  // The screenshot is optional: when attached it is stored as the statement
-  // and dedupe-hashed, but a bill can be logged without one.
-  const screenshot = file instanceof File && file.size > 0 ? file : null;
-  if (screenshot) {
-    const problem = screenshotProblem(screenshot);
-    if (problem) return { error: problem };
+  // Screenshots are optional, up to MAX_MANUAL_FILES per entry. The first
+  // becomes the bill's statement; the rest are stored as extra attachments.
+  const screenshots = formData
+    .getAll("screenshot")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (screenshots.length > MAX_MANUAL_FILES)
+    return { error: `At most ${MAX_MANUAL_FILES} screenshots per entry.` };
+  for (const s of screenshots) {
+    const problem = screenshotProblem(s);
+    if (problem) return { error: `${s.name}: ${problem}` };
   }
 
   const rowIds = String(formData.get("row_ids") ?? "")
@@ -473,40 +477,64 @@ export async function commitManualBills(
     }
   }
 
-  // Store the screenshot (when attached): hash it so re-uploading the same
-  // file is caught, compress it, and keep it as every bill's statement.
-  let path: string | null = null;
-  let fileHash: string | null = null;
-  if (screenshot) {
-    const mediaType = screenshot.type || "application/pdf";
-    const buf = Buffer.from(await screenshot.arrayBuffer());
-    fileHash = createHash("sha256").update(buf).digest("hex");
-    const { data: dup } = await supabase
-      .from("utility_bills")
-      .select("id")
-      .eq("file_sha256", fileHash)
-      .maybeSingle();
-    if (dup)
+  // Store the screenshots (when attached): hash each so re-uploading the
+  // same file is caught — against both the bills' statement hashes and the
+  // attachments table — then compress and upload. The first file is every
+  // bill's statement; the rest become attachment rows.
+  type StoredFile = { path: string; hash: string; name: string };
+  const stored: StoredFile[] = [];
+  const removeStored = async () => {
+    if (stored.length > 0)
+      await supabase.storage
+        .from("utilities")
+        .remove(stored.map((s) => s.path));
+  };
+  if (screenshots.length > 0) {
+    const bufs = await Promise.all(
+      screenshots.map(async (s) => Buffer.from(await s.arrayBuffer())),
+    );
+    const hashes = bufs.map((b) =>
+      createHash("sha256").update(b).digest("hex"),
+    );
+    if (new Set(hashes).size !== hashes.length)
+      return { error: "The same file is attached twice — remove one." };
+    const [{ data: dupBills }, { data: dupFiles }] = await Promise.all([
+      supabase.from("utility_bills").select("id").in("file_sha256", hashes),
+      supabase
+        .from("utility_bill_files")
+        .select("id")
+        .in("file_sha256", hashes),
+    ]);
+    if ((dupBills?.length ?? 0) > 0 || (dupFiles?.length ?? 0) > 0)
       return {
         error:
-          "Duplicate — this exact file is already attached to a logged bill.",
+          "Duplicate — one of these files is already attached to a logged bill.",
       };
 
-    const compressed = await compressStatement(buf, mediaType);
-    let safeName = screenshot.name.replace(/[^\w.\-]/g, "_") || "screenshot";
-    if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
-      safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+    for (let i = 0; i < screenshots.length; i++) {
+      const s = screenshots[i];
+      const mediaType = s.type || "application/pdf";
+      const compressed = await compressStatement(bufs[i], mediaType);
+      let safeName = s.name.replace(/[^\w.\-]/g, "_") || "screenshot";
+      if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
+        safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+      }
+      const path = `${propertyId}/${Date.now()}-manual-${i}-${safeName}`;
+      const { error: upErr } = await supabase.storage
+        .from("utilities")
+        .upload(path, compressed.data, {
+          contentType: compressed.mediaType,
+          upsert: false,
+        });
+      if (upErr) {
+        await removeStored();
+        return { error: `Failed to store ${s.name}: ${upErr.message}` };
+      }
+      stored.push({ path, hash: hashes[i], name: s.name });
     }
-    path = `${propertyId}/${Date.now()}-manual-${safeName}`;
-    const { error: upErr } = await supabase.storage
-      .from("utilities")
-      .upload(path, compressed.data, {
-        contentType: compressed.mediaType,
-        upsert: false,
-      });
-    if (upErr)
-      return { error: `Failed to store the screenshot: ${upErr.message}` };
   }
+  const path = stored[0]?.path ?? null;
+  const fileHash = stored[0]?.hash ?? null;
 
   const provider = String(formData.get("provider") ?? "").trim() || null;
   const notes = "Entered manually.";
@@ -514,12 +542,13 @@ export async function commitManualBills(
   const insertedBillIds: string[] = [];
   const rollback = async () => {
     if (insertedBillIds.length > 0) {
+      // Attachment rows cascade with the bills.
       await supabase
         .from("utility_bills")
         .delete()
         .in("id", insertedBillIds);
     }
-    if (path) await supabase.storage.from("utilities").remove([path]);
+    await removeStored();
   };
 
   for (let i = 0; i < cycles.length; i++) {
@@ -547,6 +576,24 @@ export async function commitManualBills(
       return { error: insErr.message };
     }
     insertedBillIds.push(bill.id);
+
+    if (stored.length > 1) {
+      const { error: filesErr } = await supabase
+        .from("utility_bill_files")
+        .insert(
+          stored.slice(1).map((s, idx) => ({
+            bill_id: bill.id,
+            file_path: s.path,
+            file_name: s.name,
+            file_sha256: s.hash,
+            sort_order: idx + 1,
+          })),
+        );
+      if (filesErr) {
+        await rollback();
+        return { error: `Failed to save attachments: ${filesErr.message}` };
+      }
+    }
 
     // A charges breakdown (late fees separated for the over-$200 split) is
     // honored only when it agrees with the entered amount to the cent.
@@ -658,13 +705,62 @@ export async function deleteBill(billId: string): Promise<UploadState> {
       error:
         "This bill's overage is charged to tenants — unpost it before deleting the bill.",
     };
+  const { data: fileRows } = await sb
+    .from("utility_bill_files")
+    .select("file_path")
+    .eq("bill_id", billId);
+  const paths = [
+    ...(bill?.statement_path ? [bill.statement_path] : []),
+    ...(fileRows ?? []).map((f) => f.file_path),
+  ];
+
   const { error } = await sb.from("utility_bills").delete().eq("id", billId);
   if (error) return { error: error.message };
-  if (bill?.statement_path) {
-    await sb.storage.from("utilities").remove([bill.statement_path]);
+
+  // A multi-cycle submission shares its files across sibling bills — only
+  // remove storage objects that no remaining bill references.
+  if (paths.length > 0) {
+    const [{ data: stillBills }, { data: stillFiles }] = await Promise.all([
+      sb
+        .from("utility_bills")
+        .select("statement_path")
+        .in("statement_path", paths),
+      sb.from("utility_bill_files").select("file_path").in("file_path", paths),
+    ]);
+    const still = new Set([
+      ...(stillBills ?? []).map((b) => b.statement_path),
+      ...(stillFiles ?? []).map((f) => f.file_path),
+    ]);
+    const orphaned = paths.filter((p) => !still.has(p));
+    if (orphaned.length > 0) {
+      await sb.storage.from("utilities").remove(orphaned);
+    }
   }
   revalidatePath("/utilities");
   return { success: "Bill deleted." };
+}
+
+/** Signed URL for one of a bill's extra attachments (utility_bill_files). */
+export async function getBillFileUrl(
+  fileId: string,
+): Promise<{ url?: string; error?: string }> {
+  const supabase = await createClient();
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in." };
+  if (!isValid(zUuid, fileId)) return { error: "Invalid file id." };
+
+  const { data: row, error } = await supabase
+    .from("utility_bill_files")
+    .select("file_path")
+    .eq("id", fileId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!row) return { error: "Attachment not found." };
+  const { data, error: signErr } = await supabase.storage
+    .from("utilities")
+    .createSignedUrl(row.file_path, 300);
+  if (signErr) return { error: signErr.message };
+  return { url: data.signedUrl };
 }
 
 // Dismiss (or restore) a bill's over-$200 flag in the banner. The badge on
