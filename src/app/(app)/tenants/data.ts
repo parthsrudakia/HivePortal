@@ -110,6 +110,36 @@ export const getUpcomingTenancies = cache(async () => {
     .order("start_date", { ascending: true });
 });
 
+// Tenancies that received a payment from the MOST RECENT reconciliation
+// statement upload — powers the "New" filter so the operator can review just
+// what the latest statement posted. Recon tables are operator-only (RLS), so
+// this returns an empty set for everyone else.
+export const getNewFromLatestStatement = cache(
+  async (): Promise<{ tenancyIds: Set<string>; statementDate: string | null }> => {
+    const supabase = await getCachedClient();
+    const { data: stmt } = await supabase
+      .from("reconciliation_statements")
+      .select("id, created_at, max_deposit_date")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!stmt) return { tenancyIds: new Set(), statementDate: null };
+
+    const { data: deps } = await supabase
+      .from("reconciliation_deposits")
+      .select("tenancy_id")
+      .eq("statement_id", stmt.id)
+      .not("payment_id", "is", null)
+      .not("tenancy_id", "is", null);
+    const tenancyIds = new Set(
+      (deps ?? [])
+        .map((d) => d.tenancy_id)
+        .filter((id): id is string => !!id),
+    );
+    return { tenancyIds, statementDate: stmt.max_deposit_date };
+  },
+);
+
 // Utility-overage shares that hit already-moved-out tenants (admin-only UI).
 export const getOverageAlerts = cache(async () => {
   const supabase = await getCachedClient();

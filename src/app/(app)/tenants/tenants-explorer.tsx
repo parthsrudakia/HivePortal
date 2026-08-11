@@ -41,6 +41,7 @@ export function TenantsExplorer({
     .trim()
     .toLowerCase();
   const owingOnly = useDeferredValue(searchParams.get("owing")) === "1";
+  const newOnly = useDeferredValue(searchParams.get("new")) === "1";
   const sortParam = useDeferredValue(searchParams.get("sort"));
   // Balance sort only applies inside the owing view.
   const balanceSort =
@@ -51,6 +52,7 @@ export function TenantsExplorer({
   const groups: DisplayGroup[] = useMemo(() => {
     const visibleRows = rows.filter((r) => {
       if (owingOnly && r.balance <= 0) return false;
+      if (newOnly && !r.isNew) return false;
       if (!query) return true;
       return r.haystack.includes(query);
     });
@@ -74,7 +76,7 @@ export function TenantsExplorer({
     const seenPropertyIds = new Set(
       Array.from(groupsMap.values(), (g) => g.propertyId),
     );
-    if (!owingOnly) {
+    if (!owingOnly && !newOnly) {
       for (const p of vacantProperties) {
         if (seenPropertyIds.has(p.id)) continue;
         if (groupsMap.has(p.label)) continue;
@@ -122,7 +124,7 @@ export function TenantsExplorer({
     }
 
     return grouped;
-  }, [rows, vacantProperties, owingOnly, query, balanceSort]);
+  }, [rows, vacantProperties, owingOnly, newOnly, query, balanceSort]);
 
   if (groups.length === 0) {
     return (
