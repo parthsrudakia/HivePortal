@@ -60,11 +60,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
     UploadState,
     FormData
   >(async (prev, formData) => {
-    if (!file) {
-      toast.error("Attach the bill screenshot first.");
-      return prev;
-    }
-    formData.set("screenshot", file);
+    if (file) formData.set("screenshot", file);
     const result = await commitManualBills(prev, formData);
     if (result?.warning) toast.warning(result.warning);
     if (result?.success) {
@@ -155,7 +151,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className={fieldLabel}>Bill screenshot</span>
+          <span className={fieldLabel}>Bill screenshot (optional)</span>
           <input
             type="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
@@ -165,7 +161,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
           <span className="text-xs text-muted">
             {file
               ? `Holding ${file.name} — stored as the bill's statement.`
-              : "Not read — only stored as the statement. PDF or photo, up to 20 MB."}
+              : "Not read — only stored as the statement, if you attach one. PDF or photo, up to 20 MB."}
           </span>
         </label>
       </div>
@@ -243,7 +239,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
         <button
           type="submit"
           formAction={commitAction}
-          disabled={commitPending || !file}
+          disabled={commitPending}
           className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-60"
         >
           {commitPending
@@ -252,6 +248,9 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
               ? "Log bill"
               : `Log ${rows.length} bills`}
         </button>
+        {commitState?.error && (
+          <p className="mt-3 text-sm text-red-700">{commitState.error}</p>
+        )}
       </div>
     </form>
   );

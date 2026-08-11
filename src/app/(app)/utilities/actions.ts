@@ -327,9 +327,7 @@ const ManualChargeSchema = z.object({
 });
 type ManualCharge = z.infer<typeof ManualChargeSchema>;
 
-function screenshotProblem(file: unknown): string | null {
-  if (!(file instanceof File) || file.size === 0)
-    return "Attach a screenshot of the bill first.";
+function screenshotProblem(file: File): string | null {
   if (file.size > MAX_STATEMENT_BYTES)
     return "Screenshot must be 20 MB or smaller.";
   const mediaType = file.type || "application/octet-stream";
@@ -355,20 +353,21 @@ export async function commitManualBills(
   if (!isValid(zUuid, propertyId)) return { error: "Invalid unit id." };
   if (!MANUAL_TYPES.has(utilityType))
     return { error: "Pick the utility type." };
-  const problem = screenshotProblem(file);
-  if (problem) return { error: problem };
-  const screenshot = file as File;
-  const mediaType = screenshot.type || "application/pdf";
+  // The screenshot is optional: when attached it is stored as the statement
+  // and dedupe-hashed, but a bill can be logged without one.
+  const screenshot = file instanceof File && file.size > 0 ? file : null;
+  if (screenshot) {
+    const problem = screenshotProblem(screenshot);
+    if (problem) return { error: problem };
+  }
 
-  // Rows the operator confirmed. Amounts/dates come from the reviewed form,
-  // never straight from extraction.
   const rowIds = String(formData.get("row_ids") ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
   if (rowIds.length === 0) return { error: "Add at least one billing cycle." };
   if (rowIds.length > MAX_MANUAL_CYCLES)
-    return { error: `At most ${MAX_MANUAL_CYCLES} cycles per screenshot.` };
+    return { error: `At most ${MAX_MANUAL_CYCLES} cycles per entry.` };
 
   type CycleInput = {
     start: string;
@@ -437,21 +436,6 @@ export async function commitManualBills(
     .maybeSingle();
   if (!prop) return { error: "Unknown unit." };
 
-  const buf = Buffer.from(await screenshot.arrayBuffer());
-  const fileHash = createHash("sha256").update(buf).digest("hex");
-  {
-    const { data: dup } = await supabase
-      .from("utility_bills")
-      .select("id")
-      .eq("file_sha256", fileHash)
-      .maybeSingle();
-    if (dup)
-      return {
-        error:
-          "Duplicate — this exact file is already attached to a logged bill.",
-      };
-  }
-
   // No account number on manual bills, so the against-the-log overlap guard
   // keys on unit + type: >7 days of overlap with a logged bill is a
   // duplicate (a couple of days is a normal meter-read boundary).
@@ -489,35 +473,43 @@ export async function commitManualBills(
     }
   }
 
-  const compressed = await compressStatement(buf, mediaType);
-  let safeName = screenshot.name.replace(/[^\w.\-]/g, "_") || "screenshot";
-  if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
-    safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+  // Store the screenshot (when attached): hash it so re-uploading the same
+  // file is caught, compress it, and keep it as every bill's statement.
+  let path: string | null = null;
+  let fileHash: string | null = null;
+  if (screenshot) {
+    const mediaType = screenshot.type || "application/pdf";
+    const buf = Buffer.from(await screenshot.arrayBuffer());
+    fileHash = createHash("sha256").update(buf).digest("hex");
+    const { data: dup } = await supabase
+      .from("utility_bills")
+      .select("id")
+      .eq("file_sha256", fileHash)
+      .maybeSingle();
+    if (dup)
+      return {
+        error:
+          "Duplicate — this exact file is already attached to a logged bill.",
+      };
+
+    const compressed = await compressStatement(buf, mediaType);
+    let safeName = screenshot.name.replace(/[^\w.\-]/g, "_") || "screenshot";
+    if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
+      safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+    }
+    path = `${propertyId}/${Date.now()}-manual-${safeName}`;
+    const { error: upErr } = await supabase.storage
+      .from("utilities")
+      .upload(path, compressed.data, {
+        contentType: compressed.mediaType,
+        upsert: false,
+      });
+    if (upErr)
+      return { error: `Failed to store the screenshot: ${upErr.message}` };
   }
-  const path = `${propertyId}/${Date.now()}-manual-${safeName}`;
-  const { error: upErr } = await supabase.storage
-    .from("utilities")
-    .upload(path, compressed.data, {
-      contentType: compressed.mediaType,
-      upsert: false,
-    });
-  if (upErr)
-    return { error: `Failed to store the screenshot: ${upErr.message}` };
 
   const provider = String(formData.get("provider") ?? "").trim() || null;
-  const accountNumber =
-    String(formData.get("account_number") ?? "").trim() || null;
-  const serviceAddress =
-    String(formData.get("service_address") ?? "").trim() || null;
-  const statementDateRaw = String(formData.get("statement_date") ?? "").trim();
-  const statementDate =
-    cycles.length === 1 && /^\d{4}-\d{2}-\d{2}$/.test(statementDateRaw)
-      ? statementDateRaw
-      : null;
-  const extractNotes = String(formData.get("extract_notes") ?? "").trim();
-  const notes = ["Entered from a screenshot.", extractNotes]
-    .filter(Boolean)
-    .join(" ");
+  const notes = "Entered manually.";
 
   const insertedBillIds: string[] = [];
   const rollback = async () => {
@@ -527,7 +519,7 @@ export async function commitManualBills(
         .delete()
         .in("id", insertedBillIds);
     }
-    await supabase.storage.from("utilities").remove([path]);
+    if (path) await supabase.storage.from("utilities").remove([path]);
   };
 
   for (let i = 0; i < cycles.length; i++) {
@@ -538,9 +530,6 @@ export async function commitManualBills(
         property_id: propertyId,
         provider,
         utility_type: utilityType,
-        account_number: accountNumber,
-        service_address: serviceAddress,
-        statement_date: statementDate,
         period_start: c.start,
         period_end: c.end,
         total_amount: c.amount,
@@ -559,8 +548,8 @@ export async function commitManualBills(
     }
     insertedBillIds.push(bill.id);
 
-    // The extracted breakdown (late fees separated for the over-$200 split)
-    // is used only when it still agrees with the reviewed amount to the cent.
+    // A charges breakdown (late fees separated for the over-$200 split) is
+    // honored only when it agrees with the entered amount to the cent.
     const breakdownTotal =
       Math.round(c.charges.reduce((s, ch) => s + ch.amount, 0) * 100) / 100;
     const chargeRows =

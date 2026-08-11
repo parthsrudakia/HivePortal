@@ -1911,7 +1911,7 @@ export type Database = {
           provider: string | null
           service_address: string | null
           statement_date: string | null
-          statement_path: string
+          statement_path: string | null
           total_amount: number
           utility_type: string
         }
@@ -1929,7 +1929,7 @@ export type Database = {
           provider?: string | null
           service_address?: string | null
           statement_date?: string | null
-          statement_path: string
+          statement_path?: string | null
           total_amount?: number
           utility_type?: string
         }
@@ -1947,7 +1947,7 @@ export type Database = {
           provider?: string | null
           service_address?: string | null
           statement_date?: string | null
-          statement_path?: string
+          statement_path?: string | null
           total_amount?: number
           utility_type?: string
         }
