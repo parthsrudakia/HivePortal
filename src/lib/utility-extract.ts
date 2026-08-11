@@ -26,8 +26,9 @@ const ChargeSchema = z.object({
     .enum(["current", "late_fee", "other"])
     .describe(
       "current = this cycle's usage/service charges (incl. taxes & supply/delivery). " +
-        "late_fee = late payment fees. other = any other one-off charge (deposits, " +
-        "connection fees, equipment).",
+        "late_fee = late payment fees. other = any other one-off charge " +
+        "(connection fees, equipment). Security-deposit transactions are " +
+        "never charges — omit them.",
     ),
   description: z.string().describe("Short label as printed on the statement"),
   amount: z.number().describe("Dollar amount of this charge"),
@@ -62,7 +63,10 @@ const ExtractionSchema = z.object({
         "balance forward, payments received, or credits from earlier bills. " +
         "NEVER include lines that itemize an EARLIER billing period's usage " +
         "(re-billed or adjusted prior cycles, 'service from <older period>' " +
-        "blocks) — those belong to that period's own statement.",
+        "blocks) — those belong to that period's own statement. NEVER include " +
+        "security-deposit transactions (deposit charged, deposit returned, " +
+        "deposit interest) — they are account money movements, not service " +
+        "charges; skip them even on final bills.",
     ),
   notes: z
     .string()
@@ -153,5 +157,13 @@ export async function extractUtilityBill(
   if (!response.parsed_output) {
     throw new Error("Could not extract structured data from the statement.");
   }
-  return response.parsed_output;
+  const extracted = response.parsed_output;
+  // Deterministic backstop to the schema instructions: security-deposit
+  // returns and their interest (common on final bills) are account money
+  // movements, never service charges — drop them regardless of what the
+  // model decided.
+  extracted.charges = extracted.charges.filter(
+    (c) => !/deposit/i.test(c.description),
+  );
+  return extracted;
 }
