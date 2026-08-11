@@ -68,6 +68,7 @@ type Charge = {
   amount: number;
   charged_on: string;
   note: string | null;
+  bill_id: string | null;
 };
 type Allocation = {
   id: string;
@@ -181,7 +182,7 @@ export default async function TenantDetailPage({
     const [chargeRes, allocRes, rentHistRes] = await Promise.all([
       supabase
         .from("tenancy_charges")
-        .select("id, kind, amount, charged_on, note")
+        .select("id, kind, amount, charged_on, note, bill_id")
         .eq("tenancy_id", ledgerTenancy.id)
         .order("charged_on", { ascending: false }),
       // Legacy credit allocations are no longer created, but existing rows are
