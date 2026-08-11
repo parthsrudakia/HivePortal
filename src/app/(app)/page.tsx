@@ -225,7 +225,7 @@ async function InventorySection() {
           {inventoryList.length > 12 && (
             <Link
               href="/inventory"
-              className="mt-3 inline-block text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
+              className="mt-3 inline-block px-3 text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
             >
               +{inventoryList.length - 12} more
             </Link>
@@ -362,7 +362,7 @@ async function CleaningSection() {
           {cleaningWorklist.length > 12 && (
             <Link
               href="/cleaning"
-              className="mt-3 inline-block text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
+              className="mt-3 inline-block px-3 text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
             >
               +{cleaningWorklist.length - 12} more
             </Link>
