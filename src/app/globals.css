@@ -2,18 +2,22 @@
 
 /* Hive brand tokens — must match hiveny.com (see AGENTS.md). */
 @theme {
-  --color-ink: #1a1a18;
+  /* Primary text/dark surfaces — a touch deeper than hiveny.com's #1a1a18 for
+     a small overall contrast lift. */
+  --color-ink: #121210;
   --color-accent: #d4920b;
   --color-accent-dark: #b87d09;
-  --color-accent-text: #9a6f08;
-  --color-cream: #f3efe8;
-  --color-warm: #e3ddd2;
+  --color-accent-text: #8a6307;
+  /* Page background nudged lighter, panels a shade deeper — widens the gap
+     between surfaces and their content just slightly. */
+  --color-cream: #f5f1ea;
+  --color-warm: #ded7ca;
   /* Darkened from hiveny.com's #d8d2c8 so borders, dividers and input outlines
-     read clearly on the cream background. */
-  --color-stone: #a99f90;
+     read clearly on the cream background (a bit deeper still for definition). */
+  --color-stone: #9c9081;
   /* Darkened from hiveny.com's #8a8378 for readability: secondary text now
      clears WCAG AAA (~7:1 on white) instead of ~3.3:1. */
-  --color-muted: #3d382f;
+  --color-muted: #38332b;
   --color-white: #ffffff;
 
   --font-sans: var(--font-dm-sans), -apple-system, "Segoe UI", sans-serif;
