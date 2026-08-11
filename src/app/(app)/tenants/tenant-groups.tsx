@@ -17,8 +17,6 @@ export type DisplayRow = {
   balance: number;
   /** Paused tenancies accrue no rent and get no reminders. */
   paused?: boolean;
-  /** Received a payment from the most recent reconciliation statement. */
-  isNew?: boolean;
 };
 
 export type DisplayGroup = {
@@ -238,14 +236,6 @@ export function TenantGroups({
                                 title="Paused — no new rent accrues; excluded from all reminders and automatic actions."
                               >
                                 Paused
-                              </span>
-                            )}
-                            {r.isNew && (
-                              <span
-                                className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-800"
-                                title="Received a payment from the most recent reconciliation statement."
-                              >
-                                New
                               </span>
                             )}
                             {(r.tenant_email || r.tenant_phone) && (

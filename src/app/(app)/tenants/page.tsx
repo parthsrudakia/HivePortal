@@ -25,10 +25,8 @@ import {
   getOverageAlerts,
   getSidecars,
   getRowsWithStatus,
-  getNewFromLatestStatement,
   getTenantsReminderInfo,
 } from "./data";
-import { NewTxnFilter } from "./new-txn-filter";
 
 export const dynamic = "force-dynamic";
 // sendBalanceReminders (see actions.ts) sends an email + SMS per owing tenant,
@@ -306,25 +304,12 @@ async function SideListsSection() {
   );
 }
 
-// Operator-only "New" filter — only rendered when the latest reconciliation
-// statement actually posted payments to some active tenancies.
-async function NewTxnFilterSlot() {
-  const [user, { tenancyIds, statementDate }] = await Promise.all([
-    getSessionUser(),
-    getNewFromLatestStatement(),
-  ]);
-  if (!canEditLedger(user?.email) || tenancyIds.size === 0) return null;
-  return <NewTxnFilter count={tenancyIds.size} statementDate={statementDate} />;
-}
-
 async function TenantTrackerSection() {
-  const [user, { rows, error }, { data: allProps }, newFromStatement] =
-    await Promise.all([
-      getSessionUser(),
-      getRowsWithStatus(),
-      getAllProperties(),
-      getNewFromLatestStatement(),
-    ]);
+  const [user, { rows, error }, { data: allProps }] = await Promise.all([
+    getSessionUser(),
+    getRowsWithStatus(),
+    getAllProperties(),
+  ]);
 
   if (error) {
     return <p className="mt-6 text-sm text-red-700">{error.message}</p>;
@@ -348,7 +333,6 @@ async function TenantTrackerSection() {
       paid: r.paidThisMonth,
       balance: r.balance,
       paused: !!r.paused_at,
-      isNew: newFromStatement.tenancyIds.has(r.id),
       groupLabel: p ? unitLabel(p) : "Unassigned",
       propertyId: p?.id ?? null,
       haystack: [
@@ -443,9 +427,6 @@ export default function TenantsPage() {
         />
         <BalanceFilter />
         <BalanceSort />
-        <Suspense fallback={null}>
-          <NewTxnFilterSlot />
-        </Suspense>
       </div>
 
       <Suspense
