@@ -2,22 +2,22 @@
 
 /* Hive brand tokens — must match hiveny.com (see AGENTS.md). */
 @theme {
-  /* Primary text/dark surfaces — a touch deeper than hiveny.com's #1a1a18 for
-     a small overall contrast lift. */
-  --color-ink: #121210;
+  /* Primary text/dark surfaces — deeper than hiveny.com's #1a1a18 for an
+     overall contrast lift (essentially near-black now). */
+  --color-ink: #0d0d0b;
   --color-accent: #d4920b;
   --color-accent-dark: #b87d09;
-  --color-accent-text: #8a6307;
-  /* Page background nudged lighter, panels a shade deeper — widens the gap
-     between surfaces and their content just slightly. */
-  --color-cream: #f5f1ea;
-  --color-warm: #ded7ca;
+  --color-accent-text: #7a5606;
+  /* Page background lighter, panels deeper — widens the gap between surfaces
+     and their content. */
+  --color-cream: #f7f3ec;
+  --color-warm: #d8d0c1;
   /* Darkened from hiveny.com's #d8d2c8 so borders, dividers and input outlines
-     read clearly on the cream background (a bit deeper still for definition). */
-  --color-stone: #9c9081;
+     read clearly on the cream background. */
+  --color-stone: #8d8172;
   /* Darkened from hiveny.com's #8a8378 for readability: secondary text now
-     clears WCAG AAA (~7:1 on white) instead of ~3.3:1. */
-  --color-muted: #38332b;
+     clears WCAG AAA on white. */
+  --color-muted: #302b23;
   --color-white: #ffffff;
 
   --font-sans: var(--font-dm-sans), -apple-system, "Segoe UI", sans-serif;
