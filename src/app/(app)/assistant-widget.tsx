@@ -126,11 +126,6 @@ export function AssistantWidget() {
     }
   };
 
-  const clearChat = async () => {
-    await fetch("/api/assistant", { method: "DELETE" }).catch(() => {});
-    setMessages([]);
-  };
-
   if (!open) return null;
 
   // Minimized: just the title bar, click it to expand again. The panel stays
@@ -153,20 +148,8 @@ export function AssistantWidget() {
       {open && (
         <div className="fixed bottom-5 left-5 z-40 flex h-[32rem] max-h-[75vh] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-stone/60 bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b border-stone/40 bg-cream px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-ink">Hive Assistant</p>
-              <p className="text-xs text-muted">
-                Same bot as Telegram — ask anything.
-              </p>
-            </div>
+            <p className="text-sm font-medium text-ink">Hive Assistant</p>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={clearChat}
-                className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
-              >
-                Clear
-              </button>
               <button
                 type="button"
                 onClick={() => setMinimized(true)}
