@@ -5,6 +5,8 @@ import { MobileNav } from "./mobile-nav";
 import { CommandPalette } from "./command-palette";
 import { NavIcon, type NavIconName } from "./nav-icons";
 import {
+  AssistantHeaderLink,
+  AssistantSlot,
   AuthGate,
   DevelopersHeaderLink,
   DevelopersNavLink,
@@ -127,6 +129,9 @@ export default function AppLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-stone/60 bg-cream/90 px-10 backdrop-blur md:flex">
           <Suspense>
+            <AssistantHeaderLink />
+          </Suspense>
+          <Suspense>
             <DevelopersHeaderLink />
           </Suspense>
           <Link
@@ -156,6 +161,9 @@ export default function AppLayout({
         </header>
         <main className="flex-1 px-4 py-6 md:px-10 md:py-12">{children}</main>
       </div>
+      <Suspense>
+        <AssistantSlot />
+      </Suspense>
     </div>
   );
 }

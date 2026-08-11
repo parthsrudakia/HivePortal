@@ -6,6 +6,7 @@ import { getSessionUser, type SessionUser } from "@/lib/session";
 import { canViewProfitability, isMaster, isOperator } from "@/lib/access";
 import { NamePrompt } from "./name-prompt";
 import { NavIcon } from "./nav-icons";
+import { AssistantWidget, AssistantLauncher } from "./assistant-widget";
 
 // Session-dependent fragments of the app shell. Each is rendered behind its
 // own <Suspense> so the layout itself stays free of runtime data access —
@@ -120,6 +121,24 @@ export async function DevelopersHeaderLink() {
       <NavIcon name="developers" />
     </Link>
   );
+}
+
+/**
+ * The in-portal ops-assistant chat — same bot as Telegram. Operator-only
+ * (Vineet & Parth), same gate as the Developers link. Renders nothing for
+ * everyone else, so the widget never mounts for non-operators.
+ */
+export async function AssistantSlot() {
+  const user = await getSessionUser();
+  if (!isOperator(user?.email)) return null;
+  return <AssistantWidget />;
+}
+
+/** Header launcher icon (beside Developers) — operator-only, same gate. */
+export async function AssistantHeaderLink() {
+  const user = await getSessionUser();
+  if (!isOperator(user?.email)) return null;
+  return <AssistantLauncher />;
 }
 
 export async function UserIdentity() {
