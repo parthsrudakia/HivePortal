@@ -6,6 +6,7 @@ import { EditableDate } from "./cleaning/editable-date";
 import { formatDate } from "@/lib/date";
 import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
+import { EndingSoonTable } from "./ending-soon-table";
 import { NavIcon } from "./nav-icons";
 import { CardSkeleton } from "@/components/section-skeletons";
 import {
@@ -408,99 +409,11 @@ async function LeaseEndingSection() {
 
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-muted">
-          <IconCalendar />
-          Lease ending soon
-        </h2>
-        <Link
-          href="/tenants"
-          className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
-        >
-          View all →
-        </Link>
-      </div>
-      {endingSoon.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">
-          No moves planned in the next 30 days.
-        </p>
-      ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-center text-xs uppercase tracking-wide text-muted">
-              <tr className="border-b border-stone/40">
-                <th className="px-3 py-2 text-left font-medium">Unit</th>
-                <th className="px-3 py-2 font-medium">Room</th>
-                <th className="px-3 py-2 font-medium">Tenant</th>
-                <th className="px-3 py-2 font-medium">Lease end</th>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Phone</th>
-              </tr>
-            </thead>
-            <tbody className="text-center">
-              {endingSoon.slice(0, 12).map((t, i) => (
-                <tr
-                  key={`${t.tenant_id}-${i}`}
-                  className="border-b border-stone/20 last:border-0 hover:bg-warm/30"
-                >
-                  <td className="px-3 py-2 text-left">
-                    <Link
-                      href={`/tenants/${t.tenant_id}`}
-                      className="text-accent-text hover:text-accent-dark"
-                    >
-                      {t.unit}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-ink">{t.room || "—"}</td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/tenants/${t.tenant_id}`}
-                      className="text-accent-text hover:text-accent-dark"
-                    >
-                      {t.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-ink">
-                    {formatDate(t.lease_end_date)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {t.email ? (
-                      <a
-                        href={`mailto:${t.email}`}
-                        className="text-accent-text hover:text-accent-dark"
-                      >
-                        {t.email}
-                      </a>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {t.phone ? (
-                      <a
-                        href={`tel:${t.phone}`}
-                        className="text-accent-text hover:text-accent-dark"
-                      >
-                        {t.phone}
-                      </a>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {endingSoon.length > 12 && (
-            <Link
-              href="/tenants"
-              className="mt-3 inline-block px-3 text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
-            >
-              +{endingSoon.length - 12} more
-            </Link>
-          )}
-        </div>
-      )}
+      <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-muted">
+        <IconCalendar />
+        Lease ending soon
+      </h2>
+      <EndingSoonTable rows={endingSoon} />
     </div>
   );
 }
