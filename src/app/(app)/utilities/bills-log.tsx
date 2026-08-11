@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
+import { one } from "@/lib/relations";
 import { SearchableSelect } from "@/components/searchable-select";
 import {
   assignBillProperty,
@@ -898,6 +900,40 @@ function BillCard({
               ))}
             </tbody>
           </table>
+
+          {bill.overage_charged_at &&
+            (() => {
+              const charged = (bill.tenancy_charges ?? []).filter(
+                (c) => c.kind === "utility_overage",
+              );
+              if (charged.length === 0) return null;
+              return (
+                <div className="mt-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
+                    Overage charged to
+                  </p>
+                  <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                    {charged.map((c) => {
+                      const tenant = one(one(c.tenancies)?.tenants ?? null);
+                      if (!tenant) return null;
+                      return (
+                        <li key={c.id}>
+                          <Link
+                            href={`/tenants/${tenant.id}`}
+                            className="flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs text-green-800 hover:underline"
+                          >
+                            <span>{tenant.full_name}</span>
+                            <span className="font-semibold tabular-nums">
+                              {fmtMoney(c.amount)}
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })()}
 
           {(bill.service_address || bill.account_number || bill.notes) && (
             <p className="mt-3 text-xs text-muted">

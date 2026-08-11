@@ -30,7 +30,19 @@ export type BillRow = {
     file_name: string | null;
     sort_order: number;
   }[];
+  /** Ledger charges this bill posted (kind 'utility_overage'). */
+  tenancy_charges?: {
+    id: string;
+    kind: string;
+    amount: number;
+    tenancies:
+      | { tenants: TenantRef | TenantRef[] | null }
+      | { tenants: TenantRef | TenantRef[] | null }[]
+      | null;
+  }[];
 };
+
+type TenantRef = { id: string; full_name: string };
 
 /**
  * The month a bill belongs to: the calendar month holding the majority of
