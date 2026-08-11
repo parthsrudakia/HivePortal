@@ -587,10 +587,10 @@ function InventoryRow({
       className={`h-12 divide-x divide-stone/30 border-t border-stone/30 ${
         room.listing_action === "no_action"
           ? striped
-            ? "bg-[#faf9f5]"
+            ? "bg-warm/40"
             : "bg-white"
           : ACTION_TINT[room.listing_action]
-      } hover:bg-[#f7f5f1]`}
+      } hover:bg-warm/40`}
     >
       <td className="sticky left-0 z-[1] border-r border-stone/40 bg-inherit px-0 py-2.5 align-middle">
         <span

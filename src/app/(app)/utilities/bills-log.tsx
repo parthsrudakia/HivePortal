@@ -770,11 +770,11 @@ function MissingUnits({ units }: { units: UnitOpt[] }) {
   const [open, setOpen] = useState(false);
   if (units.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/70">
+    <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-medium text-amber-900 transition hover:bg-amber-100/60"
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-medium text-amber-900 transition hover:bg-amber-100"
       >
         <span>{open ? "▾" : "▸"}</span>
         <span>

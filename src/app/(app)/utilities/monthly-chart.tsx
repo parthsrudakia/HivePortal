@@ -83,7 +83,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
                 x2={W - PAD.right}
                 y1={t.y}
                 y2={t.y}
-                stroke="#e8e3db"
+                stroke="var(--chart-grid)"
                 strokeWidth="1"
               />
               <text
@@ -91,7 +91,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
                 y={t.y + 3.5}
                 textAnchor="end"
                 fontSize="10"
-                fill="#8a8378"
+                fill="var(--chart-axis)"
               >
                 {t.value >= 1000 ? `$${(t.value / 1000).toFixed(1)}k` : `$${t.value}`}
               </text>
@@ -106,7 +106,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
               y={H - 8}
               textAnchor="middle"
               fontSize="10"
-              fill="#8a8378"
+              fill="var(--chart-axis)"
             >
               {monthLabelShort(p.month)}
             </text>
@@ -119,7 +119,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
               x2={h.x}
               y1={PAD.top}
               y2={H - PAD.bottom}
-              stroke="#c4bdb3"
+              stroke="var(--chart-grid)"
               strokeWidth="1"
               strokeDasharray="3 3"
             />
@@ -156,7 +156,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
               textAnchor="end"
               fontSize="11"
               fontWeight="600"
-              fill="#1a1a18"
+              fill="var(--chart-label)"
             >
               {fmtMoney(points[points.length - 1].total)}
             </text>

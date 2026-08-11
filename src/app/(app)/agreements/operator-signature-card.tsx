@@ -69,7 +69,7 @@ export function OperatorSignatureCard({
           <img
             src={signatureUrl}
             alt="Your signature"
-            className="mt-4 h-16 w-auto"
+            className="dark-invert-img mt-4 h-16 w-auto"
           />
         ) : (
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

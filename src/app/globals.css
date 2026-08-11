@@ -24,6 +24,13 @@
   --font-serif: var(--font-cormorant), Georgia, serif;
 }
 
+/* Chart palette (light) — the dark theme flips these under html.dark. */
+:root {
+  --chart-grid: #e8e3db;
+  --chart-axis: #8a8378;
+  --chart-label: #1a1a18;
+}
+
 html,
 body {
   background: var(--color-cream);
@@ -50,6 +57,33 @@ html.dark {
   --color-accent: #e0a52c; /* honey, a touch brighter for dark surfaces */
   --color-accent-dark: #d4920b; /* accent hover */
   --color-accent-text: #ecb64a; /* links — bright honey on dark */
+  /* Chart palette (see monthly-chart) — flips per theme. */
+  --chart-grid: #35322c;
+  --chart-axis: #a8a196;
+  --chart-label: #f2efe8;
+}
+
+/* Inherited text: the body sets color:var(--color-ink), which stays near-black
+   in dark mode, so any element WITHOUT an explicit text color would inherit
+   dark text (e.g. the Projects stat numbers). Lift the base text in dark. */
+html.dark body {
+  color: #f2efe8;
+}
+
+/* text-cream / border-cream are "light on a dark surface" tokens (the dashboard
+   hero title, its kbd) — they would flip dark since --color-cream is now the
+   dark page background. Keep them light. */
+html.dark [class*="text-cream"] {
+  color: #f2efe8;
+}
+html.dark [class*="border-cream"] {
+  border-color: rgba(242, 239, 232, 0.25);
+}
+
+/* A signed signature PNG is dark ink on transparent — invert it so the strokes
+   show on a dark card. */
+html.dark .dark-invert-img {
+  filter: invert(0.92) hue-rotate(180deg);
 }
 
 /* Primary text → warm off-white. The [class*="text-ink"] selector also catches
@@ -96,24 +130,40 @@ html.dark .\!bg-ink {
    tints and the deep text (text-*-700/800/900) becomes a light tint, so chips
    read correctly on dark instead of glowing as bright pastels. Solid badges
    (bg-red-600 etc.) already have white text and are left alone. */
-html.dark .bg-red-50,
-html.dark .bg-red-100 {
-  background-color: rgba(248, 113, 113, 0.15);
+html.dark [class*="bg-red-50"],
+html.dark [class*="bg-red-100"],
+html.dark [class*="bg-red-200"] {
+  background-color: rgba(248, 113, 113, 0.16);
 }
-html.dark .bg-green-50,
-html.dark .bg-green-100 {
-  background-color: rgba(74, 222, 128, 0.15);
+html.dark [class*="bg-green-50"],
+html.dark [class*="bg-green-100"],
+html.dark [class*="bg-green-200"] {
+  background-color: rgba(74, 222, 128, 0.16);
 }
-html.dark .bg-orange-100 {
-  background-color: rgba(251, 146, 60, 0.15);
+html.dark [class*="bg-orange-100"],
+html.dark [class*="bg-orange-200"] {
+  background-color: rgba(251, 146, 60, 0.16);
 }
-html.dark .bg-amber-50,
-html.dark .bg-amber-100 {
-  background-color: rgba(251, 191, 36, 0.15);
+html.dark [class*="bg-amber-50"],
+html.dark [class*="bg-amber-100"],
+html.dark [class*="bg-amber-200"] {
+  background-color: rgba(251, 191, 36, 0.16);
 }
-html.dark .bg-blue-50,
-html.dark .bg-blue-100 {
-  background-color: rgba(96, 165, 250, 0.15);
+html.dark [class*="bg-blue-50"],
+html.dark [class*="bg-blue-100"] {
+  background-color: rgba(96, 165, 250, 0.16);
+}
+html.dark [class*="bg-yellow-100"],
+html.dark [class*="bg-yellow-200"] {
+  background-color: rgba(250, 204, 21, 0.16);
+}
+html.dark [class*="bg-purple-100"],
+html.dark [class*="bg-purple-200"] {
+  background-color: rgba(192, 132, 252, 0.16);
+}
+html.dark [class*="bg-gray-50"],
+html.dark [class*="bg-gray-100"] {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 html.dark .text-red-700,
@@ -137,6 +187,16 @@ html.dark .text-amber-900 {
 html.dark .text-blue-800,
 html.dark .text-blue-900 {
   color: #93c5fd;
+}
+html.dark .text-purple-700,
+html.dark .text-purple-800,
+html.dark .text-purple-900 {
+  color: #d8b4fe;
+}
+html.dark .text-yellow-700,
+html.dark .text-yellow-800,
+html.dark .text-yellow-900 {
+  color: #fde047;
 }
 
 html.dark .border-red-200,

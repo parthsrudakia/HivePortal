@@ -494,7 +494,7 @@ async function LeaseEndingSection() {
           {endingSoon.length > 12 && (
             <Link
               href="/tenants"
-              className="mt-3 inline-block text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
+              className="mt-3 inline-block px-3 text-xs uppercase tracking-wide text-accent-text hover:text-accent-dark"
             >
               +{endingSoon.length - 12} more
             </Link>
