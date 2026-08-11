@@ -149,7 +149,7 @@ export function AssistantWidget() {
         <div className="fixed bottom-5 left-5 z-40 flex h-[32rem] max-h-[75vh] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-stone/60 bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b border-stone/40 bg-cream px-4 py-3">
             <p className="text-sm font-medium text-ink">Hive Assistant</p>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setMinimized(true)}
@@ -157,7 +157,7 @@ export function AssistantWidget() {
                 title="Minimize"
                 className="flex h-7 w-7 items-center justify-center text-ink transition hover:text-accent-text"
               >
-                <span className="block h-1 w-5 rounded-full bg-current" />
+                <span className="block h-1 w-3.5 rounded-full bg-current" />
               </button>
               <button
                 type="button"
