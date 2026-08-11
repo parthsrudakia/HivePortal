@@ -126,16 +126,20 @@ html.dark .\!bg-ink {
 }
 
 /* Semantic status colors (PAID / MISSING / MISMATCH chips, late-fee tags, red
-   balances). The light pastel backgrounds (bg-*-50/100) become dark translucent
-   tints and the deep text (text-*-700/800/900) becomes a light tint, so chips
-   read correctly on dark instead of glowing as bright pastels. Solid badges
-   (bg-red-600 etc.) already have white text and are left alone. */
-html.dark [class*="bg-red-50"],
+   balances). The light pastel backgrounds (bg-*-50/100/200) become dark
+   translucent tints and the deep text (text-*-700/800/900) becomes a light
+   tint, so chips read correctly on dark instead of glowing as bright pastels.
+   Solid saturated fills (bg-red-500/600, legend swatches) are left alone —
+   note the `-50` selectors use `.bg-x-50` exact + `[class*="bg-x-50/"]` for
+   opacity variants so they DON'T also match `bg-x-500`. */
+html.dark .bg-red-50,
+html.dark [class*="bg-red-50/"],
 html.dark [class*="bg-red-100"],
 html.dark [class*="bg-red-200"] {
   background-color: rgba(248, 113, 113, 0.16);
 }
-html.dark [class*="bg-green-50"],
+html.dark .bg-green-50,
+html.dark [class*="bg-green-50/"],
 html.dark [class*="bg-green-100"],
 html.dark [class*="bg-green-200"] {
   background-color: rgba(74, 222, 128, 0.16);
@@ -144,12 +148,14 @@ html.dark [class*="bg-orange-100"],
 html.dark [class*="bg-orange-200"] {
   background-color: rgba(251, 146, 60, 0.16);
 }
-html.dark [class*="bg-amber-50"],
+html.dark .bg-amber-50,
+html.dark [class*="bg-amber-50/"],
 html.dark [class*="bg-amber-100"],
 html.dark [class*="bg-amber-200"] {
   background-color: rgba(251, 191, 36, 0.16);
 }
-html.dark [class*="bg-blue-50"],
+html.dark .bg-blue-50,
+html.dark [class*="bg-blue-50/"],
 html.dark [class*="bg-blue-100"] {
   background-color: rgba(96, 165, 250, 0.16);
 }
@@ -161,7 +167,8 @@ html.dark [class*="bg-purple-100"],
 html.dark [class*="bg-purple-200"] {
   background-color: rgba(192, 132, 252, 0.16);
 }
-html.dark [class*="bg-gray-50"],
+html.dark .bg-gray-50,
+html.dark [class*="bg-gray-50/"],
 html.dark [class*="bg-gray-100"] {
   background-color: rgba(255, 255, 255, 0.05);
 }
