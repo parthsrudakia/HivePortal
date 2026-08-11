@@ -3,6 +3,7 @@ import Link from "next/link";
 import { logout } from "../login/actions";
 import { MobileNav } from "./mobile-nav";
 import { CommandPalette } from "./command-palette";
+import { ThemeToggle } from "./theme-toggle";
 import { NavIcon, type NavIconName } from "./nav-icons";
 import {
   AssistantHeaderLink,
@@ -124,6 +125,10 @@ export default function AppLayout({
             />
           </Suspense>
         </nav>
+        {/* Pinned to the sidebar bottom. */}
+        <div className="mt-auto border-t border-stone/40 pt-3">
+          <ThemeToggle />
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

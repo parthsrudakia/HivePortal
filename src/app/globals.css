@@ -33,6 +33,53 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Dark mode ──────────────────────────────────────────────────────────────
+   Same warm honey palette, inverted. The tokens `ink` and `white` are
+   overloaded in this codebase — used both as TEXT (text-ink, text-white) and
+   as SURFACES (bg-ink buttons/overlays, bg-white cards). So instead of flipping
+   those two variables (which would break one role or the other), we:
+     • flip the surface/neutral tokens (cream, warm, stone, muted, links), and
+     • re-map only the TEXT and CARD utility roles in dark mode below.
+   Dark buttons (bg-ink + text-white) and modal scrims (bg-ink/40) keep working
+   because `--color-ink` / `--color-white` are left untouched. */
+html.dark {
+  color-scheme: dark;
+  --color-cream: #16130d; /* app background */
+  --color-warm: #29221a; /* subtle panels & hovers */
+  --color-stone: #473f30; /* borders / dividers / input outlines */
+  --color-muted: #b2a893; /* secondary text (now light) */
+  --color-accent-text: #e2ab3e; /* links — lighter honey for dark backgrounds */
+}
+
+/* Primary text → warm off-white. The [class*="text-ink"] selector also catches
+   opacity (text-ink/80) and state (hover:text-ink) variants; the flat color
+   drops opacity nuance, which is acceptable for secondary emphasis. Kept
+   non-important so a link's `hover:text-accent-text` can still win. */
+html.dark .text-ink,
+html.dark [class*="text-ink"] {
+  color: #f2ede3;
+}
+
+/* White card/input surfaces → a dark surface lifted just above the app bg so
+   cards still separate. text-white (light button labels) is deliberately NOT
+   matched here. */
+html.dark .bg-white,
+html.dark [class*="bg-white"] {
+  background-color: #1f1a12;
+}
+
+/* Sonner toasts force their colors with `!` utilities (!bg-white / !text-ink),
+   so they need matching !important overrides to theme in dark mode. */
+html.dark .\!bg-white {
+  background-color: #1f1a12 !important;
+}
+html.dark .\!text-ink {
+  color: #f2ede3 !important;
+}
+html.dark .\!bg-warm {
+  background-color: var(--color-warm) !important;
+}
+
 /* Italic display accent (e.g. *Vacancy*) — bold to match the page titles. */
 .font-display {
   font-family: var(--font-serif);
