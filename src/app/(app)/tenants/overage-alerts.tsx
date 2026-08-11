@@ -14,6 +14,46 @@ export type OverageAlert = {
 const fmtMoney = (n: number) =>
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// One card per tenant: a tenant charged on several bills (e.g. June and July
+// statements of the same unit) shows one card with a line per bill, so the
+// list never reads as duplicate rows.
+function groupByTenant(alerts: OverageAlert[]) {
+  const groups = new Map<string, OverageAlert[]>();
+  for (const a of alerts) {
+    const key = `${a.tenant_name}|${a.unit_label}`;
+    const list = groups.get(key);
+    if (list) list.push(a);
+    else groups.set(key, [a]);
+  }
+  return [...groups.entries()].map(([key, rows]) => ({
+    key,
+    rows,
+    total: rows.reduce((s, r) => s + Number(r.amount), 0),
+  }));
+}
+
+function DismissButton({
+  pending,
+  label,
+  onClick,
+}: {
+  pending: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={onClick}
+      className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
+      aria-label={label}
+    >
+      ✕
+    </button>
+  );
+}
+
 /**
  * Popup shown on the Rent Tracker when a utility-overage split included
  * tenants who had already moved out. Their share IS posted to their (ended)
@@ -51,28 +91,63 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
           deposit), then dismiss.
         </p>
 
-        <ul className="mt-4 flex flex-col gap-2">
-          {visible.map((a) => (
-            <li
-              key={a.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-cream/70 px-3 py-2 text-sm"
-            >
-              <span className="font-medium text-ink">{a.tenant_name}</span>
-              <span className="text-xs text-muted">
-                {a.unit_label} · {a.period_label}
-              </span>
-              <span className="ml-auto font-semibold tabular-nums text-ink">
-                {fmtMoney(a.amount)}
-              </span>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => acknowledge([a.id])}
-                className="rounded-full px-1.5 text-muted transition hover:text-ink disabled:opacity-50"
-                aria-label={`Dismiss alert for ${a.tenant_name}`}
-              >
-                ✕
-              </button>
+        <ul className="mt-4 flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
+          {groupByTenant(visible).map(({ key, rows, total }) => (
+            <li key={key} className="rounded-xl bg-cream/70 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">
+                    {rows[0].tenant_name}
+                  </p>
+                  <p className="truncate text-xs text-muted">
+                    {rows[0].unit_label}
+                  </p>
+                </div>
+                {rows.length === 1 ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums text-ink">
+                      {fmtMoney(total)}
+                    </span>
+                    <DismissButton
+                      pending={pending}
+                      label={`Dismiss alert for ${rows[0].tenant_name}`}
+                      onClick={() => acknowledge([rows[0].id])}
+                    />
+                  </div>
+                ) : (
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+                    {fmtMoney(total)}
+                  </span>
+                )}
+              </div>
+              {rows.length === 1 ? (
+                <p className="mt-1 truncate text-xs text-muted">
+                  {rows[0].period_label}
+                </p>
+              ) : (
+                <ul className="mt-2 flex flex-col gap-1.5 border-t border-stone/40 pt-2">
+                  {rows.map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <span className="min-w-0 truncate text-xs text-muted">
+                        {a.period_label}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm tabular-nums text-ink">
+                          {fmtMoney(a.amount)}
+                        </span>
+                        <DismissButton
+                          pending={pending}
+                          label={`Dismiss ${a.period_label} alert for ${a.tenant_name}`}
+                          onClick={() => acknowledge([a.id])}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
