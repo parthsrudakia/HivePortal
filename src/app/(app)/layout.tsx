@@ -77,10 +77,10 @@ export default function AppLayout({
         }
       />
       <CommandPalette />
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-stone/60 bg-white/60 px-4 py-8 md:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start overflow-hidden border-r border-stone/60 bg-white/60 px-4 py-8 md:flex">
         <Link
           href="/"
-          className="flex items-center gap-2 px-2 text-2xl tracking-tight text-ink"
+          className="flex shrink-0 items-center gap-2 px-2 text-2xl tracking-tight text-ink"
         >
           <svg
             width="24"
@@ -102,7 +102,7 @@ export default function AppLayout({
             Hive <span className="font-display text-accent-text">Portal</span>
           </span>
         </Link>
-        <nav className="mt-10 flex flex-col gap-1 text-sm">
+        <nav className="mt-10 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto text-sm">
           {NAV.map((item) => (
             <Link
               key={item.href}
@@ -125,8 +125,8 @@ export default function AppLayout({
             />
           </Suspense>
         </nav>
-        {/* Pinned to the sidebar bottom. */}
-        <div className="mt-auto border-t border-stone/40 pt-3">
+        {/* Pinned to the sidebar bottom, always visible. */}
+        <div className="mt-3 shrink-0 border-t border-stone/40 pt-3">
           <ThemeToggle />
         </div>
       </aside>
