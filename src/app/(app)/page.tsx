@@ -619,7 +619,7 @@ function WorklistRow({
           )}
         </div>
         <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${pill}`}
+          className={`inline-block shrink-0 min-w-20 rounded-full px-2.5 py-1 text-center text-xs font-medium tabular-nums ${pill}`}
         >
           {right}
         </span>
