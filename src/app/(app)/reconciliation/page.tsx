@@ -588,6 +588,9 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
           <tbody>
             {sorted.map((m) => {
               const flagged = m.status === "mismatch" || m.status === "missing";
+              // Quick-ledger is offered to anyone who still owes, not only the
+              // mismatch/missing rows.
+              const owes = (balanceByTenancy.get(m.tenancy_id) ?? 0) > 0.005;
               return (
                 <tr key={m.tenancy_id} className="h-16 border-t border-stone/40">
                   <td className="px-5 py-2">
@@ -633,18 +636,31 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {flagged && m.tenant_id && (
+                    {(flagged || owes) && m.tenant_id && (
                       <LedgerQuickAdd
                         tenancyId={m.tenancy_id}
                         tenantId={m.tenant_id}
                         tenantName={m.tenant_name}
-                        suggestedAmount={Math.max(
-                          0,
-                          Math.round(
-                            (Number(m.expected_rent) - Number(m.actual_amount)) *
-                              100,
-                          ) / 100,
-                        )}
+                        suggestedAmount={
+                          // Prefill the current-month shortfall for flagged
+                          // rows; for a matched-but-owing tenant, their
+                          // outstanding balance is the more useful default.
+                          flagged
+                            ? Math.max(
+                                0,
+                                Math.round(
+                                  (Number(m.expected_rent) -
+                                    Number(m.actual_amount)) *
+                                    100,
+                                ) / 100,
+                              )
+                            : Math.max(
+                                0,
+                                Math.round(
+                                  (balanceByTenancy.get(m.tenancy_id) ?? 0) * 100,
+                                ) / 100,
+                              )
+                        }
                         canCharge={admin}
                       />
                     )}
