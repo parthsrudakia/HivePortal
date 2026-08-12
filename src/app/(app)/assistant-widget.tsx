@@ -56,8 +56,11 @@ export function AssistantWidget() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLButtonElement>(null);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const dragStart = useRef({ x: 0, y: 0 });
+  const dragMoved = useRef(false);
 
   // Restore the last dragged position (per tab, like the conversation).
   useEffect(() => {
@@ -81,20 +84,31 @@ export function AssistantWidget() {
     }
   }, [pos]);
 
-  // Drag by the header. Buttons inside it (minimize/close) don't start a drag.
+  // Drag by the header (expanded) or the whole bar (minimized). The positioned
+  // element is whichever of the two is currently mounted. Inner buttons
+  // (minimize/close) don't start a drag.
+  const positioned = () => panelRef.current ?? barRef.current;
   const onDragStart = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    const rect = panelRef.current?.getBoundingClientRect();
+    if ((e.target as HTMLElement).closest("button[data-widget-btn]")) return;
+    const rect = positioned()?.getBoundingClientRect();
     if (!rect) return;
     dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    dragMoved.current = false;
     setPos({ x: rect.left, y: rect.top }); // pin current spot before moving
     dragging.current = true;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
-    const w = panelRef.current?.offsetWidth ?? 352;
-    const h = panelRef.current?.offsetHeight ?? 480;
+    const el = positioned();
+    const w = el?.offsetWidth ?? 352;
+    const h = el?.offsetHeight ?? 480;
+    if (
+      Math.hypot(e.clientX - dragStart.current.x, e.clientY - dragStart.current.y) > 4
+    ) {
+      dragMoved.current = true;
+    }
     const x = Math.min(Math.max(0, e.clientX - dragOffset.current.x), window.innerWidth - w);
     const y = Math.min(Math.max(0, e.clientY - dragOffset.current.y), window.innerHeight - h);
     setPos({ x, y });
@@ -199,10 +213,16 @@ export function AssistantWidget() {
   if (minimized) {
     return (
       <button
+        ref={barRef}
         type="button"
-        onClick={() => setMinimized(false)}
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onClick={() => {
+          if (!dragMoved.current) setMinimized(false);
+        }}
         style={posStyle}
-        className={`fixed z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] items-center justify-between rounded-xl border border-stone/60 bg-cream px-4 py-3 shadow-lg transition hover:bg-warm ${posClass}`}
+        className={`fixed z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] cursor-grab touch-none select-none items-center justify-between rounded-xl border border-stone/60 bg-cream px-4 py-3 shadow-lg transition hover:bg-warm active:cursor-grabbing ${posClass}`}
       >
         <span className="text-sm font-medium text-ink">Hive Assistant</span>
         <span className="text-muted">▴</span>
@@ -228,6 +248,7 @@ export function AssistantWidget() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                data-widget-btn
                 onClick={() => setMinimized(true)}
                 aria-label="Minimize assistant"
                 title="Minimize"
@@ -237,6 +258,7 @@ export function AssistantWidget() {
               </button>
               <button
                 type="button"
+                data-widget-btn
                 onClick={() => setOpen(false)}
                 aria-label="Close assistant"
                 title="Close"
