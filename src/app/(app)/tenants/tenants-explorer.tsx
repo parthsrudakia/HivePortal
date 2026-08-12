@@ -150,6 +150,7 @@ export function TenantsExplorer({
       groups={groups}
       defaultExpanded={owingOnly}
       admin={admin}
+      hideGroupHeaders={owingOnly && balanceSort !== null}
     />
   );
 }

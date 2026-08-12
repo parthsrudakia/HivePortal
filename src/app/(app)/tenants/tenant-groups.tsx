@@ -54,12 +54,16 @@ export function TenantGroups({
   groups,
   defaultExpanded = false,
   admin = false,
+  hideGroupHeaders = false,
 }: {
   groups: DisplayGroup[];
   defaultExpanded?: boolean;
   // Admins see the "Paid" column and per-property subtotals (collection
   // totals). Everyone else still sees each tenant's Due (rent) and Balance.
   admin?: boolean;
+  // When true, drop the per-unit "Unit total" header rows and show a flat
+  // list — used for the balance-only + sort-by-balance ranked view.
+  hideGroupHeaders?: boolean;
 }) {
   // Track collapsed groups by label; empty = everything expanded. Start with
   // every property collapsed each time the page opens — unless defaultExpanded
@@ -81,22 +85,24 @@ export function TenantGroups({
 
   return (
     <section className="mt-8">
-      <div className="mb-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={collapseAll}
-          className="rounded-full border border-stone px-3 py-1 text-sm font-medium text-ink transition hover:bg-warm"
-        >
-          Collapse all
-        </button>
-        <button
-          type="button"
-          onClick={expandAll}
-          className="rounded-full border border-stone px-3 py-1 text-sm font-medium text-ink transition hover:bg-warm"
-        >
-          Expand all
-        </button>
-      </div>
+      {!hideGroupHeaders && (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={collapseAll}
+            className="rounded-full border border-stone px-3 py-1 text-sm font-medium text-ink transition hover:bg-warm"
+          >
+            Collapse all
+          </button>
+          <button
+            type="button"
+            onClick={expandAll}
+            className="rounded-full border border-stone px-3 py-1 text-sm font-medium text-ink transition hover:bg-warm"
+          >
+            Expand all
+          </button>
+        </div>
+      )}
 
       <div className="rounded-2xl bg-white shadow-sm">
         <table className="w-full text-base">
@@ -119,9 +125,11 @@ export function TenantGroups({
           </thead>
           <tbody>
             {groups.map((g, i) => {
-              const isCollapsed = collapsed.has(g.label);
+              // With headers hidden there's nothing to collapse — always show.
+              const isCollapsed = hideGroupHeaders ? false : collapsed.has(g.label);
               return (
                 <Fragment key={g.label}>
+                  {!hideGroupHeaders && (
                   <tr className="border-t border-stone/60 bg-warm/80">
                     <td colSpan={2} className="px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -202,6 +210,7 @@ export function TenantGroups({
                       </>
                     )}
                   </tr>
+                  )}
 
                   {!isCollapsed && g.rows.length === 0 && (
                     <tr className="border-t border-stone/30">
