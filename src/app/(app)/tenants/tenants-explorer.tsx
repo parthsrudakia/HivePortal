@@ -41,12 +41,6 @@ export function TenantsExplorer({
     .trim()
     .toLowerCase();
   const owingOnly = useDeferredValue(searchParams.get("owing")) === "1";
-  const sortParam = useDeferredValue(searchParams.get("sort"));
-  // Balance sort only applies inside the owing view.
-  const balanceSort =
-    owingOnly && (sortParam === "balance_desc" || sortParam === "balance_asc")
-      ? sortParam
-      : null;
 
   const groups: DisplayGroup[] = useMemo(() => {
     const visibleRows = rows.filter((r) => {
@@ -54,6 +48,23 @@ export function TenantsExplorer({
       if (!query) return true;
       return r.haystack.includes(query);
     });
+
+    // Balance-due view: NOT grouped by property — one flat list ranked by
+    // each tenant's own balance, biggest first. The unit shows per-row.
+    if (owingOnly) {
+      const flat = [...visibleRows].sort((a, b) => b.balance - a.balance);
+      if (flat.length === 0) return []; // let the empty-state message show
+      return [
+        {
+          label: "",
+          propertyId: null,
+          rows: flat,
+          subDue: flat.reduce((s, r) => s + r.due, 0),
+          subPaid: flat.reduce((s, r) => s + r.paid, 0),
+          subBalance: flat.reduce((s, r) => s + r.balance, 0),
+        },
+      ];
+    }
 
     // Group active tenancies by property for the collapsible list. Capture the
     // property id so the group header can link to that property's page.
@@ -110,19 +121,8 @@ export function TenantsExplorer({
         };
       });
 
-    // Reorder the owing view by balance: tenants within each group and the
-    // groups themselves (by subtotal), so the biggest debtors surface first
-    // (or last, ascending).
-    if (balanceSort) {
-      const dir = balanceSort === "balance_asc" ? 1 : -1;
-      for (const g of grouped) {
-        g.rows.sort((a, b) => dir * (a.balance - b.balance));
-      }
-      grouped.sort((a, b) => dir * (a.subBalance - b.subBalance));
-    }
-
     return grouped;
-  }, [rows, vacantProperties, owingOnly, query, balanceSort]);
+  }, [rows, vacantProperties, owingOnly, query]);
 
   if (groups.length === 0) {
     return (
@@ -150,7 +150,7 @@ export function TenantsExplorer({
       groups={groups}
       defaultExpanded={owingOnly}
       admin={admin}
-      hideGroupHeaders={owingOnly && balanceSort !== null}
+      hideGroupHeaders={owingOnly}
     />
   );
 }

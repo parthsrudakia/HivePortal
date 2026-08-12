@@ -5,7 +5,6 @@ import { one } from "@/lib/relations";
 import { SearchInput } from "@/components/search-input";
 import { KpiRowSkeleton, TableSkeleton } from "@/components/section-skeletons";
 import { BalanceFilter } from "./balance-filter";
-import { BalanceSort } from "./balance-sort";
 import { RentReminderButton } from "./rent-reminder-button";
 import { computeLedger } from "@/lib/rent";
 import { todayISO } from "@/lib/date";
@@ -333,6 +332,7 @@ async function TenantTrackerSection() {
       paid: r.paidThisMonth,
       balance: r.balance,
       paused: !!r.paused_at,
+      unitLabel: p ? unitLabel(p) : "Unassigned",
       groupLabel: p ? unitLabel(p) : "Unassigned",
       propertyId: p?.id ?? null,
       haystack: [
@@ -426,7 +426,6 @@ export default function TenantsPage() {
           ariaLabel="Search tenants"
         />
         <BalanceFilter />
-        <BalanceSort />
       </div>
 
       <Suspense

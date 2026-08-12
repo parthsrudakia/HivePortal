@@ -17,6 +17,8 @@ export type DisplayRow = {
   balance: number;
   /** Paused tenancies accrue no rent and get no reminders. */
   paused?: boolean;
+  /** Unit label for this row — shown under the name in the flat balance view. */
+  unitLabel?: string;
 };
 
 export type DisplayGroup = {
@@ -246,6 +248,12 @@ export function TenantGroups({
                               >
                                 Paused
                               </span>
+                            )}
+                            {/* In the flat balance view the unit header rows
+                                are hidden, so surface the property under each
+                                tenant (same style as their contact line). */}
+                            {hideGroupHeaders && r.unitLabel && (
+                              <p className="text-sm text-muted">{r.unitLabel}</p>
                             )}
                             {(r.tenant_email || r.tenant_phone) && (
                               <p className="text-sm text-muted">
