@@ -42,15 +42,73 @@ export function AssistantLauncher() {
   );
 }
 
+const POS_KEY = "hive_assistant_pos";
+
 export function AssistantWidget() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  // Free-drag position (viewport px, top-left). null = default bottom-left.
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const loadedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  // Restore the last dragged position (per tab, like the conversation).
+  useEffect(() => {
+    try {
+      const s = sessionStorage.getItem(POS_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot restore of the saved drag position from sessionStorage
+      if (s) setPos(JSON.parse(s));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Persist the position as it changes so it survives refreshes this session.
+  useEffect(() => {
+    if (pos) {
+      try {
+        sessionStorage.setItem(POS_KEY, JSON.stringify(pos));
+      } catch {
+        // ignore
+      }
+    }
+  }, [pos]);
+
+  // Drag by the header. Buttons inside it (minimize/close) don't start a drag.
+  const onDragStart = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    setPos({ x: rect.left, y: rect.top }); // pin current spot before moving
+    dragging.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const w = panelRef.current?.offsetWidth ?? 352;
+    const h = panelRef.current?.offsetHeight ?? 480;
+    const x = Math.min(Math.max(0, e.clientX - dragOffset.current.x), window.innerWidth - w);
+    const y = Math.min(Math.max(0, e.clientY - dragOffset.current.y), window.innerHeight - h);
+    setPos({ x, y });
+  };
+  const onDragEnd = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  };
+  // Fixed positioning: dragged coords when set, else default bottom-left.
+  const posStyle: React.CSSProperties | undefined = pos
+    ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" }
+    : undefined;
+  const posClass = pos ? "" : "bottom-5 left-5";
 
   // The header launcher toggles the panel via a window event. Toggling always
   // brings it up expanded (never re-opens straight into a minimized bar).
@@ -99,6 +157,14 @@ export function AssistantWidget() {
     if (open) inputRef.current?.focus();
   }, [open]);
 
+  // Auto-grow the input as the operator types more lines (capped, then scrolls).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
   const send = async () => {
     const text = input.trim();
     if (!text || pending) return;
@@ -135,7 +201,8 @@ export function AssistantWidget() {
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        className="fixed bottom-5 left-5 z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] items-center justify-between rounded-xl border border-stone/60 bg-cream px-4 py-3 shadow-lg transition hover:bg-warm"
+        style={posStyle}
+        className={`fixed z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] items-center justify-between rounded-xl border border-stone/60 bg-cream px-4 py-3 shadow-lg transition hover:bg-warm ${posClass}`}
       >
         <span className="text-sm font-medium text-ink">Hive Assistant</span>
         <span className="text-muted">▴</span>
@@ -146,8 +213,17 @@ export function AssistantWidget() {
   return (
     <>
       {open && (
-        <div className="fixed bottom-5 left-5 z-40 flex h-[32rem] max-h-[75vh] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-stone/60 bg-white shadow-2xl">
-          <header className="flex items-center justify-between border-b border-stone/40 bg-cream px-4 py-3">
+        <div
+          ref={panelRef}
+          style={posStyle}
+          className={`fixed z-40 flex h-[32rem] max-h-[75vh] w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-stone/60 bg-white shadow-2xl ${posClass}`}
+        >
+          <header
+            onPointerDown={onDragStart}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            className="flex cursor-grab touch-none select-none items-center justify-between border-b border-stone/40 bg-cream px-4 py-3 active:cursor-grabbing"
+          >
             <p className="text-sm font-medium text-ink">Hive Assistant</p>
             <div className="flex items-center gap-2">
               <button
@@ -232,7 +308,7 @@ export function AssistantWidget() {
                 rows={1}
                 placeholder="Message the assistant…"
                 disabled={pending}
-                className="max-h-28 flex-1 resize-none rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-60"
+                className="max-h-40 min-h-[2.5rem] flex-1 resize-none overflow-y-auto rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-60"
               />
               <button
                 type="button"
