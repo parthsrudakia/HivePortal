@@ -19,6 +19,7 @@ import {
   signedAgreementEmailTemplate,
 } from "@/lib/email";
 import { logEmail } from "@/lib/email-log";
+import { notifyOperators } from "@/lib/telegram";
 
 // Matches the client-side cap in sign-form.tsx; server actions reject bodies
 // over ~1MB anyway, this just gives a friendlier error first.
@@ -186,6 +187,25 @@ export async function submitSignature(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
   });
+
+  // Alert the operators on Telegram. On a confirmed send, stamp the row as
+  // notified; otherwise leave it unstamped and the daily cron sweep
+  // (retrySignedAgreementAlerts) re-sends until it lands.
+  const notified = await notifyOperators(
+    [
+      `✍️ ${request.tenant_name} just signed their agreement`,
+      request.property_address,
+      result.ok
+        ? `Signed copy emailed to ${request.recipient_email}.`
+        : `⚠️ Emailing the signed copy failed — re-send it from the portal.`,
+    ].join("\n"),
+  );
+  if (notified) {
+    await supabase
+      .from("agreement_requests")
+      .update({ operator_notified_at: new Date().toISOString() })
+      .eq("id", request.id);
+  }
 
   return { ok: true };
 }

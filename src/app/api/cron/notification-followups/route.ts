@@ -7,7 +7,8 @@
  *   3. roll the 35-day cleaning cadence forward,
  *   4. roll board recurring cycles + email deadline reminders,
  *   5. apply the monthly $50 late fees (first run on/after the 7th ET),
- *   6. auto-dismiss duplicate signing requests (same person, within 15 days).
+ *   6. auto-dismiss duplicate signing requests (same person, within 15 days),
+ *   7. retry undelivered "agreement signed" Telegram alerts.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -19,6 +20,7 @@ import { processBoardDeadlines } from "@/lib/board";
 import { applyMonthlyLateFees } from "@/lib/late-fees";
 import { processExpiredTenancies } from "@/lib/tenancy-lifecycle";
 import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
+import { retrySignedAgreementAlerts } from "@/lib/agreement-notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -87,8 +89,19 @@ export async function GET(req: NextRequest) {
     }),
   );
 
+  // Re-send any "agreement signed" Telegram alert that never got through
+  // (retry-until-delivered; the signing action stamps the delivered ones).
+  const signedAlerts = await retrySignedAgreementAlerts(supabase).catch(
+    (e) => ({
+      sent: 0,
+      pending: 0,
+      error: e instanceof Error ? e.message : "signed-alert retry failed",
+    }),
+  );
+
   return NextResponse.json({
     tenancyLifecycle,
+    signedAlerts,
     lease,
     cleaningSchedule,
     flush,

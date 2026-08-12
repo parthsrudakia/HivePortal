@@ -36,7 +36,7 @@ async function postChunk(
   chunk: string,
   opts: { reply_to_message_id?: number },
   parseMode?: "HTML",
-) {
+): Promise<boolean> {
   const res = await fetch(`${API_BASE}/bot${token()}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -57,17 +57,22 @@ async function postChunk(
     }
     // Don't throw; log and continue so we don't double-handle on retry.
     console.error("Telegram sendMessage failed:", detail);
+    return false;
   }
+  return true;
 }
 
+/** Returns true only if every chunk was accepted by Telegram. */
 export async function sendMessage(
   chatId: number,
   text: string,
   opts: { reply_to_message_id?: number; parse_mode?: "HTML" } = {},
-) {
+): Promise<boolean> {
+  let ok = true;
   for (const chunk of chunkMessage(text)) {
-    await postChunk(chatId, chunk, opts, opts.parse_mode);
+    if (!(await postChunk(chatId, chunk, opts, opts.parse_mode))) ok = false;
   }
+  return ok;
 }
 
 export async function sendDocument(
@@ -106,6 +111,28 @@ export async function sendChatAction(chatId: number, action: "typing") {
   }).catch(() => {
     // Ignore — typing indicator is best-effort.
   });
+}
+
+/**
+ * Broadcast to every operator in ALLOWED_TELEGRAM_USER_IDS (a private chat's
+ * chat_id is the user id). Never throws — callers like the signing flow must
+ * not fail because a notification couldn't be delivered. Returns true only if
+ * every operator got the message, so callers can persist "delivered" and let
+ * a cron retry the rest.
+ */
+export async function notifyOperators(text: string): Promise<boolean> {
+  try {
+    const ids = allowedUserIds();
+    if (ids.size === 0) return false;
+    let allOk = true;
+    for (const id of ids) {
+      if (!(await sendMessage(id, text))) allOk = false;
+    }
+    return allOk;
+  } catch (err) {
+    console.error("Telegram operator notification failed:", err);
+    return false;
+  }
 }
 
 export function allowedUserIds(): Set<number> {

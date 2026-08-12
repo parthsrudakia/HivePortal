@@ -51,6 +51,7 @@ export type Database = {
           id: string
           include_letterhead: boolean
           input: Json
+          operator_notified_at: string | null
           property_address: string
           property_id: string | null
           recipient_email: string
@@ -74,6 +75,7 @@ export type Database = {
           id?: string
           include_letterhead: boolean
           input: Json
+          operator_notified_at?: string | null
           property_address: string
           property_id?: string | null
           recipient_email: string
@@ -97,6 +99,7 @@ export type Database = {
           id?: string
           include_letterhead?: boolean
           input?: Json
+          operator_notified_at?: string | null
           property_address?: string
           property_id?: string | null
           recipient_email?: string
