@@ -311,33 +311,15 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     newTenancyIds.has(m.tenancy_id),
   ).length;
 
-  // Row order: problems first, worst first.
-  //   0 missing money AND the tenant still owes — chase these
-  //   1 amount mismatches — investigate
-  //   2 matched but a balance remains (partial) — follow up
-  //   3 ending in credit — double-check (overpayment or a ledger error)
-  //   4 all clear: settled, incl. "missing" rows whose rent simply arrived in
-  //     an earlier month
-  // Groups 0–3 sort by the money at stake (biggest first); group 4 by name.
+  // Row order: always by the running balance, most owed first. Tenants who
+  // still owe (positive balance) lead, settled rows sit in the middle, and
+  // credits (negative balance) fall to the bottom. Unknown ledgers sort as 0.
   const balanceOf = (m: MatchRow): number | undefined =>
     balanceByTenancy.get(m.tenancy_id);
-  const groupOf = (m: MatchRow): number => {
-    const b = balanceOf(m);
-    const owes = b === undefined || b > 0.005; // unknown ledger → treat as open
-    if (m.status === "missing") return owes ? 0 : 4;
-    if (m.status === "mismatch") return 1;
-    if (owes) return 2;
-    return b < -0.005 ? 3 : 4;
-  };
   const sorted = [...filtered].sort((a, b) => {
-    const ga = groupOf(a);
-    const gb = groupOf(b);
-    if (ga !== gb) return ga - gb;
-    if (ga <= 3) {
-      const ba = Math.abs(balanceOf(a) ?? 0);
-      const bb = Math.abs(balanceOf(b) ?? 0);
-      if (Math.abs(ba - bb) > 0.005) return bb - ba;
-    }
+    const ba = balanceOf(a) ?? 0;
+    const bb = balanceOf(b) ?? 0;
+    if (Math.abs(ba - bb) > 0.005) return bb - ba;
     return a.tenant_name.localeCompare(b.tenant_name);
   });
 
