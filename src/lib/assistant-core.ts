@@ -69,6 +69,16 @@ Style:
   sees it.
 - If you can't find what the operator's asking about, say so directly rather
   than guessing.
+- Status questions ("did X sign?", "did Y pay?", "is Z still pending?") must be
+  answered from a tool result run THIS turn — run query_database or the right
+  tool even if you answered the same question earlier. Conversation memory is
+  never evidence of current state; it goes stale the moment someone signs or
+  pays.
+- Never invent portal data. Property/unit IDs, unit lists, and addresses may
+  only come from THIS turn's tool results (or verbatim from your own earlier
+  confirmation message). If an address isn't in the portal, say exactly that —
+  never list units or IDs for it from memory or by analogy with a
+  similar-looking address.
 
 Ad-hoc data questions:
 - query_database runs ONE read-only SQL SELECT when no purpose-built tool fits —
@@ -312,6 +322,28 @@ export function falseSendCorrection(original: string): string {
   );
 }
 
+/**
+ * True when tools ran this turn and none of them was a send tool. Send-y
+ * language in such a reply is almost certainly a DB fact being reported ("the
+ * signed copy was emailed to her"), not a fabricated send — the fabrication
+ * pattern the guard exists for runs with no tools at all. Observed 8/12/26:
+ * the corrective retry destroyed a query_database-grounded "did she sign?"
+ * answer, and the garbled history then produced a confidently wrong status
+ * claim the next evening. Grounded replies keep their text; the operator gets
+ * a one-line clarifier instead of a re-roll.
+ */
+export function ranOnlyReadTools(
+  calledTools: { name: string; ok: boolean }[],
+): boolean {
+  return (
+    calledTools.length > 0 &&
+    calledTools.every((t) => !EMAIL_SEND_TOOLS.has(t.name))
+  );
+}
+
+export const PAST_SEND_NOTE =
+  "(No email or text went out just now — any send mentioned above is a past event.)";
+
 /** Concat an assistant message's text blocks, stripping any forged markers. */
 export function messageText(m: Anthropic.Beta.BetaMessage): string {
   return m.content
@@ -348,7 +380,11 @@ export async function runAssistantTurn(
   let message = await runAgent(messages);
   const sendSucceeded = () =>
     calledTools.some((t) => EMAIL_SEND_TOOLS.has(t.name) && t.ok);
-  if (!sendSucceeded() && claimsMessageSent(messageText(message))) {
+  if (
+    !sendSucceeded() &&
+    !ranOnlyReadTools(calledTools) &&
+    claimsMessageSent(messageText(message))
+  ) {
     await onFalseSendRetry?.(messageText(message));
     message = await runAgent([
       ...messages,
@@ -390,8 +426,18 @@ export function finalizeTurn(
   const sendToolSucceeded = calledTools.some(
     (t) => EMAIL_SEND_TOOLS.has(t.name) && t.ok,
   );
-  const falseSendClaim = !sendToolSucceeded && claimsMessageSent(text);
-  const replyText = falseSendClaim ? falseSendCorrection(text) : text;
+  const sendClaimed = claimsMessageSent(text);
+  // Tool-grounded replies (read tools ran, no send tool) keep their text — the
+  // send language is a reported DB fact. Only ungrounded/send-attempt turns
+  // get the destructive correction. See ranOnlyReadTools.
+  const groundedPastSend =
+    !sendToolSucceeded && sendClaimed && ranOnlyReadTools(calledTools);
+  const falseSendClaim = !sendToolSucceeded && sendClaimed && !groundedPastSend;
+  const replyText = falseSendClaim
+    ? falseSendCorrection(text)
+    : groundedPastSend
+      ? `${text}\n\n${PAST_SEND_NOTE}`
+      : text;
 
   const toolMarker: Anthropic.Beta.BetaTextBlockParam = {
     type: "text",

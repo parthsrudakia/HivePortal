@@ -157,19 +157,33 @@ export async function sendAgreementRequest(
 ): Promise<AgreementSendResult> {
   const supabase = agreementsAdmin();
 
+  // A send that dies before deliverAgreementEmail would otherwise leave no
+  // trace outside the caller's chat/UI — log it so /settings email log shows
+  // every attempted agreement send, not just ones that reached the mailbox.
+  const logPreEmailFailure = (error: string) =>
+    logEmail({
+      type: "agreement",
+      recipient: input.recipientEmail,
+      subject: "Sublease agreement (send failed before email)",
+      context: `${input.tenantName} · ${input.propertyAddress}`,
+      channel: input.inNewYork ? "gmail" : "outlook",
+      status: "failed",
+      error,
+    });
+
   // NY correspondence must stay free of Hive branding, including the link's
   // domain — refuse rather than fall back to the hive-portal URL.
   if (input.inNewYork && !signOrigin()) {
+    await logPreEmailFailure(NY_SIGN_ORIGIN_ERROR);
     return { ok: false, error: NY_SIGN_ORIGIN_ERROR };
   }
 
   const sublessorSignature = await loadOperatorSignature(supabase);
   if (!sublessorSignature) {
-    return {
-      ok: false,
-      error:
-        "No operator signature on file — draw your signature on the portal's Agreements page first.",
-    };
+    const error =
+      "No operator signature on file — draw your signature on the portal's Agreements page first.";
+    await logPreEmailFailure(error);
+    return { ok: false, error };
   }
 
   const agreementInput: AgreementInput = {
@@ -192,10 +206,9 @@ export async function sendAgreementRequest(
       sublessorSignature: { pngDataUrl: sublessorSignature },
     });
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Failed to generate the PDF.",
-    };
+    const error = e instanceof Error ? e.message : "Failed to generate the PDF.";
+    await logPreEmailFailure(error);
+    return { ok: false, error };
   }
 
   const id = randomUUID();
@@ -208,7 +221,9 @@ export async function sendAgreementRequest(
       contentType: "application/pdf",
     });
   if (uploadError) {
-    return { ok: false, error: `Failed to store the PDF: ${uploadError.message}` };
+    const error = `Failed to store the PDF: ${uploadError.message}`;
+    await logPreEmailFailure(error);
+    return { ok: false, error };
   }
 
   const channel = input.inNewYork ? ("gmail" as const) : ("outlook" as const);
@@ -227,10 +242,9 @@ export async function sendAgreementRequest(
   });
   if (insertError) {
     await supabase.storage.from(AGREEMENTS_BUCKET).remove([pdfPath]);
-    return {
-      ok: false,
-      error: `Failed to record the signing request: ${insertError.message}`,
-    };
+    const error = `Failed to record the signing request: ${insertError.message}`;
+    await logPreEmailFailure(error);
+    return { ok: false, error };
   }
 
   const result = await deliverAgreementEmail({
