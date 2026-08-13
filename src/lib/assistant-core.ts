@@ -336,7 +336,7 @@ export async function runAssistantTurn(
 ): Promise<Anthropic.Beta.BetaMessage> {
   const runAgent = (msgs: ConvoMessage[]) =>
     client.beta.messages.toolRunner({
-      model: "claude-fable-5",
+      model: "claude-opus-5",
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       thinking: { type: "adaptive" },

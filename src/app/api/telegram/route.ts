@@ -26,7 +26,7 @@ import { logTelegramEvent } from "@/lib/telegram-log";
 import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // Vercel: Fable turns on hard tasks can run minutes
+export const maxDuration = 300; // Vercel: Opus turns on hard tasks can run minutes
 
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;

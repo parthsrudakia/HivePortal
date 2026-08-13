@@ -116,8 +116,10 @@ export async function extractUtilityBill(
         } as const);
 
   const response = await client.messages.parse({
-    model: "claude-opus-4-8",
-    max_tokens: 4096,
+    model: "claude-opus-5",
+    // Opus 5 thinks by default and max_tokens caps thinking + response
+    // together, so give headroom beyond the small extraction payload.
+    max_tokens: 16000,
     messages: [
       {
         role: "user",
