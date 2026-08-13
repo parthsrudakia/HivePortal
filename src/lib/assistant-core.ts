@@ -8,6 +8,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tools } from "@/lib/portal-tools";
+import { getToolContext } from "@/lib/portal-tools/context";
 
 export const SYSTEM_PROMPT = `You are the operations assistant for Hive — a co-living
 business in NYC that master-leases apartments and rents rooms individually.
@@ -344,6 +345,77 @@ export function ranOnlyReadTools(
 export const PAST_SEND_NOTE =
   "(No email or text went out just now — any send mentioned above is a past event.)";
 
+// ---------------------------------------------------------------------------
+// Deterministic grounding guards (added 8/13/26 after the bot invented unit
+// lists + UUIDs for 626 Summit and confidently mis-stated a signing status).
+// These are code-enforced, not prompt requests: a reply that fails them is
+// retried once with a corrective reminder, and if it still fails, the reply is
+// blocked (fabricated IDs) or visibly stamped unverified (status claims).
+// ---------------------------------------------------------------------------
+
+export const UUID_RE =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+export function extractUuids(text: string): Set<string> {
+  return new Set((text.match(UUID_RE) ?? []).map((u) => u.toLowerCase()));
+}
+
+/** Flatten a conversation to plain text for the UUID evidence pool. */
+export function conversationEvidenceText(messages: ConvoMessage[]): string {
+  return messages
+    .map((m) =>
+      typeof m.content === "string"
+        ? m.content
+        : m.content
+            .map((b) =>
+              "text" in b && typeof b.text === "string"
+                ? b.text
+                : JSON.stringify(b),
+            )
+            .join("\n"),
+    )
+    .join("\n");
+}
+
+/**
+ * UUIDs in the reply that appear NOWHERE in the evidence pool (this turn's raw
+ * tool results + the whole prior conversation). A legitimate ID always has a
+ * source — a tool result or the bot's own earlier confirmation line — so an
+ * unsupported UUID is fabricated by construction.
+ */
+export function unsupportedUuids(replyText: string, evidence: string): string[] {
+  const allowed = extractUuids(evidence);
+  return [...extractUuids(replyText)].filter((u) => !allowed.has(u));
+}
+
+/**
+ * Words that only appear when the reply asserts signing/payment/balance state.
+ * A zero-tool reply matching this is answering a status question from stale
+ * conversation memory (the 8/12 "not signed yet" incident — she had signed 18h
+ * earlier). Deliberately narrow: send read-backs ("sent from Outlook…Send
+ * it?") and generic chat don't match.
+ */
+export const STATUS_CLAIM_RE =
+  /\b(?:signed|unsigned|pending|paid|unpaid|owes?|owing|balance)\b/i;
+
+export const UNVERIFIED_STAMP =
+  "⚠️ Unverified — no database check ran this turn; treat with caution.";
+
+export const uuidGroundingReminder = (ids: string[]) =>
+  `<system-reminder>Your previous reply cited ID(s) ${ids.join(", ")} that ` +
+  "appear in NO tool result and nowhere earlier in this conversation — they " +
+  "are fabricated. Re-run the relevant lookup tool and answer only with IDs " +
+  "copied verbatim from its result. If the thing does not exist in the " +
+  "portal, say exactly that — never invent IDs, units, or addresses." +
+  "</system-reminder>";
+
+export const STATUS_GROUNDING_REMINDER =
+  "<system-reminder>Your previous reply stated signing/payment/balance " +
+  "status, but NO tool ran this turn — conversation memory is stale and is " +
+  "not evidence (people sign and pay between turns). Run query_database or " +
+  "the relevant tool NOW and answer only from its result. If you cannot " +
+  "verify, say plainly that you could not check.</system-reminder>";
+
 /** Concat an assistant message's text blocks, stripping any forged markers. */
 export function messageText(m: Anthropic.Beta.BetaMessage): string {
   return m.content
@@ -365,6 +437,10 @@ export async function runAssistantTurn(
   messages: ConvoMessage[],
   calledTools: { name: string; ok: boolean }[],
   onFalseSendRetry?: (flaggedReply: string) => Promise<void> | void,
+  onGroundingRetry?: (
+    kind: "fabricated_ids" | "ungrounded_status",
+    flaggedReply: string,
+  ) => Promise<void> | void,
 ): Promise<Anthropic.Beta.BetaMessage> {
   const runAgent = (msgs: ConvoMessage[]) =>
     client.beta.messages.toolRunner({
@@ -378,6 +454,13 @@ export async function runAssistantTurn(
     });
 
   let message = await runAgent(messages);
+  const retryWith = (current: Anthropic.Beta.BetaMessage, reminder: string) =>
+    runAgent([
+      ...messages,
+      { role: "assistant", content: current.content },
+      { role: "user", content: [{ type: "text", text: reminder }] },
+    ]);
+
   const sendSucceeded = () =>
     calledTools.some((t) => EMAIL_SEND_TOOLS.has(t.name) && t.ok);
   if (
@@ -386,11 +469,28 @@ export async function runAssistantTurn(
     claimsMessageSent(messageText(message))
   ) {
     await onFalseSendRetry?.(messageText(message));
-    message = await runAgent([
-      ...messages,
-      { role: "assistant", content: message.content },
-      { role: "user", content: [{ type: "text", text: FALSE_SEND_RETRY_REMINDER }] },
-    ]);
+    message = await retryWith(message, FALSE_SEND_RETRY_REMINDER);
+  }
+
+  // Fabricated-ID retry: any UUID in the reply must exist in this turn's tool
+  // results or somewhere earlier in the conversation. One corrective chance;
+  // finalizeTurn hard-blocks the reply if it still cites unknown IDs.
+  const evidence = () =>
+    conversationEvidenceText(messages) +
+    "\n" +
+    (getToolContext()?.toolEvidence ?? []).join("\n");
+  const fabricated = unsupportedUuids(messageText(message), evidence());
+  if (fabricated.length > 0) {
+    await onGroundingRetry?.("fabricated_ids", messageText(message));
+    message = await retryWith(message, uuidGroundingReminder(fabricated));
+  }
+
+  // Ungrounded-status retry: a signing/payment/balance claim with zero tool
+  // calls is stale memory, not knowledge. One corrective chance; finalizeTurn
+  // stamps the reply unverified if the model still won't run a tool.
+  if (calledTools.length === 0 && STATUS_CLAIM_RE.test(messageText(message))) {
+    await onGroundingRetry?.("ungrounded_status", messageText(message));
+    message = await retryWith(message, STATUS_GROUNDING_REMINDER);
   }
   return message;
 }
@@ -411,6 +511,10 @@ export type FinalizedTurn = {
   credentialToolUsed: boolean;
   /** True when the reply fabricated a send with no successful send tool. */
   falseSendClaim: boolean;
+  /** UUIDs cited with no source in tool results or conversation — reply blocked. */
+  fabricatedIds: string[];
+  /** True when a status claim survived with zero tool calls — reply stamped. */
+  ungroundedStatusClaim: boolean;
 };
 
 /**
@@ -421,6 +525,9 @@ export type FinalizedTurn = {
 export function finalizeTurn(
   finalMessage: Anthropic.Beta.BetaMessage,
   calledTools: { name: string; ok: boolean }[],
+  /** UUID evidence pool: conversation text + this turn's raw tool results.
+   *  When provided, replies citing UUIDs absent from it are blocked. */
+  evidenceText?: string,
 ): FinalizedTurn {
   const text = messageText(finalMessage);
   const sendToolSucceeded = calledTools.some(
@@ -433,11 +540,26 @@ export function finalizeTurn(
   const groundedPastSend =
     !sendToolSucceeded && sendClaimed && ranOnlyReadTools(calledTools);
   const falseSendClaim = !sendToolSucceeded && sendClaimed && !groundedPastSend;
-  const replyText = falseSendClaim
-    ? falseSendCorrection(text)
-    : groundedPastSend
-      ? `${text}\n\n${PAST_SEND_NOTE}`
-      : text;
+
+  // Grounding verdicts — the retry in runAssistantTurn already gave the model
+  // one chance to fix each of these; what's left is enforced, not requested.
+  const fabricatedIds =
+    evidenceText != null ? unsupportedUuids(text, evidenceText) : [];
+  const ungroundedStatusClaim =
+    calledTools.length === 0 && STATUS_CLAIM_RE.test(text);
+
+  const replyText =
+    fabricatedIds.length > 0
+      ? "⚠️ I cited portal ID(s) that don't exist in any tool result " +
+        `(${fabricatedIds.join(", ")}) — I've discarded that reply rather ` +
+        "than risk fabricated data. Please re-ask, and I'll look it up properly."
+      : falseSendClaim
+        ? falseSendCorrection(text)
+        : groundedPastSend
+          ? `${text}\n\n${PAST_SEND_NOTE}`
+          : ungroundedStatusClaim
+            ? `${UNVERIFIED_STAMP}\n\n${text}`
+            : text;
 
   const toolMarker: Anthropic.Beta.BetaTextBlockParam = {
     type: "text",
@@ -451,15 +573,33 @@ export function finalizeTurn(
   const sanitizedContent = finalMessage.content.map((b) =>
     b.type === "text" ? { ...b, text: stripToolMarkers(b.text) } : b,
   );
-  const assistantContent: ConvoMessage["content"] = falseSendClaim
-    ? [
-        {
-          type: "text",
-          text: "⚠️ I claimed an email or text was sent, but no sending tool ran this turn — nothing was actually sent.",
-        },
-        toolMarker,
-      ]
-    : [...sanitizedContent, toolMarker];
+  const assistantContent: ConvoMessage["content"] =
+    fabricatedIds.length > 0
+      ? [
+          {
+            type: "text",
+            text:
+              "⚠️ My reply cited portal ID(s) with no source in any tool " +
+              "result — it was discarded as fabricated. The IDs were: " +
+              `${fabricatedIds.join(", ")}. They must never be reused.`,
+          },
+          toolMarker,
+        ]
+      : falseSendClaim
+        ? [
+            {
+              type: "text",
+              text: "⚠️ I claimed an email or text was sent, but no sending tool ran this turn — nothing was actually sent.",
+            },
+            toolMarker,
+          ]
+        : ungroundedStatusClaim
+          ? [
+              { type: "text", text: UNVERIFIED_STAMP },
+              ...sanitizedContent,
+              toolMarker,
+            ]
+          : [...sanitizedContent, toolMarker];
   const credentialToolUsed = calledTools.some(
     (t) => t.name === "get_credentials",
   );
@@ -477,5 +617,7 @@ export function finalizeTurn(
     contentForHistory,
     credentialToolUsed,
     falseSendClaim,
+    fabricatedIds,
+    ungroundedStatusClaim,
   };
 }

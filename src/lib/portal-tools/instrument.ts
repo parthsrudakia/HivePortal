@@ -40,6 +40,9 @@ export function instrumentTool<
       const result = await original(...args);
       const ok = okFromResult(result) ?? true;
       ctx?.calledTools?.push({ name: tool.name, ok });
+      ctx?.toolEvidence?.push(
+        typeof result === "string" ? result : JSON.stringify(result),
+      );
       void logTelegramEvent({
         ...base,
         ok,

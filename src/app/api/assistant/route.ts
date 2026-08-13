@@ -17,6 +17,7 @@ import { runWithToolContext } from "@/lib/portal-tools";
 import {
   runAssistantTurn,
   finalizeTurn,
+  conversationEvidenceText,
   type ConvoMessage,
 } from "@/lib/assistant-core";
 import { getSessionUser } from "@/lib/session";
@@ -128,6 +129,8 @@ export async function POST(req: Request) {
   const chatId = -Math.abs(hashToInt(user!.id));
   const turnId = randomUUID();
   const calledTools: { name: string; ok: boolean }[] = [];
+  // Raw tool results this turn — the UUID grounding guard's evidence pool.
+  const toolEvidence: string[] = [];
   // username carries the operator's email so the activity log distinguishes
   // widget turns from Telegram ones (negative chat id also marks the surface).
   const actor = {
@@ -139,19 +142,43 @@ export async function POST(req: Request) {
   let finalMessage: Anthropic.Beta.BetaMessage;
   try {
     finalMessage = await runWithToolContext(
-      { chatId, turnId, username: user!.email ?? undefined, calledTools },
+      {
+        chatId,
+        turnId,
+        username: user!.email ?? undefined,
+        calledTools,
+        toolEvidence,
+      },
       () =>
-        runAssistantTurn(client, messages, calledTools, async (flagged) => {
-          await logTelegramEvent({
-            ...actor,
-            kind: "agent_error",
-            ok: false,
-            error:
-              "reply claimed a send without a successful send tool — retrying with corrective reminder",
-            text: flagged,
-            detail: { calledTools: [...calledTools] },
-          });
-        }),
+        runAssistantTurn(
+          client,
+          messages,
+          calledTools,
+          async (flagged) => {
+            await logTelegramEvent({
+              ...actor,
+              kind: "agent_error",
+              ok: false,
+              error:
+                "reply claimed a send without a successful send tool — retrying with corrective reminder",
+              text: flagged,
+              detail: { calledTools: [...calledTools] },
+            });
+          },
+          async (kind, flagged) => {
+            await logTelegramEvent({
+              ...actor,
+              kind: "agent_error",
+              ok: false,
+              error:
+                kind === "fabricated_ids"
+                  ? "reply cited IDs with no tool-result source — retrying with grounding reminder"
+                  : "reply stated status with zero tool calls — retrying with grounding reminder",
+              text: flagged,
+              detail: { calledTools: [...calledTools] },
+            });
+          },
+        ),
     );
   } catch (e) {
     const errText = e instanceof Error ? e.message : "unknown error";
@@ -175,15 +202,31 @@ export async function POST(req: Request) {
   }
 
   // Identical post-turn guards to the Telegram surface.
-  const { replyText, text, contentForHistory, credentialToolUsed, falseSendClaim } =
-    finalizeTurn(finalMessage, calledTools);
+  const {
+    replyText,
+    text,
+    contentForHistory,
+    credentialToolUsed,
+    falseSendClaim,
+    fabricatedIds,
+    ungroundedStatusClaim,
+  } = finalizeTurn(
+    finalMessage,
+    calledTools,
+    conversationEvidenceText(messages) + "\n" + toolEvidence.join("\n"),
+  );
 
-  if (falseSendClaim) {
+  if (falseSendClaim || fabricatedIds.length > 0 || ungroundedStatusClaim) {
     await logTelegramEvent({
       ...actor,
       kind: "agent_error",
       ok: false,
-      error: "reply claimed an email was sent but no send tool ran this turn",
+      error:
+        fabricatedIds.length > 0
+          ? `reply blocked — fabricated ID(s) survived the retry: ${fabricatedIds.join(", ")}`
+          : falseSendClaim
+            ? "reply claimed an email was sent but no send tool ran this turn"
+            : "reply stamped unverified — status claim with zero tool calls survived the retry",
       text,
       detail: { calledTools },
     });

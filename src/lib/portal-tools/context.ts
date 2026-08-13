@@ -17,6 +17,13 @@ export type ToolContext = {
    * claiming an email was sent is backed by a real send-tool call.
    */
   calledTools?: { name: string; ok: boolean }[];
+  /**
+   * Mutated by instrumentTool: the raw (stringified) result of every tool
+   * call this turn. The UUID grounding guard checks that every ID the reply
+   * cites appears here or earlier in the conversation — anything else is
+   * fabricated and the reply is blocked.
+   */
+  toolEvidence?: string[];
 };
 
 const toolContext = new AsyncLocalStorage<ToolContext>();

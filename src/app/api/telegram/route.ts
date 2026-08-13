@@ -17,6 +17,7 @@ import { runWithToolContext } from "@/lib/portal-tools";
 import {
   runAssistantTurn,
   finalizeTurn,
+  conversationEvidenceText,
   type ConvoMessage,
 } from "@/lib/assistant-core";
 import { allowedUserIds, sendChatAction, sendMessage } from "@/lib/telegram";
@@ -228,6 +229,8 @@ export async function POST(req: Request) {
   // Filled in by instrumentTool as the agent loop runs — one entry per tool
   // call this turn. Read afterwards to verify any "sent" claim in the reply.
   const calledTools: { name: string; ok: boolean }[] = [];
+  // Raw tool results this turn — the UUID grounding guard's evidence pool.
+  const toolEvidence: string[] = [];
   let finalMessage: Anthropic.Beta.BetaMessage;
   try {
     // Run inside the chat context so tools that deliver files (e.g.
@@ -242,19 +245,38 @@ export async function POST(req: Request) {
         telegramUserId: msg.from.id,
         username: msg.from.username,
         calledTools,
+        toolEvidence,
       },
       () =>
-        runAssistantTurn(client, messages, calledTools, async (flagged) => {
-          await logTelegramEvent({
-            ...actor,
-            kind: "agent_error",
-            ok: false,
-            error:
-              "reply claimed a send without a successful send tool — retrying with corrective reminder",
-            text: flagged,
-            detail: { calledTools: [...calledTools] },
-          });
-        }),
+        runAssistantTurn(
+          client,
+          messages,
+          calledTools,
+          async (flagged) => {
+            await logTelegramEvent({
+              ...actor,
+              kind: "agent_error",
+              ok: false,
+              error:
+                "reply claimed a send without a successful send tool — retrying with corrective reminder",
+              text: flagged,
+              detail: { calledTools: [...calledTools] },
+            });
+          },
+          async (kind, flagged) => {
+            await logTelegramEvent({
+              ...actor,
+              kind: "agent_error",
+              ok: false,
+              error:
+                kind === "fabricated_ids"
+                  ? "reply cited IDs with no tool-result source — retrying with grounding reminder"
+                  : "reply stated status with zero tool calls — retrying with grounding reminder",
+              text: flagged,
+              detail: { calledTools: [...calledTools] },
+            });
+          },
+        ),
     );
   } catch (e) {
     console.error("Anthropic tool runner failed:", e);
@@ -289,7 +311,27 @@ export async function POST(req: Request) {
     contentForHistory,
     credentialToolUsed,
     falseSendClaim,
-  } = finalizeTurn(finalMessage, calledTools);
+    fabricatedIds,
+    ungroundedStatusClaim,
+  } = finalizeTurn(
+    finalMessage,
+    calledTools,
+    conversationEvidenceText(messages) + "\n" + toolEvidence.join("\n"),
+  );
+
+  if (fabricatedIds.length > 0 || ungroundedStatusClaim) {
+    await logTelegramEvent({
+      ...actor,
+      kind: "agent_error",
+      ok: false,
+      error:
+        fabricatedIds.length > 0
+          ? `reply blocked — fabricated ID(s) survived the retry: ${fabricatedIds.join(", ")}`
+          : "reply stamped unverified — status claim with zero tool calls survived the retry",
+      text,
+      detail: { calledTools: [...calledTools] },
+    });
+  }
 
   if (falseSendClaim) {
     await logTelegramEvent({
