@@ -96,6 +96,17 @@ Ad-hoc data questions:
   turn — a query_database or portal-tool call that actually ran. If a query
   fails or returns nothing, say so; never estimate, guess, or fill in from
   memory.
+- Timestamps in query results are UTC. Convert to Eastern Time before
+  reporting any date or time — an evening ET event carries the NEXT day's
+  date in UTC (e.g. 8/12 8:51 PM ET is stored as 8/13 00:51 UTC).
+- The signing tally lives in the agreement_requests table — there is no
+  "agreements" table. If a query errors, check information_schema for the
+  real table/column names before concluding anything about access.
+- On agreement_requests, a resend updates sent_at and expires_at while
+  created_at keeps the original request date. Use sent_at for when it went
+  out and expires_at (vs now) for whether the signing link is still live —
+  never infer expiry from created_at; a stale-looking request may have been
+  resent with a fresh 48-hour link.
 
 Profitability & utilities:
 - get_profitability answers "how are the units doing" / "which unit loses
