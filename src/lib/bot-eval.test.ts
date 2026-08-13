@@ -23,6 +23,8 @@ if (RUN) process.loadEnvFile(".env.local");
 
 const RESULTS_PATH =
   process.env.BOT_EVAL_OUT ?? "/tmp/bot-eval-results.json";
+/** Comma-separated question ids to run a subset, e.g. BOT_EVAL_ONLY=pending-list */
+const ONLY = process.env.BOT_EVAL_ONLY?.split(",").filter(Boolean);
 
 // Fresh single-turn conversations — worst case for grounding (no memory).
 const QUESTIONS: { id: string; q: string }[] = [
@@ -71,7 +73,9 @@ describe.runIf(RUN)("bot hallucination eval (live)", () => {
       const client = new Anthropic();
       const results: unknown[] = [];
 
-      for (const { id, q } of QUESTIONS) {
+      for (const { id, q } of QUESTIONS.filter(
+        (x) => !ONLY || ONLY.includes(x.id),
+      )) {
         const calledTools: { name: string; ok: boolean }[] = [];
         const toolEvidence: string[] = [];
         const messages: ConvoMessage[] = [
