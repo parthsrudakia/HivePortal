@@ -7,6 +7,7 @@ import { one } from "@/lib/relations";
 import { SearchableSelect } from "@/components/searchable-select";
 import {
   assignBillProperty,
+  attachBillFiles,
   chargeAllOverages,
   chargeOverage,
   deleteBill,
@@ -979,20 +980,22 @@ function BillCard({
                 })
               }
             />
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                startTransition(async () => {
-                  const r = await getStatementUrl(bill.id);
-                  if (r.error) toast.error(r.error);
-                  else if (r.url) window.open(r.url, "_blank");
-                })
-              }
-              className="rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-accent-text"
-            >
-              View statement
-            </button>
+            {bill.statement_path && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const r = await getStatementUrl(bill.id);
+                    if (r.error) toast.error(r.error);
+                    else if (r.url) window.open(r.url, "_blank");
+                  })
+                }
+                className="rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-accent-text"
+              >
+                View statement
+              </button>
+            )}
             {[...(bill.utility_bill_files ?? [])]
               .sort((a, b) => a.sort_order - b.sort_order)
               .map((f, i) => (
@@ -1013,6 +1016,39 @@ function BillCard({
                   File {i + 2}
                 </button>
               ))}
+            {(bill.statement_path ? 1 : 0) +
+              (bill.utility_bill_files?.length ?? 0) <
+              5 && (
+              <label
+                title="Attach the statement or a screenshot to this bill — stored only, nothing is re-read and no tenant is emailed"
+                className={`cursor-pointer rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-accent-text ${
+                  pending ? "pointer-events-none opacity-50" : ""
+                }`}
+              >
+                {bill.statement_path ? "Attach files" : "Attach statement"}
+                <input
+                  type="file"
+                  multiple
+                  accept="application/pdf,image/png,image/jpeg,image/webp"
+                  disabled={pending}
+                  className="hidden"
+                  onChange={(e) => {
+                    // Copy out of the live FileList before resetting the
+                    // input — clearing value empties the list.
+                    const picked = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (picked.length === 0) return;
+                    const fd = new FormData();
+                    for (const f of picked) fd.append("screenshot", f);
+                    startTransition(async () => {
+                      const r = await attachBillFiles(bill.id, fd);
+                      if (r?.error) toast.error(r.error);
+                      else if (r?.success) toast.success(r.success);
+                    });
+                  }}
+                />
+              </label>
+            )}
             {bill.overage_charged_at &&
               canCharge &&
               (!confirmingUnpost ? (

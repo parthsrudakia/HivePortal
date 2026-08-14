@@ -58,11 +58,11 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
     setFiles([]);
   };
 
-  const addFiles = (picked: FileList | null) => {
-    if (!picked) return;
+  const addFiles = (picked: File[]) => {
+    if (picked.length === 0) return;
     setFiles((prev) => {
       const merged = [...prev];
-      for (const f of Array.from(picked)) {
+      for (const f of picked) {
         if (merged.some((m) => m.name === f.name && m.size === f.size)) continue;
         merged.push(f);
       }
@@ -175,7 +175,9 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
             multiple
             accept="application/pdf,image/png,image/jpeg,image/webp"
             onChange={(e) => {
-              addFiles(e.target.files);
+              // Copy out of the live FileList before resetting the input —
+              // clearing value empties the list before setFiles reads it.
+              addFiles(Array.from(e.target.files ?? []));
               e.target.value = "";
             }}
             className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-warm file:px-3 file:py-2 file:text-sm file:text-ink hover:file:bg-stone/40"
@@ -237,15 +239,18 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
               onChange={(e) => setRowField(row.id, "end", e.target.value)}
               className={fieldInput}
             />
-            <input
-              name={`amount:${row.id}`}
-              required
-              inputMode="decimal"
-              placeholder="$123.45"
-              value={row.amount}
-              onChange={(e) => setRowField(row.id, "amount", e.target.value)}
-              className={fieldInput}
-            />
+            <div className="flex items-center gap-1 rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus-within:border-accent">
+              <span className="text-muted">$</span>
+              <input
+                name={`amount:${row.id}`}
+                required
+                inputMode="decimal"
+                placeholder="123.45"
+                value={row.amount}
+                onChange={(e) => setRowField(row.id, "amount", e.target.value)}
+                className="w-full min-w-0 bg-transparent outline-none"
+              />
+            </div>
             <button
               type="button"
               onClick={() => setRows((r) => r.filter((x) => x.id !== row.id))}

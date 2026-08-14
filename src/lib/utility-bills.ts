@@ -10,6 +10,8 @@ export type BillRow = {
   account_number: string | null;
   service_address: string | null;
   statement_date: string | null;
+  /** Storage path of the primary statement file, when one is attached. */
+  statement_path?: string | null;
   period_start: string | null;
   period_end: string | null;
   total_amount: number;

@@ -634,6 +634,149 @@ export async function commitManualBills(
   };
 }
 
+/**
+ * Attach statement/screenshot files to an already-logged bill (typically a
+ * manual entry saved without one). The first file fills the empty statement
+ * slot; the rest — or all of them, if the bill already has a statement —
+ * become extra attachment rows. Nothing is read or extracted, and no tenant
+ * email fires here: overage notices go out only when the charge is posted,
+ * so a late attachment never re-notifies anyone.
+ */
+export async function attachBillFiles(
+  billId: string,
+  formData: FormData,
+): Promise<UploadState> {
+  const supabase = await createClient();
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in." };
+  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
+
+  const files = formData
+    .getAll("screenshot")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return { error: "Pick a file to attach." };
+  for (const f of files) {
+    const problem = screenshotProblem(f);
+    if (problem) return { error: `${f.name}: ${problem}` };
+  }
+
+  const { data: bill } = await supabase
+    .from("utility_bills")
+    .select(
+      "id, property_id, statement_path, file_sha256, utility_bill_files(id, sort_order)",
+    )
+    .eq("id", billId)
+    .maybeSingle();
+  if (!bill) return { error: "Bill not found." };
+
+  const existingCount =
+    (bill.statement_path ? 1 : 0) + (bill.utility_bill_files?.length ?? 0);
+  if (existingCount + files.length > MAX_MANUAL_FILES)
+    return {
+      error:
+        `At most ${MAX_MANUAL_FILES} files per bill — ` +
+        `${existingCount} already attached.`,
+    };
+
+  // Same dedup as manual entry: hash each file and refuse anything already
+  // attached to any logged bill (statement hashes + attachment rows).
+  const bufs = await Promise.all(
+    files.map(async (f) => Buffer.from(await f.arrayBuffer())),
+  );
+  const hashes = bufs.map((b) => createHash("sha256").update(b).digest("hex"));
+  if (new Set(hashes).size !== hashes.length)
+    return { error: "The same file is attached twice — remove one." };
+  const [{ data: dupBills }, { data: dupFiles }] = await Promise.all([
+    supabase.from("utility_bills").select("id").in("file_sha256", hashes),
+    supabase.from("utility_bill_files").select("id").in("file_sha256", hashes),
+  ]);
+  if ((dupBills?.length ?? 0) > 0 || (dupFiles?.length ?? 0) > 0)
+    return {
+      error:
+        "Duplicate — one of these files is already attached to a logged bill.",
+    };
+
+  type StoredFile = { path: string; hash: string; name: string };
+  const stored: StoredFile[] = [];
+  const removeStored = async () => {
+    if (stored.length > 0)
+      await supabase.storage
+        .from("utilities")
+        .remove(stored.map((s) => s.path));
+  };
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const mediaType = f.type || "application/pdf";
+    const compressed = await compressStatement(bufs[i], mediaType);
+    let safeName = f.name.replace(/[^\w.\-]/g, "_") || "screenshot";
+    if (compressed.mediaType === "image/webp" && !/\.webp$/i.test(safeName)) {
+      safeName = safeName.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+    }
+    const path = `${bill.property_id ?? "unmatched"}/${Date.now()}-attach-${i}-${safeName}`;
+    const { error: upErr } = await supabase.storage
+      .from("utilities")
+      .upload(path, compressed.data, {
+        contentType: compressed.mediaType,
+        upsert: false,
+      });
+    if (upErr) {
+      await removeStored();
+      return { error: `Failed to store ${f.name}: ${upErr.message}` };
+    }
+    stored.push({ path, hash: hashes[i], name: f.name });
+  }
+
+  let rest = stored;
+  let statementSet = false;
+  if (!bill.statement_path) {
+    const [first, ...others] = stored;
+    const { error } = await supabase
+      .from("utility_bills")
+      .update({
+        statement_path: first.path,
+        file_sha256: bill.file_sha256 ?? first.hash,
+      })
+      .eq("id", billId);
+    if (error) {
+      await removeStored();
+      return { error: error.message };
+    }
+    statementSet = true;
+    rest = others;
+  }
+
+  if (rest.length > 0) {
+    const nextOrder =
+      Math.max(0, ...(bill.utility_bill_files ?? []).map((f) => f.sort_order)) +
+      1;
+    const { error } = await supabase.from("utility_bill_files").insert(
+      rest.map((s, idx) => ({
+        bill_id: billId,
+        file_path: s.path,
+        file_name: s.name,
+        file_sha256: s.hash,
+        sort_order: nextOrder + idx,
+      })),
+    );
+    if (error) {
+      if (statementSet)
+        await supabase
+          .from("utility_bills")
+          .update({ statement_path: null, file_sha256: bill.file_sha256 })
+          .eq("id", billId);
+      await removeStored();
+      return { error: `Failed to save attachments: ${error.message}` };
+    }
+  }
+
+  revalidatePath("/utilities");
+  return {
+    success:
+      files.length === 1 ? "File attached." : `${files.length} files attached.`,
+  };
+}
+
 export async function assignBillProperty(
   billId: string,
   propertyId: string | null,
