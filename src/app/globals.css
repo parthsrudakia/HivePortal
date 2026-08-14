@@ -19,6 +19,10 @@
      clears WCAG AAA on white. */
   --color-muted: #302b23;
   --color-white: #ffffff;
+  /* Opaque zebra-stripe / hover row color (≈ warm at 40% over white). Frozen
+     table cells inherit row backgrounds, so stripes must not be translucent —
+     scrolled columns would show through the sticky pane. */
+  --color-stripe: color-mix(in oklab, #d8d0c1 40%, #ffffff);
 
   --font-sans: var(--font-dm-sans), -apple-system, "Segoe UI", sans-serif;
   --font-serif: var(--font-cormorant), Georgia, serif;
@@ -57,6 +61,8 @@ html.dark {
   --color-accent: #e0a52c; /* honey, a touch brighter for dark surfaces */
   --color-accent-dark: #d4920b; /* accent hover */
   --color-accent-text: #ecb64a; /* links — bright honey on dark */
+  /* Stripe over the dark card surface (#211f1b), kept opaque — see @theme. */
+  --color-stripe: color-mix(in oklab, #262320 40%, #211f1b);
   /* Chart palette (see monthly-chart) — flips per theme. */
   --chart-grid: #35322c;
   --chart-axis: #a8a196;
@@ -171,6 +177,23 @@ html.dark .bg-gray-50,
 html.dark [class*="bg-gray-50/"],
 html.dark [class*="bg-gray-100"] {
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Table rows (inventory action tints) carry these pastels on <tr>, and the
+   frozen first cell inherits the row background — it must be OPAQUE to cover
+   columns scrolling under the sticky pane. Same visual as the translucent
+   chip tints above, pre-composited over the dark card surface (#211f1b). */
+html.dark tr[class*="bg-yellow-200"] {
+  background-color: color-mix(in srgb, #facc15 16%, #211f1b);
+}
+html.dark tr[class*="bg-red-200"] {
+  background-color: color-mix(in srgb, #f87171 16%, #211f1b);
+}
+html.dark tr[class*="bg-orange-200"] {
+  background-color: color-mix(in srgb, #fb923c 16%, #211f1b);
+}
+html.dark tr[class*="bg-purple-200"] {
+  background-color: color-mix(in srgb, #c084fc 16%, #211f1b);
 }
 
 html.dark .text-red-700,
