@@ -438,10 +438,7 @@ export default function Dashboard() {
   return (
     <div className="mx-auto w-full max-w-7xl">
       <header className="relative overflow-hidden rounded-3xl bg-ink px-6 py-8 text-cream shadow-sm md:px-9 md:py-10">
-        <div
-          className="hero-spotlight pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-accent/25 blur-3xl"
-          aria-hidden="true"
-        />
+        <div className="hero-edge-glow" aria-hidden="true" />
         <div className="relative">
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-accent">
             {dateLabel}

@@ -280,46 +280,66 @@ button:not(:disabled),
   border: 1px solid rgba(169, 159, 144, 0.7);
 }
 
-/* Dashboard hero spotlight: the honey glow orb drifts slowly and "breathes"
-   like an ambient assistant light. Two loops with different periods (36s and
-   13s) animating separate properties (translate vs scale/opacity), so the
-   combined motion takes minutes to visibly repeat. Percentages are relative
-   to the orb itself, keeping the wander proportional on small screens. */
-@keyframes hero-spot-drift {
-  0% {
-    translate: 0 0;
-  }
-  22% {
-    translate: -70% 35%;
-  }
-  48% {
-    translate: -30% 65%;
-  }
-  74% {
-    translate: -95% 15%;
-  }
-  100% {
-    translate: 0 0;
+/* Dashboard hero edge glow — Siri / Apple Intelligence style: honey light
+   traveling around the card's border. A conic gradient with two arcs (a bright
+   leader opposite a fainter echo) is masked down to the border band; ::after
+   is the crisp ring, ::before the same gradient blurred into a soft bloom.
+   The rotation animates the registered --hero-angle custom property (inherits,
+   so both pseudos follow); browsers without @property just show static arcs. */
+@property --hero-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+@keyframes hero-edge-spin {
+  to {
+    --hero-angle: 360deg;
   }
 }
-@keyframes hero-spot-breathe {
-  0%,
-  100% {
-    scale: 1;
-    opacity: 0.9;
-  }
-  50% {
-    scale: 1.4;
-    opacity: 0.65;
-  }
+
+.hero-edge-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: hero-edge-spin 14s linear infinite;
 }
-.hero-spotlight {
-  animation:
-    hero-spot-drift 36s ease-in-out infinite,
-    hero-spot-breathe 13s ease-in-out infinite;
+.hero-edge-glow::before,
+.hero-edge-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* A single comet: long tail building up to a bright head at 95deg, then a
+     quick falloff — most of the ring stays dark so the travel reads clearly. */
+  background: conic-gradient(
+    from var(--hero-angle),
+    transparent 0deg,
+    rgba(212, 146, 11, 0.1) 45deg,
+    rgba(212, 146, 11, 0.5) 78deg,
+    #f6d38a 95deg,
+    rgba(212, 146, 11, 0.25) 106deg,
+    transparent 118deg
+  );
+  padding: 2px;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+/* Soft inward bloom behind the crisp ring. */
+.hero-edge-glow::before {
+  padding: 12px;
+  filter: blur(14px);
+  opacity: 0.55;
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-spotlight {
+  .hero-edge-glow {
     animation: none;
   }
 }
