@@ -183,7 +183,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
 
       {view === "summary" && (
         <>
-          <section className="mt-6 grid gap-4 lg:grid-cols-2">
+          <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
                 {year} summary

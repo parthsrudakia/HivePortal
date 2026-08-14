@@ -439,7 +439,7 @@ export default function Dashboard() {
     <div className="mx-auto w-full max-w-7xl">
       <header className="relative overflow-hidden rounded-3xl bg-ink px-6 py-8 text-cream shadow-sm md:px-9 md:py-10">
         <div
-          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-accent/25 blur-3xl"
+          className="hero-spotlight pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-accent/25 blur-3xl"
           aria-hidden="true"
         />
         <div className="relative">
@@ -463,7 +463,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Suspense
           fallback={
             <>
@@ -478,7 +478,7 @@ export default function Dashboard() {
         </Suspense>
       </section>
 
-      <section className="mt-8 grid gap-5 lg:grid-cols-2">
+      <section className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Suspense fallback={<CardSkeleton lines={6} />}>
           <RentWorklistSection />
         </Suspense>

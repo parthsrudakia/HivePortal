@@ -285,7 +285,7 @@ export default async function TenantDetailPage({
         )}
       </header>
 
-      <div className="mt-8 grid gap-6 md:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
         <TenantInfo
           id={tenant.id}
           full_name={tenant.full_name}
