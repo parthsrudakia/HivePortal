@@ -109,43 +109,35 @@ async function RentKpisSection() {
         {admin && (
           <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-2">
             <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Expected this month:
-                </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(expectedTotal)}
-                </span>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                Expected this month:
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(expectedTotal)}
               </p>
             </div>
             <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Collected:
-                </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(paidTotal)}
-                </span>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                Collected:
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(paidTotal)}
               </p>
             </div>
             <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Security deposit collected this month:
-                </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(depositCollected)}
-                </span>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                Security deposit collected this month:
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(depositCollected)}
               </p>
             </div>
             <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Total security deposit with you:
-                </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(depositTotal)}
-                </span>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                Total security deposit with you:
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(depositTotal)}
               </p>
             </div>
           </div>
