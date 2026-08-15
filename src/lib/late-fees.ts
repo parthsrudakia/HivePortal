@@ -3,8 +3,10 @@
  *
  * Policy (from August 2026 on): a tenant who hasn't cleared their running
  * ledger balance by the end of the 6th gets one $50 late fee for the month.
- * New York units are exempt, as are balances under $10 and tenants in
- * their move-in month.
+ * New York units are exempt, as are balances under $10, tenants in their
+ * move-in month, and utilities-only balances — a balance similar (within
+ * UTILITY_ONLY_TOLERANCE) to the utility charges posted this month and/or
+ * last month means rent is paid and only a utility share is pending.
  * Runs from the daily ops cron — the date gate below makes it fire on the
  * first invocation on/after the 7th (Eastern), and a rent_reminder_batches
  * row (kind 'late_fee') marks the month done so it never runs twice. A
@@ -31,12 +33,19 @@ const LATE_FEE_AMOUNT = 50;
 /** Only fee balances of $10+ — a fee on a smaller residue helps no one. */
 const MIN_OWED = 10;
 
+/** How close ($) a balance must be to the recent utility charges to count
+    as "just utilities pending". Similar, not exact — credits and rounding
+    leave small residues; rent shortfalls are hundreds of dollars, so a
+    modest window can't mask actual unpaid rent. */
+const UTILITY_ONLY_TOLERANCE = 15;
+
 export type LateFeeResult = {
   ran: boolean;
   reason?: string;
   period?: string;
   charged?: number;
   skippedExistingFee?: number;
+  skippedUtilityOnly?: number;
   tenants?: string[];
   error?: string;
 };
@@ -125,8 +134,16 @@ export async function applyMonthlyLateFees(
     }
   }
 
+  // Previous calendar month ("2026-08" → "2026-07") for the utilities-only check.
+  const [pYear, pMonth] = period.split("-").map(Number);
+  const prevPeriod =
+    pMonth === 1
+      ? `${pYear - 1}-12`
+      : `${pYear}-${String(pMonth - 1).padStart(2, "0")}`;
+
   let chargedCount = 0;
   let skippedExistingFee = 0;
+  let skippedUtilityOnly = 0;
   const tenants: string[] = [];
   const failures: string[] = [];
 
@@ -155,6 +172,29 @@ export async function applyMonthlyLateFees(
       rentChanges.get(row.id) ?? [],
     );
     if (netBalance < MIN_OWED) continue;
+
+    // Utilities-only balances are exempt: when the balance is similar to
+    // the utility charges posted this month and/or last month, rent is
+    // paid and only a utility share is pending — no fee.
+    const utilInMonth = (month: string) =>
+      (charges.get(row.id) ?? [])
+        .filter(
+          (c) =>
+            c.kind === "utility_overage" &&
+            (c.charged_on ?? "").slice(0, 7) === month,
+        )
+        .reduce((s, c) => s + Number(c.amount), 0);
+    const utilCur = utilInMonth(period);
+    const utilPrev = utilInMonth(prevPeriod);
+    const utilityOnly = [utilCur, utilPrev, utilCur + utilPrev].some(
+      (candidate) =>
+        candidate > 0 &&
+        Math.abs(netBalance - candidate) <= UTILITY_ONLY_TOLERANCE,
+    );
+    if (utilityOnly) {
+      skippedUtilityOnly++;
+      continue;
+    }
 
     if (alreadyFeed.has(row.id)) {
       skippedExistingFee++;
@@ -205,6 +245,7 @@ export async function applyMonthlyLateFees(
     period,
     charged: chargedCount,
     skippedExistingFee,
+    skippedUtilityOnly,
     tenants,
     ...(failures.length > 0
       ? { error: `${failures.length} charge(s) failed; will retry tomorrow` }
