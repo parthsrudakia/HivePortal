@@ -322,7 +322,7 @@ button:not(:disabled),
     rgba(212, 146, 11, 0.25) 106deg,
     transparent 118deg
   );
-  padding: 2px;
+  padding: 3px;
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -332,11 +332,16 @@ button:not(:disabled),
   -webkit-mask-composite: xor;
   mask-composite: exclude;
 }
-/* Soft inward bloom behind the crisp ring. */
+/* The core band is itself blurred — light, not a metallic border line. */
+.hero-edge-glow::after {
+  filter: blur(4px);
+  opacity: 0.8;
+}
+/* Wide, soft inward bloom: the light washing into the card. */
 .hero-edge-glow::before {
-  padding: 12px;
-  filter: blur(14px);
-  opacity: 0.55;
+  padding: 30px;
+  filter: blur(30px);
+  opacity: 0.7;
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-edge-glow {
