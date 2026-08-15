@@ -106,8 +106,8 @@ async function RentKpisSection() {
       <section className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         {/* The four money tiles stack 2×2 to the left of Outstanding. */}
         {admin && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-2">
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+          <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-2">
+            <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
               <p className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted">
                   Expected this month:
@@ -117,7 +117,7 @@ async function RentKpisSection() {
                 </span>
               </p>
             </div>
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+            <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
               <p className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted">
                   Collected:
@@ -127,7 +127,7 @@ async function RentKpisSection() {
                 </span>
               </p>
             </div>
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+            <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
               <p className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted">
                   Security deposit collected this month:
@@ -137,7 +137,7 @@ async function RentKpisSection() {
                 </span>
               </p>
             </div>
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+            <div className="flex flex-col justify-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
               <p className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted">
                   Total security deposit with you:
@@ -146,7 +146,6 @@ async function RentKpisSection() {
                   {fmtMoney(depositTotal)}
                 </span>
               </p>
-              <p className="mt-1 text-xs text-muted">Active tenancies</p>
             </div>
           </div>
         )}
