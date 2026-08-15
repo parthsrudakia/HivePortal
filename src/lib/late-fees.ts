@@ -37,7 +37,7 @@ const MIN_OWED = 10;
     as "just utilities pending". Similar, not exact — credits and rounding
     leave small residues; rent shortfalls are hundreds of dollars, so a
     modest window can't mask actual unpaid rent. */
-const UTILITY_ONLY_TOLERANCE = 15;
+const UTILITY_ONLY_TOLERANCE = 10;
 
 export type LateFeeResult = {
   ran: boolean;
