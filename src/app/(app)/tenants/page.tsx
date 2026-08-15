@@ -68,9 +68,10 @@ async function RentKpisSection() {
   ]);
   if (rows.length === 0) return null;
 
-  // Only admins see the aggregate collection totals and per-tenant "paid"
-  // amounts. Everyone else still sees each tenant's rent and pending balance.
-  const admin = isMaster(user?.email);
+  // Only the ledger operators (Vineet + Parth) see the aggregate collection
+  // totals and per-tenant "paid" amounts. Everyone else still sees each
+  // tenant's rent and pending balance.
+  const admin = canEditLedger(user?.email);
   const expectedTotal = rows.reduce((s, r) => s + r.due, 0);
   // Rent money only — security_deposit charges applied this cycle are
   // deducted per tenancy (Zelle deposits arrive typed "rent"; the applied
@@ -346,7 +347,7 @@ async function TenantTrackerSection() {
     return <p className="mt-6 text-sm text-red-700">{error.message}</p>;
   }
 
-  const admin = isMaster(user?.email);
+  const admin = canEditLedger(user?.email);
 
   const trackerRows: TrackerRow[] = rows.map((r) => {
     const tenant = one(r.tenants);

@@ -4,7 +4,7 @@ import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
 import { EditableDate } from "./cleaning/editable-date";
 import { formatDate } from "@/lib/date";
-import { isMaster } from "@/lib/access";
+import { canEditLedger } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { EndingSoonTable } from "./ending-soon-table";
 import { NavIcon } from "./nav-icons";
@@ -39,9 +39,9 @@ async function StatsSection() {
       getRentWorklist(),
     ]);
 
-  // Aggregate collection totals are admin-only; per-tenant outstanding amounts
-  // (pending balances) stay visible to everyone.
-  const admin = isMaster(user?.email);
+  // Aggregate collection totals are operator-only (Vineet + Parth);
+  // per-tenant outstanding amounts (pending balances) stay visible to all.
+  const admin = canEditLedger(user?.email);
   const outstanding = rentWorklist.reduce((s, r) => s + r.outstanding, 0);
 
   return (
