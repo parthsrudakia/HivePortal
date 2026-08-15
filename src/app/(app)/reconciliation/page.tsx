@@ -170,6 +170,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     { data: reversalRows },
     { data: activeTenancyData },
     sidecars,
+    { data: inwardRows },
   ] = await Promise.all([
     loadMonthTenancies(supabase, start, end),
     supabase
@@ -223,7 +224,19 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       .in("status", ["active", "ended"])
       .returns<ActiveTenancyRow[]>(),
     fetchLedgerSidecars(supabase),
+    // Every bank-statement credit dated in the month — assigned, unassigned,
+    // and dismissed alike — for the "Total Inward Amount" KPI.
+    supabase
+      .from("reconciliation_deposits")
+      .select("amount")
+      .gte("deposit_date", start)
+      .lte("deposit_date", end),
   ]);
+
+  const totalInward = (inwardRows ?? []).reduce(
+    (s, r) => s + Number(r.amount),
+    0,
+  );
 
   // Current-month match table, computed live: expected rent per tenancy vs
   // what the bank actually delivered (posted external_ref payments) plus
@@ -478,18 +491,12 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
 
       {tErr && <p className="mt-6 text-sm text-red-700">{tErr}</p>}
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
-          label="Expected"
-          value={fmtMoneyRounded(totals.totalExpected)}
+          label="Total Inward Amount"
+          value={fmtMoneyRounded(totalInward)}
           href={hrefWith(new Set())}
           active={activeFilters.size === 0}
-        />
-        <KpiCard
-          label="Collected"
-          value={fmtMoneyRounded(totals.totalActual)}
-          href={hrefWith(new Set())}
-          active={false}
         />
         <KpiCard
           label="Match"

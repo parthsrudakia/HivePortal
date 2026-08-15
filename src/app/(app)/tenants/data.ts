@@ -140,7 +140,7 @@ export const getTenantsReminderInfo = cache(async () => {
  *  • Starting month AND tenancy has first_month_rent set → use that.
  *  • Otherwise → monthly_rent (full month).
  */
-function dueForMonth(
+export function dueForMonth(
   startDate: string,
   monthlyRent: number,
   firstMonthRent: number | null,
@@ -158,6 +158,11 @@ function dueForMonth(
 
 export type RowWithStatus = ActiveTenancyRow & {
   paidThisMonth: number;
+  /** Portion of this cycle's payments counted toward this month's rent —
+      capped at the month's due, so deposits/prepays routed in as "rent"
+      (recon posts every matched credit with payment_type 'rent') don't
+      inflate the portfolio Collected/Expected KPIs. */
+  rentPaidThisMonth: number;
   balance: number;
   due: number;
 };
@@ -209,7 +214,13 @@ export const getRowsWithStatus = cache(async () => {
       today,
       rentChanges.get(row.id) ?? [],
     );
-    return { ...row, paidThisMonth, balance: ledger.netBalance, due };
+    return {
+      ...row,
+      paidThisMonth,
+      rentPaidThisMonth: Math.min(paidThisMonth, due),
+      balance: ledger.netBalance,
+      due,
+    };
   });
 
   return { rows, error };

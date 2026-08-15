@@ -8,7 +8,8 @@
 import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
-import { computeLedger } from "@/lib/rent";
+import { computeLedger, rateForMonthISO } from "@/lib/rent";
+import { dueForMonth } from "./tenants/data";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
 import { currentRentCycle } from "@/lib/date";
@@ -126,16 +127,22 @@ export const getDashSidecars = cache(async () =>
 
 // Group all payments by tenancy for the running ledger, and tally this
 // month's rent collection for the KPI. "Collected this month" follows the
-// rent cycle (27th → 26th), since tenants pay from the 27th.
+// rent cycle (27th → 26th), since tenants pay from the 27th. Each tenancy's
+// contribution is capped at its rent due for the month — mirrors the Rent
+// Tracker KPIs, so deposits/prepays posted as "rent" don't inflate the tile.
 export const getPaymentsThisCycle = cache(async () => {
-  const { data } = await getAllPayments();
+  const [{ data }, tenancies, { rentChanges }] = await Promise.all([
+    getAllPayments(),
+    getDashTenancies(),
+    getDashSidecars(),
+  ]);
   const today = todayISO();
   const tm = currentRentCycle();
   const paymentsByTenancy = new Map<
     string,
     { amount: number; paid_on: string; payment_type: string }[]
   >();
-  let collectedThisMonth = 0;
+  const rentPaidByTenancy = new Map<string, number>();
   for (const pmt of data ?? []) {
     const list = paymentsByTenancy.get(pmt.tenancy_id);
     if (list) list.push(pmt);
@@ -146,9 +153,24 @@ export const getPaymentsThisCycle = cache(async () => {
       pmt.paid_on <= tm.end &&
       pmt.paid_on <= today
     ) {
-      collectedThisMonth +=
-        (pmt.payment_type === "refund" ? -1 : 1) * Number(pmt.amount);
+      rentPaidByTenancy.set(
+        pmt.tenancy_id,
+        (rentPaidByTenancy.get(pmt.tenancy_id) ?? 0) +
+          (pmt.payment_type === "refund" ? -1 : 1) * Number(pmt.amount),
+      );
     }
+  }
+  let collectedThisMonth = 0;
+  for (const t of (tenancies.data ?? []) as TenancyRow[]) {
+    const due = dueForMonth(
+      t.start_date,
+      rateForMonthISO(tm.end, t.monthly_rent, rentChanges.get(t.id) ?? []),
+      t.first_month_rent !== null ? Number(t.first_month_rent) : null,
+      tm.start,
+      tm.end,
+      today,
+    );
+    collectedThisMonth += Math.min(rentPaidByTenancy.get(t.id) ?? 0, due);
   }
   return { paymentsByTenancy, collectedThisMonth };
 });
