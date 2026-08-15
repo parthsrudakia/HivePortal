@@ -140,7 +140,7 @@ export const getTenantsReminderInfo = cache(async () => {
  *  • Starting month AND tenancy has first_month_rent set → use that.
  *  • Otherwise → monthly_rent (full month).
  */
-export function dueForMonth(
+function dueForMonth(
   startDate: string,
   monthlyRent: number,
   firstMonthRent: number | null,
@@ -158,11 +158,16 @@ export function dueForMonth(
 
 export type RowWithStatus = ActiveTenancyRow & {
   paidThisMonth: number;
-  /** Portion of this cycle's payments counted toward this month's rent —
-      capped at the month's due, so deposits/prepays routed in as "rent"
-      (recon posts every matched credit with payment_type 'rent') don't
-      inflate the portfolio Collected/Expected KPIs. */
+  /** This cycle's rent-typed payments minus this cycle's security_deposit
+      charges. Zelle can't tell rent from deposit money — recon posts every
+      matched credit with payment_type 'rent' — but the operator marks a
+      deposit's arrival by applying a security_deposit charge, so deducting
+      those charges leaves actual rent for the Collected KPIs. */
   rentPaidThisMonth: number;
+  /** Deposit money received this cycle: security_deposit charges applied
+      (the marker for Zelle-collected deposits) plus explicitly-typed
+      security_deposit payments. */
+  depositCollectedThisMonth: number;
   balance: number;
   due: number;
 };
@@ -214,10 +219,19 @@ export const getRowsWithStatus = cache(async () => {
       today,
       rentChanges.get(row.id) ?? [],
     );
+    const inCycle = (d: string | null | undefined) =>
+      !!d && d >= monthStart && d <= monthEnd && d <= today;
+    const depositChargedThisMonth = (charges.get(row.id) ?? [])
+      .filter((c) => c.kind === "security_deposit" && inCycle(c.charged_on))
+      .reduce((s, c) => s + Number(c.amount), 0);
+    const depositPaidThisMonth = (row.payments ?? [])
+      .filter((p) => p.payment_type === "security_deposit" && inCycle(p.paid_on))
+      .reduce((s, p) => s + Number(p.amount), 0);
     return {
       ...row,
       paidThisMonth,
-      rentPaidThisMonth: Math.min(paidThisMonth, due),
+      rentPaidThisMonth: Math.max(0, paidThisMonth - depositChargedThisMonth),
+      depositCollectedThisMonth: depositChargedThisMonth + depositPaidThisMonth,
       balance: ledger.netBalance,
       due,
     };

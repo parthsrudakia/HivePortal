@@ -72,8 +72,9 @@ async function RentKpisSection() {
   // amounts. Everyone else still sees each tenant's rent and pending balance.
   const admin = isMaster(user?.email);
   const expectedTotal = rows.reduce((s, r) => s + r.due, 0);
-  // Rent money only — each row's contribution is capped at its month's due,
-  // so deposits and prepays that arrive typed as "rent" don't inflate this.
+  // Rent money only — security_deposit charges applied this cycle are
+  // deducted per tenancy (Zelle deposits arrive typed "rent"; the applied
+  // charge is what marks them as deposit money, see RowWithStatus).
   const paidTotal = rows.reduce((s, r) => s + r.rentPaidThisMonth, 0);
   const outstandingTotal = rows.reduce(
     (s, r) => s + Math.max(0, r.balance),
@@ -81,6 +82,10 @@ async function RentKpisSection() {
   );
   const depositTotal = rows.reduce(
     (s, r) => s + Number(r.security_deposit ?? 0),
+    0,
+  );
+  const depositCollected = rows.reduce(
+    (s, r) => s + r.depositCollectedThisMonth,
     0,
   );
   const {
@@ -98,7 +103,7 @@ async function RentKpisSection() {
 
   return (
     <>
-      <section className="mt-6 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {admin && (
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
             <p className="flex flex-wrap items-baseline gap-x-2">
@@ -119,6 +124,18 @@ async function RentKpisSection() {
               </span>
               <span className="text-lg font-semibold tabular-nums text-ink">
                 {fmtMoney(paidTotal)}
+              </span>
+            </p>
+          </div>
+        )}
+        {admin && (
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+            <p className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                Security deposit collected this month:
+              </span>
+              <span className="text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(depositCollected)}
               </span>
             </p>
           </div>

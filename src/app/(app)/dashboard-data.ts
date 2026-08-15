@@ -8,8 +8,7 @@
 import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
 import { fetchLedgerSidecars } from "@/lib/rent-data";
-import { computeLedger, rateForMonthISO } from "@/lib/rent";
-import { dueForMonth } from "./tenants/data";
+import { computeLedger } from "@/lib/rent";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
 import { currentRentCycle } from "@/lib/date";
@@ -127,17 +126,19 @@ export const getDashSidecars = cache(async () =>
 
 // Group all payments by tenancy for the running ledger, and tally this
 // month's rent collection for the KPI. "Collected this month" follows the
-// rent cycle (27th → 26th), since tenants pay from the 27th. Each tenancy's
-// contribution is capped at its rent due for the month — mirrors the Rent
-// Tracker KPIs, so deposits/prepays posted as "rent" don't inflate the tile.
+// rent cycle (27th → 26th), since tenants pay from the 27th. Per tenancy,
+// security_deposit charges applied this cycle are deducted from rent-typed
+// payments — mirrors the Rent Tracker KPIs: Zelle can't tell deposits from
+// rent, so the applied charge is what marks that money as deposit.
 export const getPaymentsThisCycle = cache(async () => {
-  const [{ data }, tenancies, { rentChanges }] = await Promise.all([
+  const [{ data }, { charges }] = await Promise.all([
     getAllPayments(),
-    getDashTenancies(),
     getDashSidecars(),
   ]);
   const today = todayISO();
   const tm = currentRentCycle();
+  const inCycle = (d: string | null | undefined) =>
+    !!d && d >= tm.start && d <= tm.end && d <= today;
   const paymentsByTenancy = new Map<
     string,
     { amount: number; paid_on: string; payment_type: string }[]
@@ -149,9 +150,7 @@ export const getPaymentsThisCycle = cache(async () => {
     else paymentsByTenancy.set(pmt.tenancy_id, [pmt]);
     if (
       (pmt.payment_type === "rent" || pmt.payment_type === "refund") &&
-      pmt.paid_on >= tm.start &&
-      pmt.paid_on <= tm.end &&
-      pmt.paid_on <= today
+      inCycle(pmt.paid_on)
     ) {
       rentPaidByTenancy.set(
         pmt.tenancy_id,
@@ -161,16 +160,11 @@ export const getPaymentsThisCycle = cache(async () => {
     }
   }
   let collectedThisMonth = 0;
-  for (const t of (tenancies.data ?? []) as TenancyRow[]) {
-    const due = dueForMonth(
-      t.start_date,
-      rateForMonthISO(tm.end, t.monthly_rent, rentChanges.get(t.id) ?? []),
-      t.first_month_rent !== null ? Number(t.first_month_rent) : null,
-      tm.start,
-      tm.end,
-      today,
-    );
-    collectedThisMonth += Math.min(rentPaidByTenancy.get(t.id) ?? 0, due);
+  for (const [tenancyId, paid] of rentPaidByTenancy) {
+    const depositCharged = (charges.get(tenancyId) ?? [])
+      .filter((c) => c.kind === "security_deposit" && inCycle(c.charged_on))
+      .reduce((s, c) => s + Number(c.amount), 0);
+    collectedThisMonth += Math.max(0, paid - depositCharged);
   }
   return { paymentsByTenancy, collectedThisMonth };
 });
