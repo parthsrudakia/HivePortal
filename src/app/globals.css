@@ -280,71 +280,78 @@ button:not(:disabled),
   border: 1px solid rgba(169, 159, 144, 0.7);
 }
 
-/* Dashboard hero edge glow — Siri / Apple Intelligence style: honey light
-   traveling around the card's border. A conic gradient with two arcs (a bright
-   leader opposite a fainter echo) is masked down to the border band; ::after
-   is the crisp ring, ::before the same gradient blurred into a soft bloom.
-   The rotation animates the registered --hero-angle custom property (inherits,
-   so both pseudos follow); browsers without @property just show static arcs. */
-@property --hero-angle {
-  syntax: "<angle>";
-  inherits: true;
-  initial-value: 0deg;
-}
-
-@keyframes hero-edge-spin {
-  to {
-    --hero-angle: 360deg;
-  }
-}
-
+/* Dashboard hero glow — a soft pool of honey light (radial gradient, natural
+   circular falloff — no bands, no borders) whose CENTER rides slowly along the
+   card's perimeter, so roughly half of it always glows inward while the rest
+   is clipped by the card edge. Keyframe percentages are proportional to edge
+   lengths (the card is much wider than tall), so the light moves at a steady
+   speed instead of crawling on the short sides. */
 .hero-edge-glow {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  overflow: hidden;
   pointer-events: none;
-  animation: hero-edge-spin 14s linear infinite;
 }
-.hero-edge-glow::before,
-.hero-edge-glow::after {
+.hero-edge-glow::before {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  /* A single comet: long tail building up to a bright head at 95deg, then a
-     quick falloff — most of the ring stays dark so the travel reads clearly. */
-  background: conic-gradient(
-    from var(--hero-angle),
-    transparent 0deg,
-    rgba(212, 146, 11, 0.1) 45deg,
-    rgba(212, 146, 11, 0.5) 78deg,
-    #f6d38a 95deg,
-    rgba(212, 146, 11, 0.25) 106deg,
-    transparent 118deg
+  left: 70%;
+  top: 0%;
+  width: min(30rem, 90vw);
+  height: min(30rem, 90vw);
+  border-radius: 9999px;
+  translate: -50% -50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(224, 165, 44, 0.42),
+    rgba(224, 165, 44, 0.16) 45%,
+    rgba(224, 165, 44, 0.05) 62%,
+    transparent 76%
   );
-  padding: 3px;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  animation:
+    hero-glow-orbit 26s linear infinite,
+    hero-glow-breathe 9s ease-in-out infinite;
 }
-/* The core band is itself blurred — light, not a metallic border line. */
-.hero-edge-glow::after {
-  filter: blur(4px);
-  opacity: 0.8;
+@keyframes hero-glow-orbit {
+  0% {
+    left: 70%;
+    top: 0%;
+  }
+  13% {
+    left: 100%;
+    top: 0%;
+  }
+  19% {
+    left: 100%;
+    top: 100%;
+  }
+  63% {
+    left: 0%;
+    top: 100%;
+  }
+  69% {
+    left: 0%;
+    top: 0%;
+  }
+  100% {
+    left: 70%;
+    top: 0%;
+  }
 }
-/* Wide, soft inward bloom: the light washing into the card. */
-.hero-edge-glow::before {
-  padding: 30px;
-  filter: blur(30px);
-  opacity: 0.7;
+@keyframes hero-glow-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+  50% {
+    opacity: 0.75;
+    scale: 1.12;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-edge-glow {
+  .hero-edge-glow::before {
     animation: none;
   }
 }
