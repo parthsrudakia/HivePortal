@@ -26,6 +26,7 @@ import { cleaningTools } from "./cleaning";
 import { utilitiesTools } from "./utilities";
 import { analyticsTools } from "./analytics";
 import { queryTools } from "./query";
+import { guideTools } from "./guide";
 
 const rawTools = [
   ...propertiesTools,
@@ -39,6 +40,7 @@ const rawTools = [
   ...utilitiesTools,
   ...analyticsTools,
   ...queryTools,
+  ...guideTools,
 ];
 
 // instrumentTool mutates each tool's `run` in place — it must be applied

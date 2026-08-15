@@ -18,6 +18,12 @@ type AdminLink = {
 
 const ADMIN_LINKS: AdminLink[] = [
   {
+    href: "/guidebook.pdf",
+    title: "Portal guidebook",
+    description:
+      "How everything works: emails and when they send, late-fee rules, KPI math, ledgers, reconciliation, cleaning, and more (PDF).",
+  },
+  {
     href: "/reports",
     title: "Reports",
     description: "Portfolio financials, collections, and occupancy reporting.",
@@ -99,21 +105,38 @@ export default async function AdminSettingsPage() {
             Administration
           </h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {visibleLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="group flex flex-col gap-1 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/40 transition hover:ring-accent/50"
-              >
-                <span className="flex items-center justify-between text-base font-medium text-ink">
-                  {link.title}
-                  <span className="text-muted transition group-hover:text-accent-text">
-                    →
+            {visibleLinks.map((link) => {
+              const cardClass =
+                "group flex flex-col gap-1 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/40 transition hover:ring-accent/50";
+              const inner = (
+                <>
+                  <span className="flex items-center justify-between text-base font-medium text-ink">
+                    {link.title}
+                    <span className="text-muted transition group-hover:text-accent-text">
+                      →
+                    </span>
                   </span>
-                </span>
-                <span className="text-sm text-muted">{link.description}</span>
-              </Link>
-            ))}
+                  <span className="text-sm text-muted">{link.description}</span>
+                </>
+              );
+              // Static assets (the guidebook PDF) need a plain anchor — the
+              // client router would try to fetch an RSC payload for them.
+              return link.href.endsWith(".pdf") ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener"
+                  className={cardClass}
+                >
+                  {inner}
+                </a>
+              ) : (
+                <Link key={link.href} href={link.href} className={cardClass}>
+                  {inner}
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}
