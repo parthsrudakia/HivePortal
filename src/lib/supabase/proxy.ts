@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { canEditLedger } from "@/lib/access";
 
 // "/s" is the public cleaner schedule page (token in the path, no login);
 // "/sign" is the public tenant lease-signing page (token in the path);
@@ -66,6 +67,15 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // The operations guidebook PDF is a static asset, so its access check
+  // lives here: operators (Vineet + Parth) only.
+  if (
+    path === "/guidebook.pdf" &&
+    !canEditLedger((user?.email as string | undefined) ?? null)
+  ) {
+    return new NextResponse(null, { status: 404 });
   }
 
   if (user && path === "/login") {
