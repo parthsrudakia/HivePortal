@@ -160,6 +160,8 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       // Rooms of retired properties are not for rent.
       .is("properties.archived_at", null)
       .order("available_from", { ascending: true, nullsFirst: true })
+      // Secondary key keeps date-ties in a stable order across refetches.
+      .order("room_number", { ascending: true })
       .returns<Omit<Row, "ads">[]>(),
     // All ads across every room — used both to attach each room's ads and to
     // tally ads-per-poster below.

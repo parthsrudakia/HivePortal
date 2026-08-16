@@ -31,6 +31,9 @@ type PropertyRel = {
 
 type Row = {
   id: string;
+  // Carried only for sort parity with the inventory table (tiebreak) — not
+  // displayed in the shareable sheet.
+  room_number: string | null;
   status: "occupied" | "available" | "reserved" | "maintenance";
   available_from: string | null;
   base_rent: number | null;
@@ -84,7 +87,7 @@ export async function buildInventorySheet(
   const { data } = await supabase
     .from("rooms")
     .select(
-      `id, status, available_from, base_rent, bundle_fee, total_rent,
+      `id, room_number, status, available_from, base_rent, bundle_fee, total_rent,
        photos_url, has_private_bathroom, has_ac,
        properties(cross_street, neighborhood, bedrooms, bathrooms,
                   building_name, street_address, unit_number,

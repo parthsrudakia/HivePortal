@@ -127,6 +127,7 @@ export type SortableProperty = {
 
 /** Minimal room shape the filter/sort needs (a superset is fine). */
 export type SortableRoom = {
+  room_number: string | null;
   available_from: string | null;
   base_rent: number | null;
   bundle_fee: number | null;
@@ -186,9 +187,14 @@ export function filterAndSortRooms<T extends SortableRoom>(
     return true;
   });
   filtered.sort((a, b) => {
-    const base = compareRooms(a, b, sort);
-    // Stable tiebreak on the date so equal sort keys keep a sensible order.
-    const cmp = base !== 0 ? base : cmpDate(a.available_from, b.available_from);
+    // Tiebreak down to unit + room number so equal sort keys can never
+    // reorder (rows that tie only on e.g. the date used to swap whenever an
+    // edit changed the order the database returned them in).
+    const cmp =
+      compareRooms(a, b, sort) ||
+      cmpDate(a.available_from, b.available_from) ||
+      cmpStr(unitTitleOf(a), unitTitleOf(b)) ||
+      cmpStr(a.room_number, b.room_number);
     return dir === "desc" ? -cmp : cmp;
   });
   return filtered;
