@@ -1,10 +1,10 @@
 /**
  * Automatic monthly late fees.
  *
- * Policy (from August 2026 on): a tenant who hasn't cleared their running
- * ledger balance by the end of the 6th gets one $50 late fee for the month.
- * New York units are exempt, as are balances under $10, tenants in their
- * move-in month, and utilities-only balances — a balance similar (within
+ * Policy (from August 2026 on): a tenant still owing more than $200 on
+ * their running ledger balance after the end of the 6th gets one $50 late
+ * fee for the month. New York units are exempt, as are tenants in their
+ * move-in month and utilities-only balances — a balance similar (within
  * UTILITY_ONLY_TOLERANCE) to the utility charges posted this month and/or
  * last month means rent is paid and only a utility share is pending.
  * Runs from the daily ops cron — the date gate below makes it fire on the
@@ -30,8 +30,8 @@ const GRACE_DAY = 6;
 
 const LATE_FEE_AMOUNT = 50;
 
-/** Only fee balances of $10+ — a fee on a smaller residue helps no one. */
-const MIN_OWED = 10;
+/** The fee applies only when MORE than this is owed. */
+const MIN_OWED = 200;
 
 /** How close ($) a balance must be to the recent utility charges to count
     as "just utilities pending". Similar, not exact — credits and rounding
@@ -171,7 +171,7 @@ export async function applyMonthlyLateFees(
       today,
       rentChanges.get(row.id) ?? [],
     );
-    if (netBalance < MIN_OWED) continue;
+    if (netBalance <= MIN_OWED) continue;
 
     // Utilities-only balances are exempt: when the balance is similar to
     // the utility charges posted this month and/or last month, rent is

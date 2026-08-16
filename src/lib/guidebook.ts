@@ -15,7 +15,7 @@
 export type GuidebookSection = { title: string; body: string };
 
 export const GUIDEBOOK_TITLE = "Operations Guidebook";
-export const GUIDEBOOK_UPDATED = "August 15, 2026";
+export const GUIDEBOOK_UPDATED = "August 16, 2026";
 
 export const GUIDEBOOK_SECTIONS: GuidebookSection[] = [
   {
@@ -75,12 +75,12 @@ Because Collected is deposit-adjusted and cycle-scoped, a tenant paying off *las
 Runs from the daily cron; policy in force since **August 2026**.
 
 ### The rule
-A tenant who hasn't cleared their running balance by the **end of the 6th** of the month gets **one $50 late fee**, applied on the first cron run on/after the 7th (Eastern). A batch marker guarantees it can never run twice in a month, and a per-month dedupe key prevents a tenant ever getting two fees for the same month — an operator hand-charging a fee first simply makes the automatic one skip.
+A tenant still owing **more than $200** on their running balance after the **end of the 6th** of the month gets **one $50 late fee**, applied on the first cron run on/after the 7th (Eastern). A batch marker guarantees it can never run twice in a month, and a per-month dedupe key prevents a tenant ever getting two fees for the same month — an operator hand-charging a fee first simply makes the automatic one skip.
 
 ### Who is exempt
-1. **New York units** — never auto-feed.
-2. **Move-in month** — anyone whose tenancy started on/after the 1st of the current month.
-3. **Small balances** — under **$10**.
+1. **New York units** — never auto-feed; only non-NY apartments' tenants are charged.
+2. **Balances of $200 or less** — the fee applies only when more than $200 is owed.
+3. **Move-in month** — anyone whose tenancy started on/after the 1st of the current month.
 4. **Utilities-only balances** — if the balance is within **$10** of the utility charges posted on the account in the current month, the previous month, or the two combined, the tenant is treated as rent-paid with just a utility share pending: no fee.
 5. **Paused tenancies** and tenants who already have a late-fee charge this month.
 
