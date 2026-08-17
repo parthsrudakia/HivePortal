@@ -175,6 +175,10 @@ export function PropertyForm({
               defaultValue={v.bedrooms ?? ""}
               className={fieldInput}
             />
+            <span className="text-xs text-muted">
+              One room per bedroom is created automatically — fill in each
+              room&apos;s details on the property page.
+            </span>
           </label>
           <label className="flex flex-col gap-1.5">
             <span className={fieldLabel}>Bathrooms</span>

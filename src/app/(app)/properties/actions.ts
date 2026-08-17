@@ -81,6 +81,9 @@ function parseForm(formData: FormData): ParsedForm | { error: string } {
       };
     }
   }
+  if (numeric.bedrooms !== null && !Number.isInteger(numeric.bedrooms)) {
+    return { error: "Bedrooms must be a whole number." };
+  }
 
   return {
     building_name: strOrNull("building_name"),
@@ -164,6 +167,39 @@ async function resolveLeaseholderId(
   return created.id;
 }
 
+// A unit has exactly one room per bedroom. Rooms are created here
+// automatically — blank (no rent, photos, description) for the operator to
+// fill in per room — and `addRoom` caps manual adds at the same bedroom
+// count, so the set can't grow past the unit.
+async function createMissingRooms(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  propertyId: string,
+  bedrooms: number | null,
+) {
+  if (!bedrooms || bedrooms <= 0) return;
+  const { data: existing } = await supabase
+    .from("rooms")
+    .select("room_number")
+    .eq("property_id", propertyId);
+  const rows = existing ?? [];
+  const missing = bedrooms - rows.length;
+  if (missing <= 0) return;
+
+  // Number new rooms after the highest existing "Room N" so custom-named or
+  // previously deleted rooms never produce a duplicate name.
+  const maxRoomN = rows.reduce((m, r) => {
+    const match = r.room_number?.match(/Room (\d+)/);
+    return match ? Math.max(m, parseInt(match[1], 10)) : m;
+  }, 0);
+  await supabase.from("rooms").insert(
+    Array.from({ length: missing }, (_, i) => ({
+      property_id: propertyId,
+      room_number: `Room ${maxRoomN + i + 1}`,
+      status: "available" as const,
+    })),
+  );
+}
+
 export async function createProperty(
   _prev: PropertyFormState,
   formData: FormData,
@@ -198,8 +234,10 @@ export async function createProperty(
   }
 
   await syncPropertyCleaners(supabase, data.id, cleaner_ids);
+  await createMissingRooms(supabase, data.id, parsed.bedrooms);
 
   revalidatePath("/properties");
+  revalidatePath("/inventory");
   redirect(`/properties/${data.id}`);
 }
 
@@ -215,6 +253,21 @@ export async function updateProperty(
   if (!(await isPropertyOperator())) {
     return { error: "Only the financial operators can change properties." };
   }
+
+  // Rooms can't be auto-deleted (tenancies, books) — refuse a bedroom count
+  // below the rooms that already exist.
+  if (parsed.bedrooms !== null) {
+    const { count } = await supabase
+      .from("rooms")
+      .select("id", { count: "exact", head: true })
+      .eq("property_id", id);
+    if ((count ?? 0) > parsed.bedrooms) {
+      return {
+        error: `This unit already has ${count} rooms — set bedrooms to at least ${count}, or delete rooms first.`,
+      };
+    }
+  }
+
   const leaseholder_id = await resolveLeaseholderId(
     supabase,
     parsed.leaseholder_name,
@@ -237,9 +290,12 @@ export async function updateProperty(
   }
 
   await syncPropertyCleaners(supabase, id, cleaner_ids);
+  // Raising the bedroom count grows the room set to match.
+  await createMissingRooms(supabase, id, parsed.bedrooms);
 
   revalidatePath("/properties");
   revalidatePath(`/properties/${id}`);
+  revalidatePath("/inventory");
   return undefined;
 }
 

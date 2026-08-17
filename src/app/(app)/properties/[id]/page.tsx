@@ -138,6 +138,11 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   }, 0);
   const suggestedRoomNumber = `Room ${maxRoomN + 1}`;
 
+  // One room per bedroom — the add-room button disappears once the unit is
+  // full (no cap while bedrooms is unset).
+  const atRoomCap =
+    property.bedrooms != null && (rooms ?? []).length >= property.bedrooms;
+
   const title = property.building_name?.trim() || property.street_address;
   const leaseholder = one(property.leaseholders);
 
@@ -278,10 +283,19 @@ export default async function PropertyDetailPage({ params }: PageProps) {
             >
               Add tenant
             </Link>
-            <AddRoom
-              propertyId={property.id}
-              suggestedRoomNumber={suggestedRoomNumber}
-            />
+            {atRoomCap ? (
+              <span
+                className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-muted"
+                title="One room per bedroom — raise the bedroom count to add more."
+              >
+                All {property.bedrooms} rooms exist
+              </span>
+            ) : (
+              <AddRoom
+                propertyId={property.id}
+                suggestedRoomNumber={suggestedRoomNumber}
+              />
+            )}
           </div>
         </header>
 

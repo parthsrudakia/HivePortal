@@ -68,12 +68,33 @@ export async function addRoom(
 
   const supabase = await createClient();
 
-  const { data: duplicate } = await supabase
-    .from("rooms")
-    .select("id")
-    .eq("property_id", propertyId)
-    .eq("room_number", room_number)
-    .maybeSingle();
+  const [{ data: property }, { count: roomCount }, { data: duplicate }] =
+    await Promise.all([
+      supabase
+        .from("properties")
+        .select("bedrooms")
+        .eq("id", propertyId)
+        .maybeSingle(),
+      supabase
+        .from("rooms")
+        .select("id", { count: "exact", head: true })
+        .eq("property_id", propertyId),
+      supabase
+        .from("rooms")
+        .select("id")
+        .eq("property_id", propertyId)
+        .eq("room_number", room_number)
+        .maybeSingle(),
+    ]);
+
+  // A unit never has more rooms than bedrooms (no cap while bedrooms is
+  // unset). Rooms are normally created automatically with the property.
+  if (property?.bedrooms != null && (roomCount ?? 0) >= property.bedrooms) {
+    return {
+      error: `This unit has ${property.bedrooms} bedroom${property.bedrooms === 1 ? "" : "s"} and all of its rooms already exist. Raise the bedroom count on the property to add another room.`,
+    };
+  }
+
   if (duplicate) {
     return { error: `"${room_number}" already exists in this property.` };
   }
