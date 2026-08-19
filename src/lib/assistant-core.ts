@@ -443,6 +443,35 @@ export function messageText(m: Anthropic.Beta.BetaMessage): string {
  * fresh `calledTools` array). `onFalseSendRetry` lets each surface log the
  * corrective pass in its own way.
  */
+/**
+ * Prompt caching: the request renders as tools → system → messages, and tools
+ * + SYSTEM_PROMPT are byte-identical on every request, so one breakpoint on
+ * the system block caches all of it. A second breakpoint on the newest
+ * message's last block caches the conversation history too, so every
+ * tool-loop iteration within a turn (and any follow-up message inside the
+ * cache TTL) re-reads the whole prefix at ~0.1× input price instead of
+ * re-billing it in full. Blocks are cloned, never mutated — the caller
+ * persists its own message objects to history, and a cache_control marker
+ * must not leak into the DB.
+ */
+function withHistoryBreakpoint(msgs: ConvoMessage[]): ConvoMessage[] {
+  if (msgs.length === 0) return msgs;
+  return msgs.map((m, i) => {
+    if (i !== msgs.length - 1) return m;
+    const blocks =
+      typeof m.content === "string"
+        ? [{ type: "text" as const, text: m.content }]
+        : [...m.content];
+    const last = blocks[blocks.length - 1];
+    if (!last || last.type !== "text") return m;
+    blocks[blocks.length - 1] = {
+      ...last,
+      cache_control: { type: "ephemeral" },
+    };
+    return { ...m, content: blocks };
+  });
+}
+
 export async function runAssistantTurn(
   client: Anthropic,
   messages: ConvoMessage[],
@@ -457,11 +486,17 @@ export async function runAssistantTurn(
     client.beta.messages.toolRunner({
       model: "claude-opus-5",
       max_tokens: 16000,
-      system: SYSTEM_PROMPT,
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
       tools,
-      messages: msgs,
+      messages: withHistoryBreakpoint(msgs),
     });
 
   let message = await runAgent(messages);

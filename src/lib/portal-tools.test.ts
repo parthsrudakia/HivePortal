@@ -18,6 +18,7 @@ const EXPECTED_TOOL_NAMES = [
   "get_credentials",
   "get_lease_url",
   "get_monthly_collections",
+  "get_portal_guide",
   "get_profitability",
   "get_property",
   "get_property_collections",
