@@ -34,6 +34,8 @@ export async function GET(
     .from("rooms")
     .select(`${ROOM_SELECT}, pending_tenant`)
     .eq("id", roomId)
+    // A room of a retired property 404s like any other non-listed room.
+    .is("properties.archived_at", null)
     .maybeSingle<RoomRow & { pending_tenant: boolean }>();
 
   if (error) {

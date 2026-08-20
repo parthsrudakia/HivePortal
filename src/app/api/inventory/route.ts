@@ -39,6 +39,8 @@ export async function GET(req: NextRequest) {
       `status.eq.available,and(status.eq.occupied,available_from.gte.${today})`,
     )
     .eq("pending_tenant", false)
+    // Rooms of retired properties are not for rent (same rule as /inventory).
+    .is("properties.archived_at", null)
     .returns<RoomRow[]>();
 
   if (error) {

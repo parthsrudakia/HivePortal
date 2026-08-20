@@ -66,10 +66,12 @@ export type RoomRow = {
   properties: PropertyRel | PropertyRel[] | null;
 };
 
+// !inner so the archived_at filter on properties drops the room row itself —
+// rooms of retired (archived) properties must never be served by this API.
 export const ROOM_SELECT = `id, room_number, base_rent, bundle_fee, total_rent,
   available_from, status, marketing_description, photos_url,
   has_private_bathroom, has_ac,
-  properties(id, building_name, street_address, unit_number, neighborhood,
+  properties!inner(id, building_name, street_address, unit_number, neighborhood,
              unit_amenities, building_amenities)`;
 
 /** Same "listable right now" rule the /inventory page uses. */
