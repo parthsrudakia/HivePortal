@@ -7,6 +7,9 @@ import { canViewProfitability, isMaster, isOperator } from "@/lib/access";
 import { NamePrompt } from "./name-prompt";
 import { NavIcon } from "./nav-icons";
 import { AssistantWidget, AssistantLauncher } from "./assistant-widget";
+import { LoginReminderPopup } from "./login-reminder-popup";
+import { one } from "@/lib/relations";
+import { todayISO } from "@/lib/date";
 
 // Session-dependent fragments of the app shell. Each is rendered behind its
 // own <Suspense> so the layout itself stays free of runtime data access —
@@ -139,6 +142,39 @@ export async function AssistantHeaderLink() {
   const user = await getSessionUser();
   if (!isOperator(user?.email)) return null;
   return <AssistantLauncher />;
+}
+
+/**
+ * One-off reminder popup: undismissed login_reminders for the signed-in
+ * user that are due — either linked to a tenancy whose move-out date has
+ * arrived, or past their fixed show_after date. Renders nothing otherwise.
+ */
+export async function LoginRemindersSlot() {
+  const user = await getSessionUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("login_reminders")
+    .select("id, message, show_after, tenancy_id, tenancies(move_out_date)")
+    .is("dismissed_at", null);
+  if (!data?.length) return null;
+
+  const today = todayISO();
+  const due = data.filter((r) => {
+    if (r.tenancy_id) {
+      const moveOut = one(r.tenancies)?.move_out_date;
+      return !!moveOut && moveOut.slice(0, 10) <= today;
+    }
+    return !!r.show_after && r.show_after <= today;
+  });
+  if (due.length === 0) return null;
+
+  return (
+    <LoginReminderPopup
+      reminders={due.map((r) => ({ id: r.id, message: r.message }))}
+    />
+  );
 }
 
 export async function UserIdentity() {

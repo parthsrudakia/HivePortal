@@ -11,6 +11,7 @@ import {
   AuthGate,
   DevelopersHeaderLink,
   DevelopersNavLink,
+  LoginRemindersSlot,
   MobileUserInfo,
   ProfitabilityNavLink,
   ProjectsBadge,
@@ -168,6 +169,9 @@ export default function AppLayout({
       </div>
       <Suspense>
         <AssistantSlot />
+      </Suspense>
+      <Suspense>
+        <LoginRemindersSlot />
       </Suspense>
     </div>
   );

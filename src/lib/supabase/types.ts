@@ -743,6 +743,61 @@ export type Database = {
         }
         Relationships: []
       }
+      login_reminders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          dismissed_at: string | null
+          id: string
+          message: string
+          show_after: string | null
+          tenancy_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          dismissed_at?: string | null
+          id?: string
+          message: string
+          show_after?: string | null
+          tenancy_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          dismissed_at?: string | null
+          id?: string
+          message?: string
+          show_after?: string | null
+          tenancy_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "login_reminders_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "tenancies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "login_reminders_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_current_month_status"
+            referencedColumns: ["tenancy_id"]
+          },
+          {
+            foreignKeyName: "login_reminders_tenancy_id_fkey"
+            columns: ["tenancy_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["tenancy_id"]
+          },
+        ]
+      }
       marketing_channels: {
         Row: {
           active: boolean
