@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // sharp 0.35 splits code across @img/* packages (@img/colour, platform
+  // binaries). Vercel's file tracing missed @img/colour in the Aug 2026
+  // deploys, so loading the utilities actions module threw at import time
+  // and every action on /utilities failed. Force the whole sharp tree into
+  // the traced output for the route that uses it.
+  outputFileTracingIncludes: {
+    "/utilities": ["node_modules/sharp/**", "node_modules/@img/**"],
+  },
   experimental: {
     serverActions: {
       // The add-tenant form accepts lease PDFs up to 20 MB; the default

@@ -10,7 +10,6 @@
  */
 
 import { PDFDocument } from "pdf-lib";
-import sharp from "sharp";
 
 export type CompressedStatement = {
   data: Buffer;
@@ -37,6 +36,10 @@ export async function compressStatement(
     }
 
     if (mediaType.startsWith("image/")) {
+      // Deferred so a missing sharp native binary in the deployed bundle
+      // degrades to storing the original, instead of a module-load error
+      // that takes down every server action importing this file.
+      const { default: sharp } = await import("sharp");
       const out = await sharp(original)
         .rotate() // bake in EXIF orientation before it's stripped
         .resize({
