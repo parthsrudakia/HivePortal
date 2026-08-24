@@ -7,7 +7,13 @@
 
 import { cache } from "react";
 import type { createClient } from "@/lib/supabase/server";
-import type { LedgerAllocation, LedgerCharge, RentChange } from "@/lib/rent";
+import {
+  computeLedger,
+  type Ledger,
+  type LedgerAllocation,
+  type LedgerCharge,
+  type RentChange,
+} from "@/lib/rent";
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
@@ -45,6 +51,52 @@ function groupByTenancy<T extends { tenancy_id: string }>(
 
 // cache() dedupes per request+client: /tenants used to fetch all three tables
 // twice per render (page + reminder-info) — now the second call is free.
+/**
+ * One tenancy's full ledger position as of a date. Shared by
+ * settleEndedBalance (move-out write-off) and transferTenancy (balance
+ * carry to the new room); returns null when the tenancy doesn't exist.
+ */
+export async function loadTenancyNetBalance(
+  supabase: SupabaseServer,
+  tenancy_id: string,
+  asOf: string,
+): Promise<
+  | (Ledger & {
+      tenancy: {
+        tenant_id: string;
+        status: string;
+        room_id: string | null;
+      };
+    })
+  | null
+> {
+  const { data: t } = await supabase
+    .from("tenancies")
+    .select(
+      `id, tenant_id, room_id, status, monthly_rent, first_month_rent,
+       security_deposit, start_date, move_out_date, paused_at,
+       payments(amount, paid_on, payment_type)`,
+    )
+    .eq("id", tenancy_id)
+    .maybeSingle();
+  if (!t) return null;
+
+  const { charges, allocations, rentChanges } =
+    await fetchLedgerSidecars(supabase);
+  const ledger = computeLedger(
+    t,
+    t.payments ?? [],
+    charges.get(tenancy_id) ?? [],
+    allocations.get(tenancy_id) ?? [],
+    asOf,
+    rentChanges.get(tenancy_id) ?? [],
+  );
+  return {
+    ...ledger,
+    tenancy: { tenant_id: t.tenant_id, status: t.status, room_id: t.room_id },
+  };
+}
+
 export const fetchLedgerSidecars = cache(async (
   supabase: SupabaseServer,
 ): Promise<LedgerSidecars> => {

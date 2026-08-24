@@ -15,12 +15,19 @@ import {
   balanceReminderText,
 } from "@/lib/email";
 import { sendSms } from "@/lib/sms";
-import { todayISO } from "@/lib/date";
+import { todayISO, addDaysISO, proratedMonthRemainder } from "@/lib/date";
 import { computeLedger, LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import {
+  fetchLedgerSidecars,
+  loadTenancyNetBalance,
+} from "@/lib/rent-data";
 import { buildBalanceDetail, type BalanceDetail } from "@/lib/balance-detail";
 import { updateTenancyRent } from "@/lib/rent-history";
 import { applyMoveOut } from "@/lib/move-out";
+import {
+  createTenancyForTenant,
+  findRoomClash,
+} from "@/lib/tenancy-create";
 import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
 
@@ -161,32 +168,10 @@ export async function createTenant(
 
   // Submit-time double-booking guard. The room picker filters taken rooms
   // the same way, but another tenant can land in the room between the page
-  // render and this submit. Runs before anything is created so a clash needs
-  // no cleanup. Same slot rule as the picker: an upcoming tenancy claims the
-  // room outright; an active one blocks unless its move-out precedes the new
-  // start date.
+  // render and this submit.
   if (room_id && start_date) {
-    const { data: occupants, error: occErr } = await supabase
-      .from("tenancies")
-      .select("status, move_out_date, tenants(full_name)")
-      .eq("room_id", room_id)
-      .in("status", ["active", "upcoming"]);
-    if (occErr) return { error: occErr.message };
-    const clash = (occupants ?? []).find(
-      (t) =>
-        t.status === "upcoming" ||
-        !t.move_out_date ||
-        t.move_out_date >= start_date,
-    );
-    if (clash) {
-      const who = one(clash.tenants)?.full_name ?? "another tenant";
-      return {
-        error:
-          clash.status === "upcoming"
-            ? `That room is already reserved for ${who} (upcoming move-in). Pick another room.`
-            : `That room is occupied by ${who}${clash.move_out_date ? ` through ${clash.move_out_date}` : ""}. Pick another room.`,
-      };
-    }
+    const clash = await findRoomClash(supabase, room_id, start_date);
+    if (clash) return clash;
   }
 
   const { data: tenant, error: tErr } = await supabase
@@ -720,6 +705,285 @@ export async function reactivateTenancy(formData: FormData) {
   revalidatePath("/tenants/new");
 }
 
+// ----- Start a NEW tenancy for an existing tenant (reactivate) -----
+// Unlike reactivateTenancy above (which un-ends the same tenancy and would
+// back-bill every month since the move-out), this starts a fresh tenancy
+// with fresh terms — same or different room, new rent, new start date. The
+// old ledger stays closed in history; no back-billing.
+
+export async function startNewTenancy(
+  _prev: TenantFormState,
+  formData: FormData,
+): Promise<TenantFormState> {
+  const tenant_id = String(formData.get("tenant_id") ?? "").trim();
+  const room_id = String(formData.get("room_id") ?? "").trim();
+  const start_date = String(formData.get("start_date") ?? "").trim();
+  const monthly_rent_str = String(formData.get("monthly_rent") ?? "").trim();
+  const first_month_rent_str = String(
+    formData.get("first_month_rent") ?? "",
+  ).trim();
+  const security_deposit_str = String(
+    formData.get("security_deposit") ?? "",
+  ).trim();
+  const lease_end_date =
+    String(formData.get("lease_end_date") ?? "").trim() || null;
+
+  const supabase = await createClient();
+  const denied = await requireLedgerAdmin();
+  if (denied) return { error: denied };
+
+  if (!isValid(zUuid, tenant_id)) return { error: "Invalid tenant id." };
+  if (!room_id) return { error: "Pick a room." };
+  if (!isValid(zUuid, room_id)) return { error: "Invalid room id." };
+  if (!isValid(zIsoDate, start_date))
+    return { error: "Start date must be YYYY-MM-DD." };
+  if (lease_end_date && !isValid(zIsoDate, lease_end_date))
+    return { error: "Lease end date must be YYYY-MM-DD." };
+  const monthly_rent = Number(monthly_rent_str);
+  if (!Number.isFinite(monthly_rent) || monthly_rent <= 0)
+    return { error: "Monthly rent must be a number greater than 0." };
+  const first_month_rent = first_month_rent_str
+    ? Number(first_month_rent_str)
+    : null;
+  if (
+    first_month_rent !== null &&
+    (!Number.isFinite(first_month_rent) || first_month_rent < 0)
+  )
+    return { error: "First month rent must be a non-negative number." };
+  const security_deposit = security_deposit_str
+    ? Number(security_deposit_str)
+    : null;
+  if (
+    security_deposit !== null &&
+    (!Number.isFinite(security_deposit) || security_deposit < 0)
+  )
+    return { error: "Security deposit must be a non-negative number." };
+
+  // One live tenancy per tenant — reactivation is for someone fully out.
+  const { data: live } = await supabase
+    .from("tenancies")
+    .select("id")
+    .eq("tenant_id", tenant_id)
+    .in("status", ["active", "upcoming"]);
+  if ((live ?? []).length > 0)
+    return { error: "This tenant already has an active or upcoming tenancy." };
+
+  const created = await createTenancyForTenant(supabase, {
+    tenant_id,
+    room_id,
+    start_date,
+    monthly_rent,
+    // Mid-month starts default to a prorated first month (the ledger bills
+    // whole months); the form can override with an explicit value.
+    first_month_rent:
+      first_month_rent === null && !start_date.endsWith("-01")
+        ? proratedMonthRemainder(start_date, monthly_rent)
+        : first_month_rent,
+    security_deposit,
+    lease_end_date,
+    postDepositCharge: true,
+  });
+  if ("error" in created) return { error: created.error };
+
+  revalidatePath("/tenants");
+  revalidatePath(`/tenants/${tenant_id}`);
+  revalidatePath("/tenants/history");
+  revalidatePath("/inventory");
+  revalidatePath("/tenants/new");
+  revalidatePath("/properties");
+  return undefined;
+}
+
+// ----- Transfer an active tenant to a different room -----
+// Ends the current tenancy on the transfer date (the tenant's last day in
+// the old room) and starts a new tenancy in the destination, carrying the
+// old ledger's net position across as a settlement/adjustment pair so the
+// tenant owes (or is owed) the same total, just in one place.
+
+export type TransferFormState =
+  | { error?: string; warning?: string }
+  | undefined;
+
+type TransferRoomRel = {
+  room_number: string | null;
+  properties:
+    | { building_name: string | null; street_address: string; unit_number: string }
+    | { building_name: string | null; street_address: string; unit_number: string }[]
+    | null;
+};
+
+function transferRoomLabel(room: TransferRoomRel | null): string {
+  if (!room) return "previous room";
+  const p = one(room.properties);
+  const unit = p
+    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
+    : "—";
+  return `${unit} · ${room.room_number ?? "Room"}`;
+}
+
+export async function transferTenancy(
+  _prev: TransferFormState,
+  formData: FormData,
+): Promise<TransferFormState> {
+  const tenancy_id = String(formData.get("tenancy_id") ?? "").trim();
+  const tenant_id = String(formData.get("tenant_id") ?? "").trim();
+  const dest_room_id = String(formData.get("dest_room_id") ?? "").trim();
+  const transfer_date = String(formData.get("transfer_date") ?? "").trim();
+  const new_start_raw = String(formData.get("new_start_date") ?? "").trim();
+  const new_rent_str = String(formData.get("new_monthly_rent") ?? "").trim();
+  const first_month_rent_str = String(
+    formData.get("first_month_rent") ?? "",
+  ).trim();
+
+  const supabase = await createClient();
+  const denied = await requireLedgerAdmin();
+  if (denied) return { error: denied };
+
+  if (!isValid(zUuid, tenancy_id) || !isValid(zUuid, tenant_id))
+    return { error: "Invalid tenancy or tenant id." };
+  if (!dest_room_id) return { error: "Pick a destination room." };
+  if (!isValid(zUuid, dest_room_id))
+    return { error: "Invalid destination room id." };
+  if (!isValid(zIsoDate, transfer_date))
+    return { error: "Transfer date must be YYYY-MM-DD." };
+  const new_start_date = new_start_raw || addDaysISO(transfer_date, 1);
+  if (!isValid(zIsoDate, new_start_date))
+    return { error: "New start date must be YYYY-MM-DD." };
+  if (new_start_date <= transfer_date)
+    return {
+      error: "The new room's start date must be after the transfer date.",
+    };
+  const new_monthly_rent = Number(new_rent_str);
+  if (!Number.isFinite(new_monthly_rent) || new_monthly_rent <= 0)
+    return { error: "Monthly rent must be a number greater than 0." };
+  const first_month_rent = first_month_rent_str
+    ? Number(first_month_rent_str)
+    : null;
+  if (
+    first_month_rent !== null &&
+    (!Number.isFinite(first_month_rent) || first_month_rent < 0)
+  )
+    return { error: "First month rent must be a non-negative number." };
+
+  // The active + no-move-out requirement doubles as the double-submit guard:
+  // a second submit finds the old tenancy already ending and aborts.
+  const { data: old } = await supabase
+    .from("tenancies")
+    .select(
+      `id, tenant_id, room_id, start_date, status, move_out_date, security_deposit,
+       rooms(room_number, properties(building_name, street_address, unit_number))`,
+    )
+    .eq("id", tenancy_id)
+    .maybeSingle();
+  if (!old || old.tenant_id !== tenant_id)
+    return { error: "Tenancy not found." };
+  if (old.status !== "active" || old.move_out_date)
+    return {
+      error:
+        "Only an active tenancy without a scheduled move-out can be transferred.",
+    };
+  if (old.room_id === dest_room_id)
+    return {
+      error:
+        "That's the tenant's current room — edit the rent in place instead.",
+    };
+  if (transfer_date < old.start_date)
+    return { error: "Transfer date cannot be before the tenancy start date." };
+
+  const { data: destRoom } = await supabase
+    .from("rooms")
+    .select(
+      "room_number, properties(building_name, street_address, unit_number)",
+    )
+    .eq("id", dest_room_id)
+    .maybeSingle();
+  if (!destRoom) return { error: "Destination room not found." };
+
+  // 1) Create the new tenancy first: the worst partial state is a visible,
+  //    deletable upcoming tenancy — never a tenant with no tenancy. The
+  //    deposit carries physically, so no new deposit charge is posted.
+  const created = await createTenancyForTenant(supabase, {
+    tenant_id,
+    room_id: dest_room_id,
+    start_date: new_start_date,
+    monthly_rent: new_monthly_rent,
+    first_month_rent:
+      first_month_rent === null && !new_start_date.endsWith("-01")
+        ? proratedMonthRemainder(new_start_date, new_monthly_rent)
+        : first_month_rent,
+    security_deposit: old.security_deposit,
+    postDepositCharge: false,
+  });
+  if ("error" in created) return { error: created.error };
+
+  // 2) End the old tenancy (room release, available_from, cleaning record).
+  const ended = await applyMoveOut(supabase, tenancy_id, transfer_date);
+  if (ended.error) {
+    await supabase
+      .from("tenancy_charges")
+      .delete()
+      .eq("tenancy_id", created.tenancy_id);
+    await supabase.from("tenancies").delete().eq("id", created.tenancy_id);
+    if (created.prior_room) {
+      await updateRoomsWithNotification(supabase, dest_room_id, {
+        status: created.prior_room.status,
+        pending_tenant: created.prior_room.pending_tenant,
+        available_from: created.prior_room.available_from,
+      });
+    }
+    return { error: ended.error };
+  }
+
+  // 3) Carry the ledger position. Computed after the move-out so rent stops
+  //    accruing at the transfer month; asOf covers scheduled transfers.
+  const today = todayISO();
+  const asOf = transfer_date > today ? transfer_date : today;
+  const ledger = await loadTenancyNetBalance(supabase, tenancy_id, asOf);
+  const netBalance = ledger?.netBalance ?? 0;
+  if (Math.abs(netBalance) > 0.005) {
+    const carryFailed = (detail: string): TransferFormState => ({
+      warning: `Transferred, but the balance carry failed (${detail}). Post a settlement on the old ledger and a matching adjustment on the new one manually.`,
+    });
+    const { data: settlement, error: settleErr } = await supabase
+      .from("tenancy_charges")
+      .insert({
+        tenancy_id,
+        kind: "settlement",
+        amount: netBalance,
+        charged_on: transfer_date,
+        note: `Balance carried to ${transferRoomLabel(destRoom)}`,
+      })
+      .select("id")
+      .single();
+    if (settleErr) return carryFailed(settleErr.message);
+    const { error: adjErr } = await supabase.from("tenancy_charges").insert({
+      tenancy_id: created.tenancy_id,
+      kind: "adjustment",
+      amount: -netBalance,
+      charged_on: new_start_date,
+      note: `Balance carried from ${transferRoomLabel(one(old.rooms))}`,
+    });
+    if (adjErr) {
+      // Never leave a half-carry: without the offsetting adjustment the
+      // settlement would silently erase the debt.
+      if (settlement)
+        await supabase
+          .from("tenancy_charges")
+          .delete()
+          .eq("id", settlement.id);
+      return carryFailed(adjErr.message);
+    }
+  }
+
+  revalidatePath("/tenants");
+  revalidatePath(`/tenants/${tenant_id}`);
+  revalidatePath("/tenants/history");
+  revalidatePath("/inventory");
+  revalidatePath("/tenants/new");
+  revalidatePath("/properties");
+  return undefined;
+}
+
 // ----- Delete tenant (and their tenancies + payments via cascades) -----
 
 export async function deleteTenant(formData: FormData) {
@@ -824,28 +1088,10 @@ export async function settleEndedBalance(formData: FormData) {
   if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
   if (!isValid(zUuid, tenancy_id)) return;
 
-  const { data: t } = await supabase
-    .from("tenancies")
-    .select(
-      `id, tenant_id, status, monthly_rent, first_month_rent, security_deposit,
-       start_date, move_out_date, paused_at,
-       payments(amount, paid_on, payment_type)`,
-    )
-    .eq("id", tenancy_id)
-    .maybeSingle();
-  if (!t || t.status !== "ended") return;
-
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
   const today = todayISO();
-  const { netBalance, deposit } = computeLedger(
-    t,
-    t.payments ?? [],
-    charges.get(tenancy_id) ?? [],
-    allocations.get(tenancy_id) ?? [],
-    today,
-    rentChanges.get(tenancy_id) ?? [],
-  );
+  const ledger = await loadTenancyNetBalance(supabase, tenancy_id, today);
+  if (!ledger || ledger.tenancy.status !== "ended") return;
+  const { netBalance, deposit } = ledger;
   // Nothing (or a credit) outstanding — there is no debt to settle.
   if (netBalance <= 0.005) return;
 
@@ -867,7 +1113,8 @@ export async function settleEndedBalance(formData: FormData) {
 
   revalidatePath("/tenants");
   revalidatePath("/tenants/history");
-  if (t.tenant_id) revalidatePath(`/tenants/${t.tenant_id}`);
+  if (ledger.tenancy.tenant_id)
+    revalidatePath(`/tenants/${ledger.tenancy.tenant_id}`);
 }
 
 // ----- Record a payment against a tenancy -----

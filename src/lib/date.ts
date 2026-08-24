@@ -29,6 +29,23 @@ export function addDaysISO(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Prorated rent for the remainder of the month containing `startISO`,
+ * inclusive of the start day: rent × (days from start through month end) /
+ * days in month, rounded to the cent. Used as the default first-month rent
+ * for mid-month move-ins and transfers (the ledger bills whole months, so
+ * the start month is overridden by first_month_rent).
+ */
+export function proratedMonthRemainder(
+  startISO: string,
+  monthlyRent: number,
+): number {
+  const [y, m, d] = startISO.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const remainder = (monthlyRent * (daysInMonth - d + 1)) / daysInMonth;
+  return Math.round(remainder * 100) / 100;
+}
+
 /** Day of week for an ISO date: 0 = Sunday … 6 = Saturday. */
 export function isoDayOfWeek(iso: string): number {
   return new Date(iso + "T00:00:00Z").getUTCDay();

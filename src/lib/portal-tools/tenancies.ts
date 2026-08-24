@@ -6,6 +6,13 @@ import { updateTenancyRent } from "@/lib/rent-history";
 import type { Database } from "@/lib/supabase/types";
 import { admin } from "./helpers";
 
+// TODO: room-transfer and reactivate-into-new-room bot tools. The portal's
+// primitives (createTenancyForTenant in @/lib/tenancy-create,
+// loadTenancyNetBalance in @/lib/rent-data, applyMoveOut in @/lib/move-out)
+// are client-agnostic, so wiring tools here is mechanical — deferred because
+// these are multi-step money-moving operations best done with the portal
+// UI's previews for now.
+
 export async function endTenancy(args: {
   tenancy_id: string;
   move_out_date: string;

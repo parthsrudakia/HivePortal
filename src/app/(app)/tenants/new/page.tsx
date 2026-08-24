@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
-import { todayISO } from "@/lib/date";
 import { AddTenantForm } from "./add-tenant-form";
 import { RestoreListingButton } from "./restore-listing";
+import { fetchAssignableRooms } from "../room-options";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +43,6 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
     typeof agreement === "string" && agreement.length > 0 ? agreement : "";
 
   const supabase = await createClient();
-  const today = todayISO();
 
   // Coming from the signing tally's "Add a tenant" button: prefill the form
   // from the signed agreement and attach its PDF on save.
@@ -69,74 +68,22 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
     }
   }
 
-  // Show rooms that are listable on /inventory: available now, or
-  // currently occupied but with a future end-date so the tenant slot is
-  // about to open up. Also include the explicitly-requested room (via
-  // ?room_id=) so the form can pre-select it even if it doesn't match.
-  const q = supabase
-    .from("rooms")
-    .select(
-      "id, room_number, total_rent, status, available_from, properties!inner(building_name, street_address, unit_number)",
-    )
-    .or(
-      `status.eq.available,and(status.eq.occupied,available_from.gte.${today})${defaultRoomId ? `,id.eq.${defaultRoomId}` : ""}`,
-    )
-    // No new tenants in retired properties.
-    .is("properties.archived_at", null)
-    .order("available_from", { ascending: true, nullsFirst: true });
-
-  const [{ data }, { data: pendingData }, { data: liveTenancies }] =
-    await Promise.all([
-      q.returns<RoomRow[]>(),
-      // Listings the admin pulled off Inventory ("delete listing") that are
-      // waiting to be filled with a tenant.
-      supabase
-        .from("rooms")
-        .select(
-          "id, room_number, total_rent, properties(building_name, street_address, unit_number)",
-        )
-        .eq("pending_tenant", true)
-        .order("room_number", { ascending: true })
-        .returns<RoomRow[]>(),
-      // Occupancy cross-check straight from tenancies — rooms.status is a
-      // derived column and has been seen stale (missed write, cached page),
-      // which offered an occupied room to a second tenant.
-      supabase
-        .from("tenancies")
-        .select("room_id, status, move_out_date")
-        .in("status", ["active", "upcoming"]),
-    ]);
-
-  // A room's slot is taken when an upcoming tenancy has claimed it, or an
-  // active tenancy has no future move-out date. (An active tenant moving out
-  // soon matches the "opens ..." case above and stays offered.) The
-  // explicitly-requested ?room_id= room is kept either way, matching the
-  // query's own escape hatch.
-  const takenRoomIds = new Set(
-    (liveTenancies ?? [])
-      .filter(
-        (t) =>
-          t.status === "upcoming" ||
-          !(t.move_out_date && t.move_out_date >= today),
+  // Assignable rooms (availability rule + live-tenancy cross-check) live in
+  // room-options.ts, shared with the tenant-detail transfer/reactivate
+  // dialogs. ?room_id= keeps the requested room even if it doesn't match.
+  const [rooms, { data: pendingData }] = await Promise.all([
+    fetchAssignableRooms(supabase, { includeRoomId: defaultRoomId }),
+    // Listings the admin pulled off Inventory ("delete listing") that are
+    // waiting to be filled with a tenant.
+    supabase
+      .from("rooms")
+      .select(
+        "id, room_number, total_rent, properties(building_name, street_address, unit_number)",
       )
-      .map((t) => t.room_id),
-  );
-
-  const rooms = (data ?? [])
-    .filter((r) => r.id === defaultRoomId || !takenRoomIds.has(r.id))
-    .map((r) => {
-      const p = one(r.properties);
-      const unitTitle = p
-        ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-        : "—";
-      const scheduled = r.status === "occupied" && r.available_from;
-      const suffix = scheduled ? ` (opens ${r.available_from})` : "";
-      return {
-        id: r.id,
-        label: `${unitTitle} · ${r.room_number ?? "Room"}${suffix}`,
-        total_rent: r.total_rent,
-      };
-    });
+      .eq("pending_tenant", true)
+      .order("room_number", { ascending: true })
+      .returns<RoomRow[]>(),
+  ]);
 
   const pending = (pendingData ?? []).map((r) => {
     const p = one(r.properties);
