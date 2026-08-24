@@ -37,6 +37,7 @@ const TABLE_LABEL: Record<string, string> = {
   reconciliation_reversals: "Reconciliation reversals",
   ignored_payers: "Ignored payers",
   profitability_line_items: "Profitability line items",
+  tab_notes: "Tab notes",
 };
 
 const KNOWN_TABLES = Object.keys(TABLE_LABEL);

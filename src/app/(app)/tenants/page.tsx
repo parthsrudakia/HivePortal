@@ -12,6 +12,7 @@ import { canEditLedger, isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 import { FormerTenants, type FormerTenantRow } from "./former-tenants";
 import { UpcomingTenants, type UpcomingTenantRow } from "./upcoming-tenants";
+import { TabNotepad } from "../tab-notepad";
 import {
   TenantsExplorer,
   type TrackerRow,
@@ -430,6 +431,10 @@ export default function TenantsPage() {
           </Link>
         </div>
       </header>
+
+      <Suspense fallback={null}>
+        <TabNotepad tab="tenants" />
+      </Suspense>
 
       <Suspense
         fallback={

@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/session";
 import { one } from "@/lib/relations";
 import { isOverThreshold } from "@/lib/utility-bills";
 import { UtilitiesView } from "./utilities-view";
+import { TabNotepad } from "../tab-notepad";
 import type { BillRow, UnitOpt } from "./bill-utils";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +119,8 @@ export default async function UtilitiesPage({
           tracked separately.
         </p>
       </header>
+
+      <TabNotepad tab="utilities" />
 
       <UtilitiesView
         bills={bills}

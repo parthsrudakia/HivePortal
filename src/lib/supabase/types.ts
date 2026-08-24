@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       agreement_addresses: {
@@ -1596,6 +1571,27 @@ export type Database = {
         }
         Relationships: []
       }
+      tab_notes: {
+        Row: {
+          content: string
+          tab: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          content?: string
+          tab: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          content?: string
+          tab?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       telegram_activity_log: {
         Row: {
           chat_id: number
@@ -2477,9 +2473,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       credential_category: [
