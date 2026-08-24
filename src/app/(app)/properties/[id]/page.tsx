@@ -102,7 +102,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
       .select(
         `id, status, start_date, move_out_date,
          rooms!inner(room_number, property_id),
-         tenants(id, full_name, age, profession, linkedin_url, instagram_url)`,
+         tenants(id, full_name, age, profession, social_links)`,
       )
       .eq("rooms.property_id", id)
       .eq("status", "active"),
@@ -604,19 +604,65 @@ type ResidentRow = {
         full_name: string;
         age: number | null;
         profession: string | null;
-        linkedin_url: string | null;
-        instagram_url: string | null;
+        social_links: string[] | null;
       }
     | {
         id: string;
         full_name: string;
         age: number | null;
         profession: string | null;
-        linkedin_url: string | null;
-        instagram_url: string | null;
+        social_links: string[] | null;
       }[]
     | null;
 };
+
+// Icon per social link, picked by hostname: brand icons for the two common
+// networks, a neutral link glyph for everything else.
+function socialKind(url: string): "linkedin" | "instagram" | "other" {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (host.includes("linkedin.")) return "linkedin";
+    if (host.includes("instagram.")) return "instagram";
+  } catch {
+    // not a parseable URL — treat as a generic link
+  }
+  return "other";
+}
+
+function SocialIconLink({ url }: { url: string }) {
+  const kind = socialKind(url);
+  const color =
+    kind === "linkedin"
+      ? "text-[#0a66c2]"
+      : kind === "instagram"
+        ? "text-[#e1306c]"
+        : "text-muted";
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={kind === "other" ? "Profile link" : kind}
+      title={url}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone bg-white transition hover:bg-warm ${color}`}
+    >
+      {kind === "linkedin" ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.05-1.86-3.05-1.86 0-2.14 1.45-2.14 2.95v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.86 3.38-1.86 3.61 0 4.28 2.38 4.28 5.47v6.28zM5.34 7.43a2.06 2.06 0 11-.01-4.12 2.06 2.06 0 01.01 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z" />
+        </svg>
+      ) : kind === "instagram" ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.22.415.56.217.96.477 1.38.897.42.42.68.819.897 1.38.166.42.36 1.05.415 2.22.058 1.27.07 1.65.07 4.85s-.012 3.58-.07 4.85c-.054 1.17-.249 1.8-.415 2.22a3.72 3.72 0 01-.897 1.38 3.72 3.72 0 01-1.38.897c-.42.166-1.05.36-2.22.415-1.27.058-1.65.07-4.85.07s-3.58-.012-4.85-.07c-1.17-.054-1.8-.249-2.22-.415a3.72 3.72 0 01-1.38-.897 3.72 3.72 0 01-.897-1.38c-.166-.42-.36-1.05-.415-2.22-.058-1.27-.07-1.65-.07-4.85s.012-3.58.07-4.85c.054-1.17.249-1.8.415-2.22.217-.56.477-.96.897-1.38.42-.42.819-.68 1.38-.897.42-.166 1.05-.36 2.22-.415C8.42 2.172 8.8 2.16 12 2.16zM12 0C8.74 0 8.33.014 7.05.072 5.78.13 4.9.333 4.14.63a5.88 5.88 0 00-2.13 1.38A5.88 5.88 0 00.63 4.14C.333 4.9.13 5.78.072 7.05.014 8.33 0 8.74 0 12s.014 3.67.072 4.95c.058 1.27.261 2.15.558 2.91a5.88 5.88 0 001.38 2.13 5.88 5.88 0 002.13 1.38c.76.297 1.64.5 2.91.558C8.33 23.986 8.74 24 12 24s3.67-.014 4.95-.072c1.27-.058 2.15-.261 2.91-.558a5.88 5.88 0 002.13-1.38 5.88 5.88 0 001.38-2.13c.297-.76.5-1.64.558-2.91.058-1.28.072-1.69.072-4.95s-.014-3.67-.072-4.95c-.058-1.27-.261-2.15-.558-2.91a5.88 5.88 0 00-1.38-2.13A5.88 5.88 0 0019.86.63c-.76-.297-1.64-.5-2.91-.558C15.67.014 15.26 0 12 0zm0 5.84a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zM12 16a4 4 0 110-8 4 4 0 010 8zm6.4-11.85a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+        </svg>
+      )}
+    </a>
+  );
+}
 
 function ResidentsWidget({ rows }: { rows: ResidentRow[] }) {
   const cards = rows
@@ -690,58 +736,9 @@ function ResidentsWidget({ rows }: { rows: ResidentRow[] }) {
                 </dl>
 
                 <div className="mt-2.5 flex items-center gap-2">
-                  {c.linkedin_url ? (
-                    <a
-                      href={c.linkedin_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="LinkedIn"
-                      title="LinkedIn"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone bg-white text-[#0a66c2] transition hover:bg-warm"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        aria-hidden="true"
-                      >
-                        <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.05-1.86-3.05-1.86 0-2.14 1.45-2.14 2.95v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.86 3.38-1.86 3.61 0 4.28 2.38 4.28 5.47v6.28zM5.34 7.43a2.06 2.06 0 11-.01-4.12 2.06 2.06 0 01.01 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z" />
-                      </svg>
-                    </a>
-                  ) : (
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone/50 text-muted/50">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.05-1.86-3.05-1.86 0-2.14 1.45-2.14 2.95v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.86 3.38-1.86 3.61 0 4.28 2.38 4.28 5.47v6.28zM5.34 7.43a2.06 2.06 0 11-.01-4.12 2.06 2.06 0 01.01 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
-                      </svg>
-                    </span>
-                  )}
-                  {c.instagram_url ? (
-                    <a
-                      href={c.instagram_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Instagram"
-                      title="Instagram"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone bg-white text-[#e1306c] transition hover:bg-warm"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.22.415.56.217.96.477 1.38.897.42.42.68.819.897 1.38.166.42.36 1.05.415 2.22.058 1.27.07 1.65.07 4.85s-.012 3.58-.07 4.85c-.054 1.17-.249 1.8-.415 2.22a3.72 3.72 0 01-.897 1.38 3.72 3.72 0 01-1.38.897c-.42.166-1.05.36-2.22.415-1.27.058-1.65.07-4.85.07s-3.58-.012-4.85-.07c-1.17-.054-1.8-.249-2.22-.415a3.72 3.72 0 01-1.38-.897 3.72 3.72 0 01-.897-1.38c-.166-.42-.36-1.05-.415-2.22-.058-1.27-.07-1.65-.07-4.85s.012-3.58.07-4.85c.054-1.17.249-1.8.415-2.22.217-.56.477-.96.897-1.38.42-.42.819-.68 1.38-.897.42-.166 1.05-.36 2.22-.415C8.42 2.172 8.8 2.16 12 2.16zM12 0C8.74 0 8.33.014 7.05.072 5.78.13 4.9.333 4.14.63a5.88 5.88 0 00-2.13 1.38A5.88 5.88 0 00.63 4.14C.333 4.9.13 5.78.072 7.05.014 8.33 0 8.74 0 12s.014 3.67.072 4.95c.058 1.27.261 2.15.558 2.91a5.88 5.88 0 001.38 2.13 5.88 5.88 0 002.13 1.38c.76.297 1.64.5 2.91.558C8.33 23.986 8.74 24 12 24s3.67-.014 4.95-.072c1.27-.058 2.15-.261 2.91-.558a5.88 5.88 0 002.13-1.38 5.88 5.88 0 001.38-2.13c.297-.76.5-1.64.558-2.91.058-1.28.072-1.69.072-4.95s-.014-3.67-.072-4.95c-.058-1.27-.261-2.15-.558-2.91a5.88 5.88 0 00-1.38-2.13A5.88 5.88 0 0019.86.63c-.76-.297-1.64-.5-2.91-.558C15.67.014 15.26 0 12 0zm0 5.84a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zM12 16a4 4 0 110-8 4 4 0 010 8zm6.4-11.85a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z" />
-                      </svg>
-                    </a>
-                  ) : (
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone/50 text-muted/50">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.22.415.56.217.96.477 1.38.897.42.42.68.819.897 1.38.166.42.36 1.05.415 2.22.058 1.27.07 1.65.07 4.85s-.012 3.58-.07 4.85c-.054 1.17-.249 1.8-.415 2.22a3.72 3.72 0 01-.897 1.38 3.72 3.72 0 01-1.38.897c-.42.166-1.05.36-2.22.415-1.27.058-1.65.07-4.85.07s-3.58-.012-4.85-.07c-1.17-.054-1.8-.249-2.22-.415a3.72 3.72 0 01-1.38-.897 3.72 3.72 0 01-.897-1.38c-.166-.42-.36-1.05-.415-2.22-.058-1.27-.07-1.65-.07-4.85s.012-3.58.07-4.85c.054-1.17.249-1.8.415-2.22.217-.56.477-.96.897-1.38.42-.42.819-.68 1.38-.897.42-.166 1.05-.36 2.22-.415C8.42 2.172 8.8 2.16 12 2.16z" />
-                      </svg>
-                    </span>
-                  )}
+                  {(c.social_links ?? []).map((url) => (
+                    <SocialIconLink key={url} url={url} />
+                  ))}
                   <Link
                     href={`/tenants/${c.id}`}
                     className="ml-auto text-xs uppercase tracking-wide text-muted hover:text-accent-text"

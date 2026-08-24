@@ -64,6 +64,26 @@ type ChargeKind = (typeof VALID_CHARGE_KINDS)[number];
 // Date-only strings (YYYY-MM-DD) headed for date columns / date comparisons.
 const zIsoDate = z.iso.date();
 
+// Repeated `social_links` inputs → clean deduped list, or an error string.
+// Lenient on purpose: any URL-ish profile link is fine, not just LinkedIn
+// and Instagram.
+const MAX_SOCIAL_LINKS = 10;
+function parseSocialLinks(formData: FormData): string[] | string {
+  const links = Array.from(
+    new Set(
+      formData
+        .getAll("social_links")
+        .map((v) => String(v).trim())
+        .filter(Boolean),
+    ),
+  );
+  if (links.length > MAX_SOCIAL_LINKS)
+    return `At most ${MAX_SOCIAL_LINKS} social links.`;
+  const tooLong = links.find((l) => l.length > 300);
+  if (tooLong) return "Each social link must be 300 characters or fewer.";
+  return links;
+}
+
 export type TenantFormState = { error?: string } | undefined;
 export type PaymentFormState = { error?: string } | undefined;
 export type ChargeFormState = { error?: string } | undefined;
@@ -84,10 +104,8 @@ export async function createTenant(
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const pays_as = String(formData.get("pays_as") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  const linkedin_url =
-    String(formData.get("linkedin_url") ?? "").trim() || null;
-  const instagram_url =
-    String(formData.get("instagram_url") ?? "").trim() || null;
+  const social_links = parseSocialLinks(formData);
+  if (typeof social_links === "string") return { error: social_links };
 
   if (!full_name) return { error: "Tenant name is required." };
 
@@ -182,8 +200,7 @@ export async function createTenant(
       phone,
       pays_as,
       notes,
-      linkedin_url,
-      instagram_url,
+      social_links,
     })
     .select("id")
     .single();
@@ -371,10 +388,8 @@ export async function updateTenant(
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const profession =
     String(formData.get("profession") ?? "").trim() || null;
-  const linkedin_url =
-    String(formData.get("linkedin_url") ?? "").trim() || null;
-  const instagram_url =
-    String(formData.get("instagram_url") ?? "").trim() || null;
+  const social_links = parseSocialLinks(formData);
+  if (typeof social_links === "string") return { error: social_links };
   const ageStr = String(formData.get("age") ?? "").trim();
   let age: number | null = null;
   if (ageStr !== "") {
@@ -408,8 +423,7 @@ export async function updateTenant(
       age,
       gender,
       profession,
-      linkedin_url,
-      instagram_url,
+      social_links,
     })
     .eq("id", id);
 

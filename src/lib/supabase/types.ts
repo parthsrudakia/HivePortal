@@ -1927,12 +1927,11 @@ export type Database = {
           full_name: string
           gender: string | null
           id: string
-          instagram_url: string | null
-          linkedin_url: string | null
           notes: string | null
           pays_as: string | null
           phone: string | null
           profession: string | null
+          social_links: string[]
           updated_at: string
         }
         Insert: {
@@ -1942,12 +1941,11 @@ export type Database = {
           full_name: string
           gender?: string | null
           id?: string
-          instagram_url?: string | null
-          linkedin_url?: string | null
           notes?: string | null
           pays_as?: string | null
           phone?: string | null
           profession?: string | null
+          social_links?: string[]
           updated_at?: string
         }
         Update: {
@@ -1957,12 +1955,11 @@ export type Database = {
           full_name?: string
           gender?: string | null
           id?: string
-          instagram_url?: string | null
-          linkedin_url?: string | null
           notes?: string | null
           pays_as?: string | null
           phone?: string | null
           profession?: string | null
+          social_links?: string[]
           updated_at?: string
         }
         Relationships: []

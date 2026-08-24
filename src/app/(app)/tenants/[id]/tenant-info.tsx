@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { updateTenant, type TenantFormState } from "../actions";
 import { useFormToast } from "@/components/use-form-toast";
+import { SocialLinksInput } from "@/components/social-links-input";
 
 type Props = {
   id: string;
@@ -14,8 +15,7 @@ type Props = {
   age: number | null;
   gender: string | null;
   profession: string | null;
-  linkedin_url: string | null;
-  instagram_url: string | null;
+  social_links: string[];
 };
 
 const GENDER_LABELS: Record<string, string> = {
@@ -88,32 +88,23 @@ export function TenantInfo(props: Props) {
           </dd>
           <dt className="text-muted">Profession</dt>
           <dd className="col-span-2 text-ink">{props.profession ?? "—"}</dd>
-          <dt className="text-muted">LinkedIn</dt>
+          <dt className="text-muted">Social Links</dt>
           <dd className="col-span-2 break-all text-ink">
-            {props.linkedin_url ? (
-              <a
-                href={props.linkedin_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent-text hover:underline"
-              >
-                {displayUrl(props.linkedin_url)}
-              </a>
-            ) : (
-              "—"
-            )}
-          </dd>
-          <dt className="text-muted">Instagram</dt>
-          <dd className="col-span-2 break-all text-ink">
-            {props.instagram_url ? (
-              <a
-                href={props.instagram_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent-text hover:underline"
-              >
-                {displayUrl(props.instagram_url)}
-              </a>
+            {props.social_links.length > 0 ? (
+              <ul className="flex flex-col gap-1">
+                {props.social_links.map((url) => (
+                  <li key={url}>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent-text hover:underline"
+                    >
+                      {displayUrl(url)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             ) : (
               "—"
             )}
@@ -219,26 +210,13 @@ export function TenantInfo(props: Props) {
             <option value="other">Other</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={fieldLabel}>LinkedIn URL</span>
-          <input
-            type="url"
-            name="linkedin_url"
-            defaultValue={props.linkedin_url ?? ""}
-            placeholder="https://linkedin.com/in/…"
-            className={fieldInput}
+        <div className="flex flex-col gap-1.5">
+          <span className={fieldLabel}>Social Links</span>
+          <SocialLinksInput
+            initial={props.social_links}
+            inputClassName={fieldInput}
           />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={fieldLabel}>Instagram URL</span>
-          <input
-            type="url"
-            name="instagram_url"
-            defaultValue={props.instagram_url ?? ""}
-            placeholder="https://instagram.com/…"
-            className={fieldInput}
-          />
-        </label>
+        </div>
         <label className="flex flex-col gap-1.5">
           <span className={fieldLabel}>Notes</span>
           <textarea

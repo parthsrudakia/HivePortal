@@ -138,7 +138,7 @@ export default async function TenantDetailPage({
       supabase
         .from("tenants")
         .select(
-          "id, full_name, email, phone, pays_as, notes, age, gender, profession, linkedin_url, instagram_url",
+          "id, full_name, email, phone, pays_as, notes, age, gender, profession, social_links",
         )
         .eq("id", id)
         .maybeSingle(),
@@ -323,8 +323,7 @@ export default async function TenantDetailPage({
           age={tenant.age}
           gender={tenant.gender}
           profession={tenant.profession}
-          linkedin_url={tenant.linkedin_url}
-          instagram_url={tenant.instagram_url}
+          social_links={tenant.social_links ?? []}
         />
 
         <div className="rounded-2xl bg-white p-6 shadow-sm">
