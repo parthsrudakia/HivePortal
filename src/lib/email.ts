@@ -121,16 +121,19 @@ const REMINDER_HTML = `<div style="font-family: 'DM Sans', Arial, sans-serif; co
 export function gmailAgreementBody(opts: {
   tenantName: string;
   signUrl: string;
+  /** Optional extra paragraph shown before the signing link. */
+  note?: string;
 }): {
   subject: string;
   text: string;
 } {
   const name = opts.tenantName.trim() || "there";
+  const note = opts.note?.trim() ? `${opts.note.trim()}\n\n` : "";
   return {
     subject: "Agreement",
     text: `Hello ${name},
 
-Your agreement is attached. You can review and sign it online here — the link works for 48 hours:
+${note}Your agreement is attached. You can review and sign it online here — the link works for 48 hours:
 
 ${opts.signUrl}
 
@@ -153,16 +156,19 @@ function escapeHtml(s: string): string {
 export function agreementEmailTemplate(opts: {
   tenantName: string;
   signUrl: string;
+  /** Optional extra paragraph shown before the signing link. */
+  note?: string;
 }): {
   subject: string;
   text: string;
   html: string;
 } {
   const firstName = opts.tenantName.trim().split(/\s+/)[0] || "there";
+  const note = opts.note?.trim() ?? "";
   const subject = "Your Hive agreement";
   const text = `Hi ${firstName},
 
-Welcome to Hive! Your agreement is attached. You can review and sign it online here — the link works for 48 hours:
+${note ? `${note}\n\n` : ""}Welcome to Hive! Your agreement is attached. You can review and sign it online here — the link works for 48 hours:
 
 ${opts.signUrl}
 
@@ -178,6 +184,7 @@ Hive`;
     <div style="height:6px; background:#d4920b;"></div>
     <div style="padding:24px 20px; color:#1a1a18; line-height:1.55; font-size:15px;">
       <p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>
+      ${note ? `<p style="margin:0 0 14px;">${escapeHtml(note)}</p>` : ""}
       <p style="margin:0 0 14px;">Welcome to Hive! Your agreement is attached. Review it, then sign it online — it only takes a minute.</p>
       <div style="margin:0 0 14px;">${ctaButton(opts.signUrl, "Review & sign agreement")}</div>
       <p style="margin:0 0 14px; font-size:13px; color:#8a8378;">The signing link is valid for 48 hours. Once you sign, a copy of the signed agreement will be emailed to you.</p>

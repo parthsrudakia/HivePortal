@@ -179,6 +179,9 @@ export type AgreementSendInput = AgreementInput & {
   /** Picks the mailbox and branding: NY → plain Gmail, else branded Outlook. */
   inNewYork: boolean;
   propertyId?: string;
+  /** Optional extra paragraph in the cover email (send-time only — not stored,
+   *  not in the PDF, and not repeated by a resend). */
+  note?: string;
 };
 
 export type AgreementSendResult =
@@ -206,6 +209,7 @@ async function deliverAgreementEmail(opts: {
   propertyAddress: string;
   attachment: { filename: string; base64: string; mimeType: string };
   signUrl: string;
+  note?: string;
 }): Promise<
   | { ok: true; id?: string; diag?: unknown }
   | { ok: false; error: string; diag?: unknown }
@@ -217,6 +221,7 @@ async function deliverAgreementEmail(opts: {
     const body = gmailAgreementBody({
       tenantName: opts.tenantName,
       signUrl: opts.signUrl,
+      note: opts.note,
     });
     subject = body.subject;
     result = await sendGmailMessage({
@@ -232,6 +237,7 @@ async function deliverAgreementEmail(opts: {
     const body = agreementEmailTemplate({
       tenantName: opts.tenantName,
       signUrl: opts.signUrl,
+      note: opts.note,
     });
     subject = body.subject;
     result = await sendOutlookMessage({
@@ -377,6 +383,7 @@ export async function sendAgreementRequest(
       mimeType: "application/pdf",
     },
     signUrl: signPageUrl(token),
+    note: input.note,
   });
 
   if (!result.ok) {
