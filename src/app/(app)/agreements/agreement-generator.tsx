@@ -13,11 +13,20 @@ export type TenancyPrefill = {
   label: string;
   tenantName: string;
   tenantEmail: string;
+  propertyId: string;
   propertyAddress: string;
   rent: string;
   securityDeposit: string;
   leaseStartDate: string;
   leaseEndDate: string;
+  isNewYork: boolean;
+};
+
+/** A unit already in the portal — the only addresses an agreement can use. */
+export type PropertyOption = {
+  id: string;
+  label: string;
+  address: string;
   isNewYork: boolean;
 };
 
@@ -50,10 +59,12 @@ function dayOf(dateStr: string): number | null {
 
 export function AgreementGenerator({
   prefills,
+  propertyOptions,
   defaultAgreementDate,
   hasOperatorSignature,
 }: {
   prefills: TenancyPrefill[];
+  propertyOptions: PropertyOption[];
   defaultAgreementDate: string;
   hasOperatorSignature: boolean;
 }) {
@@ -73,25 +84,50 @@ export function AgreementGenerator({
   const [recipientEmail, setRecipientEmail] = useState("");
   const [inNewYork, setInNewYork] = useState(false);
   const [sending, setSending] = useState(false);
+  // Set only by picking from the property dropdown (or a prefill); cleared as
+  // soon as the address text is hand-edited so the server re-matches it.
+  const [propertyId, setPropertyId] = useState("");
+  const [showProperties, setShowProperties] = useState(false);
 
   const set = (field: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const selected = prefills.find((p) => p.id === selectedPrefill);
 
+  const propertyMatches = useMemo(() => {
+    const tokens = form.propertyAddress
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+    if (tokens.length === 0) return propertyOptions;
+    return propertyOptions.filter((p) => {
+      const hay = `${p.label} ${p.address}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    });
+  }, [form.propertyAddress, propertyOptions]);
+
+  const pickProperty = (p: PropertyOption) => {
+    setForm((prev) => ({ ...prev, propertyAddress: p.address }));
+    setPropertyId(p.id);
+    setInNewYork(p.isNewYork);
+    setShowProperties(false);
+  };
+
   const applyPrefill = (id: string) => {
     setSelectedPrefill(id);
     const p = prefills.find((x) => x.id === id);
     if (!p) return;
+    const option = propertyOptions.find((o) => o.id === p.propertyId);
     setForm((prev) => ({
       ...prev,
       tenantName: p.tenantName,
-      propertyAddress: p.propertyAddress,
+      propertyAddress: option?.address ?? p.propertyAddress,
       rent: p.rent,
       securityDeposit: p.securityDeposit,
       leaseStartDate: p.leaseStartDate,
       leaseEndDate: p.leaseEndDate,
     }));
+    setPropertyId(p.propertyId);
     setRecipientEmail(p.tenantEmail);
     setInNewYork(p.isNewYork);
   };
@@ -156,6 +192,7 @@ export function AgreementGenerator({
         proRateRent: form.proRateRent.trim() || undefined,
         recipientEmail: recipientEmail.trim(),
         inNewYork,
+        propertyId: propertyId || undefined,
       });
       if (res.ok) {
         toast.success(
@@ -253,16 +290,47 @@ export function AgreementGenerator({
               className={fieldInput}
             />
           </label>
-          <label className="flex flex-col gap-1.5 sm:col-span-2">
+          <div className="relative flex flex-col gap-1.5 sm:col-span-2">
             <span className={fieldLabel}>Property address *</span>
             <input
               type="text"
               value={form.propertyAddress}
-              onChange={(e) => set("propertyAddress")(e.target.value)}
-              placeholder="e.g. 161 Van Wagenen Ave, Jersey City, NJ 07306"
+              onChange={(e) => {
+                set("propertyAddress")(e.target.value);
+                setPropertyId("");
+                setShowProperties(true);
+              }}
+              onFocus={() => setShowProperties(true)}
+              onBlur={() => setShowProperties(false)}
+              placeholder="Search your properties — e.g. Singh 804 or 335 Central"
               className={fieldInput}
             />
-          </label>
+            {showProperties && propertyMatches.length > 0 && (
+              <ul className="absolute top-full z-10 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-stone bg-white shadow-lg">
+                {propertyMatches.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      // onMouseDown fires before the input's blur closes the
+                      // list — preventDefault keeps the click from being lost.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickProperty(p);
+                      }}
+                      className="flex w-full flex-col items-start px-3 py-2 text-left transition hover:bg-warm"
+                    >
+                      <span className="text-sm text-ink">{p.label}</span>
+                      <span className="text-xs text-muted">{p.address}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <span className="text-[11px] text-muted">
+              Agreements only go out for properties already in the portal —
+              pick one from the list.
+            </span>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">

@@ -73,7 +73,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 ## Key domain modules (`src/lib/`)
 
 - `rent.ts` / `rent-data.ts` — carry-forward running rent ledger (single source of truth for balances); anchored at `LEDGER_ANCHOR`.
-- `agreements.ts` — calls the `agreements.hiveny.com` Supabase edge function to generate lease PDFs.
+- `agreements.ts` / `agreement-send.ts` — in-process lease PDF generation (jsPDF) plus the single send path: **every** agreement send (portal UI, Telegram bot, scripts) goes through `sendAgreementRequest`, which refuses any property address that doesn't resolve to an existing `properties` row — agreements can only be sent for units already in the system.
 - `google-mail.ts` / `graph-mail.ts` — agreement email drafts: Gmail (personal, NY, no letterhead) vs MS Graph (work account, non-NY, with letterhead).
 - `email.ts` / `email-log.ts` — Resend sends + `email_log` audit trail.
 - `resend-quota.ts` — Resend free-tier guard. **All Resend mail must go through `sendViaResend()`** (the five `email.ts`/`notifications.ts` senders already do): under the daily/monthly caps it sends now, otherwise it parks the email in `email_queue`. The daily cron drains the backlog (`flushEmailQueue`) FIFO, re-respecting the caps. Caps: `RESEND_DAILY_CAP` (90), `RESEND_MONTHLY_CAP` (3000). Gmail sends use `channel='gmail'` and don't count.

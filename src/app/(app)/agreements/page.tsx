@@ -5,7 +5,12 @@ import {
   AGREEMENTS_BUCKET,
   OPERATOR_SIGNATURE_PATH,
 } from "@/lib/agreement-send";
-import { AgreementGenerator, type TenancyPrefill } from "./agreement-generator";
+import { composeFullAddress } from "@/lib/agreement-address";
+import {
+  AgreementGenerator,
+  type PropertyOption,
+  type TenancyPrefill,
+} from "./agreement-generator";
 import {
   AgreementTally,
   type AssignOption,
@@ -20,6 +25,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 type PropertyRel = {
+  id: string;
   building_name: string | null;
   street_address: string;
   unit_number: string;
@@ -49,29 +55,43 @@ export default async function AgreementsPage() {
   // Active tenancies feed the prefill picker — every field stays editable, so
   // the picker only saves typing; it never constrains what can be generated.
   // The same rows drive the tally's assign-to-tenant picker.
-  const [{ data }, { data: requestRows }, { data: signatureUrlData }] =
-    await Promise.all([
-      supabase
-        .from("tenancies")
-        .select(
-          `id, tenant_id, monthly_rent, security_deposit, start_date, lease_start_date, lease_end_date, lease_pdf_path,
+  const [
+    { data },
+    { data: requestRows },
+    { data: signatureUrlData },
+    { data: propertyRows },
+    { data: addressRows },
+  ] = await Promise.all([
+    supabase
+      .from("tenancies")
+      .select(
+        `id, tenant_id, monthly_rent, security_deposit, start_date, lease_start_date, lease_end_date, lease_pdf_path,
            tenants(full_name, email),
-           rooms(room_number, properties(building_name, street_address, unit_number, is_new_york))`,
-        )
-        .eq("status", "active")
-        .order("start_date", { ascending: false })
-        .returns<Row[]>(),
-      supabase
-        .from("agreement_requests")
-        .select(
-          "id, status, tenant_name, recipient_email, property_address, sent_at, expires_at, signed_at, tenant_signature_kind, assigned_tenancy_id",
-        )
-        .order("sent_at", { ascending: false })
-        .limit(100),
-      supabase.storage
-        .from(AGREEMENTS_BUCKET)
-        .createSignedUrl(OPERATOR_SIGNATURE_PATH, 300),
-    ]);
+           rooms(room_number, properties(id, building_name, street_address, unit_number, is_new_york))`,
+      )
+      .eq("status", "active")
+      .order("start_date", { ascending: false })
+      .returns<Row[]>(),
+    supabase
+      .from("agreement_requests")
+      .select(
+        "id, status, tenant_name, recipient_email, property_address, sent_at, expires_at, signed_at, tenant_signature_kind, assigned_tenancy_id",
+      )
+      .order("sent_at", { ascending: false }),
+    supabase.storage
+      .from(AGREEMENTS_BUCKET)
+      .createSignedUrl(OPERATOR_SIGNATURE_PATH, 300),
+    // Agreements can only be sent for properties already in the system — the
+    // form's address field is a searchable picker over these.
+    supabase
+      .from("properties")
+      .select(
+        "id, building_name, street_address, unit_number, neighborhood, is_new_york",
+      )
+      .order("street_address"),
+    // Addresses confirmed on previously sent agreements win over composed ones.
+    supabase.from("agreement_addresses").select("property_id, full_address"),
+  ]);
 
   const prefills: TenancyPrefill[] = (data ?? []).flatMap((row) => {
     const tenant = one(row.tenants);
@@ -90,6 +110,7 @@ export default async function AgreementsPage() {
         tenantName: tenant.full_name,
         tenantEmail: tenant.email ?? "",
         label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}`,
+        propertyId: property?.id ?? "",
         propertyAddress: address,
         rent: String(row.monthly_rent),
         securityDeposit: row.security_deposit != null ? String(row.security_deposit) : "",
@@ -130,6 +151,16 @@ export default async function AgreementsPage() {
     assignedTenancyId: r.assigned_tenancy_id,
   }));
 
+  const confirmedById = new Map(
+    (addressRows ?? []).map((a) => [a.property_id, a.full_address]),
+  );
+  const propertyOptions: PropertyOption[] = (propertyRows ?? []).map((p) => ({
+    id: p.id,
+    label: `${p.building_name?.trim() || p.street_address} · Apt ${p.unit_number}`,
+    address: confirmedById.get(p.id) ?? composeFullAddress(p).full_address,
+    isNewYork: p.is_new_york,
+  }));
+
   const operatorSignatureUrl = signatureUrlData?.signedUrl ?? null;
 
   return (
@@ -151,6 +182,7 @@ export default async function AgreementsPage() {
 
       <AgreementGenerator
         prefills={prefills}
+        propertyOptions={propertyOptions}
         defaultAgreementDate={todayISO()}
         hasOperatorSignature={operatorSignatureUrl !== null}
       />

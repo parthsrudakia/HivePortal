@@ -66,6 +66,7 @@ export function AgreementTally({
   assignOptions: AssignOption[];
 }) {
   const [filter, setFilter] = useState<Filter>("outstanding");
+  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   // Per-request assign picker selection and pending replace confirmation.
   const [assignPick, setAssignPick] = useState<Record<string, string>>({});
@@ -78,7 +79,15 @@ export function AgreementTally({
     return { outstanding, signed, dismissed };
   }, [requests]);
 
+  // A typed search looks across every status — whoever is searching for an
+  // agreement won't know (or care) which pill it's filed under.
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
   const visible = requests.filter((r) => {
+    if (tokens.length > 0) {
+      const hay =
+        `${r.tenantName} ${r.recipientEmail} ${r.propertyAddress}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    }
     if (filter === "all") return true;
     if (filter === "outstanding") return r.status === "pending";
     return r.status === filter;
@@ -205,8 +214,28 @@ export function AgreementTally({
         </div>
       </div>
 
-      {((filter === "signed" && counts.signed > 0) ||
-        (filter === "dismissed" && counts.dismissed > 0)) && (
+      <div className="relative mt-4">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search agreements by tenant, email, or address…"
+          className="w-full rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 text-xs font-medium text-muted hover:text-ink"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {tokens.length === 0 &&
+        ((filter === "signed" && counts.signed > 0) ||
+          (filter === "dismissed" && counts.dismissed > 0)) && (
         <div className="mt-3 flex justify-end">
           <ConfirmModal
             trigger={
@@ -239,9 +268,11 @@ export function AgreementTally({
 
       {visible.length === 0 ? (
         <p className="mt-6 text-sm text-muted">
-          {filter === "outstanding"
-            ? "No one owes you a signature right now."
-            : "Nothing here yet."}
+          {tokens.length > 0
+            ? `No agreements match "${query.trim()}".`
+            : filter === "outstanding"
+              ? "No one owes you a signature right now."
+              : "Nothing here yet."}
         </p>
       ) : (
         <ul className="mt-4 flex flex-col gap-3">
@@ -270,6 +301,16 @@ export function AgreementTally({
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {statusBadge(r)}
+                  {/* Every request keeps its PDF (signed copy once available,
+                      the sent one until then) — viewable in any status. */}
+                  <button
+                    type="button"
+                    disabled={busy === r.id}
+                    onClick={() => viewPdf(r.id)}
+                    className={actionBtn}
+                  >
+                    View PDF
+                  </button>
                   {r.status === "pending" && (
                     <>
                       <button
@@ -303,14 +344,6 @@ export function AgreementTally({
                   )}
                   {r.status === "signed" && (
                     <>
-                      <button
-                        type="button"
-                        disabled={busy === r.id}
-                        onClick={() => viewPdf(r.id)}
-                        className={actionBtn}
-                      >
-                        View PDF
-                      </button>
                       <ConfirmModal
                         trigger={
                           <button type="button" disabled={busy === r.id} className={actionBtn}>

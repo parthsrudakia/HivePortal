@@ -18,6 +18,7 @@ import { sendGmailMessage } from "@/lib/google-mail";
 import { sendOutlookMessage } from "@/lib/graph-mail";
 import { agreementEmailTemplate, gmailAgreementBody } from "@/lib/email";
 import { logEmail } from "@/lib/email-log";
+import { composeFullAddress } from "@/lib/agreement-address";
 
 export const AGREEMENTS_BUCKET = "agreements";
 export const OPERATOR_SIGNATURE_PATH = "operator/signature.png";
@@ -52,6 +53,114 @@ const NY_SIGN_ORIGIN_ERROR =
   "SIGN_ORIGIN is not configured — New York agreements can't include a signing " +
   "link until a neutral (non-Hive) domain is set, because the portal's own " +
   'domain contains "hive-portal". Set SIGN_ORIGIN and retry.';
+
+function normalizeAddress(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Agreements may only be sent for properties the portal already knows — a
+ * free-typed address that matches no property row is refused, on every send
+ * path (portal UI, Telegram bot, scripts). Resolves the address to the
+ * property's id: an explicit propertyId wins, then an exact match on a
+ * previously confirmed agreement address, then street number + street name +
+ * unit number against the properties table.
+ */
+async function resolveKnownProperty(
+  supabase: SupabaseClient,
+  propertyAddress: string,
+  propertyId?: string,
+): Promise<{ propertyId: string } | { error: string }> {
+  if (propertyId) {
+    const { data } = await supabase
+      .from("properties")
+      .select("id")
+      .eq("id", propertyId)
+      .maybeSingle();
+    if (data) return { propertyId: data.id };
+    return {
+      error: `No property with id ${propertyId} exists in the portal — agreements can only be sent for properties already in the system.`,
+    };
+  }
+
+  const wanted = normalizeAddress(propertyAddress);
+  const { data: saved } = await supabase
+    .from("agreement_addresses")
+    .select("property_id, full_address");
+  const exact = (saved ?? []).find(
+    (s) => normalizeAddress(s.full_address) === wanted,
+  );
+  if (exact) return { propertyId: exact.property_id };
+
+  const { data: props } = await supabase
+    .from("properties")
+    .select(
+      "id, building_name, street_address, unit_number, neighborhood, is_new_york",
+    );
+  const tokens = new Set(wanted.split(" "));
+  const matches = (props ?? []).filter((p) => {
+    const street = normalizeAddress(p.street_address).split(" ");
+    const streetNumber = street.find((t) => /^\d/.test(t));
+    const streetName = street.find((t) => /^[a-z]/.test(t));
+    return (
+      streetNumber != null &&
+      tokens.has(streetNumber) &&
+      streetName != null &&
+      tokens.has(streetName) &&
+      tokens.has(normalizeAddress(p.unit_number))
+    );
+  });
+  if (matches.length === 1) return { propertyId: matches[0].id };
+
+  const describe = (p: {
+    building_name: string | null;
+    street_address: string;
+    unit_number: string;
+    neighborhood: string | null;
+    is_new_york: boolean | null;
+    id: string;
+  }) => {
+    const place = p.building_name?.trim() || p.street_address;
+    return `${place} Apt ${p.unit_number} — "${composeFullAddress(p).full_address}" (property id ${p.id})`;
+  };
+
+  if (matches.length > 1) {
+    return {
+      error:
+        `"${propertyAddress}" matches ${matches.length} properties in the portal — ` +
+        `pass the property's id to pick one: ${matches.map(describe).join("; ")}.`,
+    };
+  }
+
+  // Refused — fuzzy-rank the portal's properties against what was typed so
+  // the caller (operator or bot) is told which unit was probably meant.
+  const suggestions = (props ?? [])
+    .map((p) => {
+      const hay = new Set(
+        normalizeAddress(
+          [p.building_name, p.street_address, p.unit_number]
+            .filter(Boolean)
+            .join(" "),
+        ).split(" "),
+      );
+      let hits = 0;
+      for (const t of tokens) if (hay.has(t)) hits++;
+      return { p, hits };
+    })
+    .filter((s) => s.hits > 0)
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, 3)
+    .map((s) => describe(s.p));
+  return {
+    error:
+      `"${propertyAddress}" doesn't match any property in the portal. ` +
+      "Agreements can only be sent for units already in the system — add the " +
+      "unit on /properties first, or use one of these existing properties" +
+      (suggestions.length > 0
+        ? ` (closest matches to what was entered): ${suggestions.join("; ")}.`
+        : "."),
+  };
+}
 
 /** The operator's signature PNG as a data URL, or null if never captured. */
 export async function loadOperatorSignature(
@@ -178,6 +287,16 @@ export async function sendAgreementRequest(
     return { ok: false, error: NY_SIGN_ORIGIN_ERROR };
   }
 
+  const known = await resolveKnownProperty(
+    supabase,
+    input.propertyAddress,
+    input.propertyId,
+  );
+  if ("error" in known) {
+    await logPreEmailFailure(known.error);
+    return { ok: false, error: known.error };
+  }
+
   const sublessorSignature = await loadOperatorSignature(supabase);
   if (!sublessorSignature) {
     const error =
@@ -233,7 +352,7 @@ export async function sendAgreementRequest(
     tenant_name: input.tenantName,
     recipient_email: input.recipientEmail,
     property_address: input.propertyAddress,
-    property_id: input.propertyId ?? null,
+    property_id: known.propertyId,
     include_letterhead: !input.inNewYork,
     channel,
     input: agreementInput,
@@ -265,6 +384,18 @@ export async function sendAgreementRequest(
     await supabase.storage.from(AGREEMENTS_BUCKET).remove([pdfPath]);
     return { ok: false, error: result.error, diag: result.diag };
   }
+
+  // This exact address went out on a real agreement — remember it as the
+  // property's canonical agreement address so future sends reuse it verbatim.
+  // Best-effort: a save failure must not taint the send report.
+  await supabase.from("agreement_addresses").upsert(
+    {
+      property_id: known.propertyId,
+      full_address: input.propertyAddress.trim(),
+      confirmed_at: new Date().toISOString(),
+    },
+    { onConflict: "property_id" },
+  );
 
   return { ok: true, requestId: id, mailbox: channel, diag: result.diag };
 }

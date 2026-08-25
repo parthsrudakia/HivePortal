@@ -2,12 +2,7 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { todayISO } from "@/lib/date";
 import { sendAgreementRequest } from "@/lib/agreement-send";
-import {
-  admin,
-  normalizeMoney,
-  parseIsoDate,
-  SINGLE_EMAIL_RE,
-} from "./helpers";
+import { admin, normalizeMoney, parseIsoDate, SINGLE_EMAIL_RE } from "./helpers";
 
 // Generate a sublease agreement PDF and send it from the right mailbox. New York
 // → no letterhead, sent from personal Gmail (From "Vineet", unbranded). Otherwise
@@ -127,22 +122,6 @@ export async function sendAgreement(args: {
     return { ok: false, mailbox, error: result.error, diag: result.diag };
   }
 
-  // The operator confirmed this exact address and it went out on a real
-  // agreement — remember it so future agreements for this property reuse it
-  // verbatim. Best-effort: a save failure must not taint the send report.
-  if (args.property_id) {
-    await admin()
-      .from("agreement_addresses")
-      .upsert(
-        {
-          property_id: args.property_id,
-          full_address: args.property_address.trim(),
-          confirmed_at: new Date().toISOString(),
-        },
-        { onConflict: "property_id" },
-      );
-  }
-
   return {
     ok: true,
     mailbox,
@@ -188,13 +167,21 @@ export const agreementsTools = [
       "send fails with a missing-signature error, tell the operator to draw it on " +
       "the portal's Agreements page. This sends immediately — there is no draft to " +
       "review. Only call this once you have all required fields and the operator " +
-      "has confirmed; ask for anything missing first.",
+      "has confirmed; ask for anything missing first. The property MUST already " +
+      "exist in the portal: resolve the address with resolve_property_address and " +
+      "pass its property_id. A free-typed address that matches no portal property " +
+      "is refused — if the unit isn't in the system yet, tell the operator to add " +
+      "it on /properties first.",
     inputSchema: z.object({
       tenant_name: z.string().describe("Tenant's full name"),
       recipient_email: z.string().describe("Tenant email address to send the agreement to"),
       property_address: z
         .string()
-        .describe("Full property address (include city/state for non-NY units)"),
+        .describe(
+          "Full property address (include city/state for non-NY units). Must " +
+            "belong to a property that already exists in the portal — use " +
+            "resolve_property_address; arbitrary addresses are refused.",
+        ),
       rent: z.string().describe('Monthly rent, e.g. "1650"'),
       security_deposit: z.string().describe("Security deposit amount"),
       lease_start_date: z.string().describe('Lease start "YYYY-MM-DD"'),

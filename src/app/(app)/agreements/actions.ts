@@ -63,7 +63,13 @@ export type SendToTenantPayload = {
   proRateRent?: string;
   recipientEmail: string;
   inNewYork: boolean;
+  /** Property picked from the portal's list — the address must always resolve
+   *  to an existing property; passing the id skips address re-matching. */
+  propertyId?: string;
 };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cleanMoney(v: string): string | null {
   const cleaned = v.replace(/[$,\s]/g, "");
@@ -108,6 +114,9 @@ export async function sendAgreementToTenant(
   if (payload.leaseEndDate <= payload.leaseStartDate) {
     return { ok: false, error: "Lease end date must be after the start date." };
   }
+  if (payload.propertyId && !UUID_RE.test(payload.propertyId)) {
+    return { ok: false, error: "Invalid property id." };
+  }
 
   const result = await sendAgreementRequest({
     tenantName: payload.tenantName.trim(),
@@ -121,6 +130,7 @@ export async function sendAgreementToTenant(
     proRateRent: proRate ?? undefined,
     recipientEmail: recipient,
     inNewYork: payload.inNewYork,
+    propertyId: payload.propertyId || undefined,
   });
   if (!result.ok) return { ok: false, error: result.error };
 
