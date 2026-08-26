@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
-import { todayISO } from "@/lib/date";
+import { formatDate, todayISO } from "@/lib/date";
 import {
   AGREEMENTS_BUCKET,
   OPERATOR_SIGNATURE_PATH,
@@ -38,6 +38,7 @@ type RoomRel = {
 type TenantRel = { full_name: string; email: string | null };
 type Row = {
   id: string;
+  status: string;
   tenant_id: string;
   monthly_rent: number;
   security_deposit: number | null;
@@ -52,9 +53,11 @@ type Row = {
 export default async function AgreementsPage() {
   const supabase = await createClient();
 
-  // Active tenancies feed the prefill picker — every field stays editable, so
-  // the picker only saves typing; it never constrains what can be generated.
-  // The same rows drive the tally's assign-to-tenant picker.
+  // Active AND upcoming tenancies feed the prefill picker — agreements are
+  // typically sent before move-in, so future tenants must be pickable. Every
+  // field stays editable; the picker only saves typing and never constrains
+  // what can be generated. The same rows drive the tally's assign-to-tenant
+  // picker.
   const [
     { data },
     { data: requestRows },
@@ -65,11 +68,11 @@ export default async function AgreementsPage() {
     supabase
       .from("tenancies")
       .select(
-        `id, tenant_id, monthly_rent, security_deposit, start_date, lease_start_date, lease_end_date, lease_pdf_path,
+        `id, status, tenant_id, monthly_rent, security_deposit, start_date, lease_start_date, lease_end_date, lease_pdf_path,
            tenants(full_name, email),
            rooms(room_number, properties(id, building_name, street_address, unit_number, is_new_york))`,
       )
-      .eq("status", "active")
+      .in("status", ["active", "upcoming"])
       .order("start_date", { ascending: false })
       .returns<Row[]>(),
     supabase
@@ -104,12 +107,14 @@ export default async function AgreementsPage() {
     const place = property
       ? property.building_name?.trim() || property.street_address
       : "";
+    const upcomingTag =
+      row.status === "upcoming" ? ` · moves in ${formatDate(row.start_date)}` : "";
     return [
       {
         id: row.id,
         tenantName: tenant.full_name,
         tenantEmail: tenant.email ?? "",
-        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}`,
+        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}${upcomingTag}`,
         propertyId: property?.id ?? "",
         propertyAddress: address,
         rent: String(row.monthly_rent),
@@ -129,10 +134,12 @@ export default async function AgreementsPage() {
     const place = property
       ? property.building_name?.trim() || property.street_address
       : "";
+    const upcomingTag =
+      row.status === "upcoming" ? ` · moves in ${formatDate(row.start_date)}` : "";
     return [
       {
         tenancyId: row.id,
-        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}`,
+        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}${upcomingTag}`,
         hasLease: row.lease_pdf_path != null,
       },
     ];
