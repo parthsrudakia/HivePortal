@@ -195,6 +195,72 @@ export async function sendBalanceReminders(args: {
   };
 }
 
+// Free-form text message (optionally a group thread). Recipients may be phone
+// numbers or tenant names — names resolve against the tenants table and must
+// match exactly one tenant with a phone on file. include_operator adds the
+// operator's own number (OPERATOR_PHONE env) so they see the thread.
+export async function sendTextMessage(args: {
+  recipients: string[];
+  message: string;
+  include_operator?: boolean;
+}) {
+  const supabase = admin();
+  const phones: string[] = [];
+  for (const entry of args.recipients) {
+    const raw = entry.trim();
+    if (!raw) continue;
+    // Anything with enough digits is treated as a phone number directly.
+    if (raw.replace(/\D/g, "").length >= 10) {
+      phones.push(raw);
+      continue;
+    }
+    const { data: matches } = await supabase
+      .from("tenants")
+      .select("full_name, phone")
+      .ilike("full_name", `%${raw}%`);
+    if (!matches || matches.length === 0) {
+      return { ok: false, error: `No tenant found matching "${raw}".` };
+    }
+    if (matches.length > 1) {
+      return {
+        ok: false,
+        error: `"${raw}" matches ${matches.length} tenants (${matches
+          .map((m) => m.full_name)
+          .join(", ")}) — be more specific.`,
+      };
+    }
+    if (!matches[0].phone?.trim()) {
+      return { ok: false, error: `${matches[0].full_name} has no phone on file.` };
+    }
+    phones.push(matches[0].phone.trim());
+  }
+  if (args.include_operator) {
+    const op = process.env.OPERATOR_PHONE?.trim();
+    if (!op) {
+      return {
+        ok: false,
+        error:
+          "OPERATOR_PHONE is not configured — set it in the environment to include the operator in group threads.",
+      };
+    }
+    phones.push(op);
+  }
+  if (phones.length === 0) {
+    return { ok: false, error: "No recipients resolved." };
+  }
+
+  const res = await sendSms(phones, args.message, {
+    type: "manual",
+    context: `bot send_text · ${phones.length} recipient${phones.length === 1 ? "" : "s"}`,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  return {
+    ok: true,
+    recipients: phones,
+    group_thread: phones.length > 1,
+  };
+}
+
 const SHEET_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -261,6 +327,40 @@ export const messagingTools = [
         ),
     }),
     run: async (args) => JSON.stringify(await sendBalanceReminders(args)),
+  }),
+  betaZodTool({
+    name: "send_text",
+    description:
+      "Send a free-form SMS from the Hive Zoom Phone number, optionally as a " +
+      "GROUP thread (multiple recipients share one thread and see each other's " +
+      "replies). Recipients can be phone numbers or tenant names (looked up in " +
+      "the portal; must match exactly one tenant with a phone on file). " +
+      "include_operator adds the operator's own number to the thread so they " +
+      "see the message and any replies. This sends immediately — ALWAYS read " +
+      "back the exact message text and the resolved recipients and get an " +
+      "explicit confirmation from the operator before calling this. Only " +
+      "US/Canada (+1) numbers can receive texts.",
+    inputSchema: z.object({
+      recipients: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Phone numbers and/or tenant names. More than one entry (or " +
+            "include_operator) makes it a single group thread.",
+        ),
+      message: z
+        .string()
+        .min(1)
+        .max(1200)
+        .describe("The exact text to send, confirmed by the operator."),
+      include_operator: z
+        .boolean()
+        .optional()
+        .describe(
+          "Add the operator's own phone (OPERATOR_PHONE env) to the thread.",
+        ),
+    }),
+    run: async (args) => JSON.stringify(await sendTextMessage(args)),
   }),
   betaZodTool({
     name: "share_inventory_sheet",

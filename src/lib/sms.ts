@@ -109,16 +109,28 @@ async function accessToken(): Promise<string> {
 /**
  * Send one SMS. Returns { ok:false } (never throws) so a failed text never
  * blocks the email reminder it accompanies.
+ *
+ * `to` may be a list of numbers — they become ONE group thread (a single
+ * message all recipients share, replies visible to everyone in it).
  */
 export async function sendSms(
-  to: string,
+  to: string | string[],
   body: string,
   meta?: SmsMeta,
 ): Promise<SmsResult> {
+  const recipients = Array.isArray(to) ? to : [to];
+  const recipientLabel = recipients.join(", ");
   const type: SmsType = meta?.type ?? "manual";
   const context = meta?.context ?? null;
   const log = (status: "sent" | "failed" | "skipped", error?: string) =>
-    logSms({ type, recipient: to, body, status, error: error ?? null, context });
+    logSms({
+      type,
+      recipient: recipientLabel,
+      body,
+      status,
+      error: error ?? null,
+      context,
+    });
 
   const cfg = config();
   if (!cfg) {
@@ -127,14 +139,25 @@ export async function sendSms(
     return { ok: false, error };
   }
 
-  const toNumber = toE164(to);
-  if (!toNumber) {
+  const normalized = recipients.map((r) => ({ raw: r, e164: toE164(r) }));
+  const invalid = normalized.filter((n) => !n.e164);
+  if (invalid.length > 0 && recipients.length === 1) {
     // Not a US/Canada (+1) number — Zoom Phone SMS only reaches +1, so we
     // intentionally skip it (recorded as 'skipped', not a failure).
-    const error = `Skipped — not a US/Canada number: ${to}`;
+    const error = `Skipped — not a US/Canada number: ${recipients[0]}`;
     await log("skipped", error);
     return { ok: false, skipped: true, error };
   }
+  if (invalid.length > 0) {
+    // A group thread missing a member would silently mislead (e.g. the
+    // operator thinking they're in the thread) — fail loudly instead.
+    const error = `Group text not sent — not US/Canada numbers: ${invalid
+      .map((n) => n.raw)
+      .join(", ")}`;
+    await log("failed", error);
+    return { ok: false, error };
+  }
+  const toNumbers = normalized.map((n) => n.e164 as string);
   // Zoom wants both numbers in E.164; normalize the configured sender too.
   const fromNumber = toE164(cfg.from) ?? cfg.from;
 
@@ -148,7 +171,7 @@ export async function sendSms(
       },
       body: JSON.stringify({
         sender: { phone_number: fromNumber },
-        to_members: [{ phone_number: toNumber }],
+        to_members: toNumbers.map((phone_number) => ({ phone_number })),
         message: body,
       }),
     });
