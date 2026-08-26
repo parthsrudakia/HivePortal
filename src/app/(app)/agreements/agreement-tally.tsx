@@ -92,6 +92,17 @@ export function AgreementTally({
     if (filter === "outstanding") return r.status === "pending";
     return r.status === filter;
   });
+  // Signed tab: copies still awaiting an assign/dismiss decision float to the
+  // top; already-assigned ones follow. Stable sort keeps newest-first within
+  // each group.
+  const ordered =
+    filter === "signed" && tokens.length === 0
+      ? [...visible].sort(
+          (a, b) =>
+            Number(a.assignedTenancyId !== null) -
+            Number(b.assignedTenancyId !== null),
+        )
+      : visible;
 
   const run = async (
     id: string,
@@ -276,7 +287,7 @@ export function AgreementTally({
         </p>
       ) : (
         <ul className="mt-4 flex flex-col gap-3">
-          {visible.map((r) => (
+          {ordered.map((r) => (
             <li
               key={r.id}
               // Each request is its own panel, edge-tinted by status so rows

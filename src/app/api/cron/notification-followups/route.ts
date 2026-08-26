@@ -80,11 +80,12 @@ export async function GET(req: NextRequest) {
     error: e instanceof Error ? e.message : "late fees failed",
   }));
 
-  // Dismiss superseded duplicate signing requests so the agreements tally
-  // only shows one live agreement per person per 15-day window.
+  // Delete superseded duplicate signing requests (latest copy wins) so the
+  // agreements tally only shows one agreement per person per 15-day window.
   const agreementDedupe = await dedupeAgreementRequests(supabase).catch(
     (e) => ({
-      dismissed: [],
+      deleted: [],
+      reassigned: 0,
       error: e instanceof Error ? e.message : "agreement dedupe failed",
     }),
   );
