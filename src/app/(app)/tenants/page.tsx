@@ -12,6 +12,7 @@ import { canEditLedger, isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 import { FormerTenants, type FormerTenantRow } from "./former-tenants";
 import { UpcomingTenants, type UpcomingTenantRow } from "./upcoming-tenants";
+import { UpcomingMoveOuts, type UpcomingMoveOutRow } from "./upcoming-moveouts";
 import { TabNotepad } from "../tab-notepad";
 import {
   TenantsExplorer,
@@ -19,6 +20,7 @@ import {
   type VacantProperty,
 } from "./tenants-explorer";
 import {
+  getActiveTenancies,
   getAllProperties,
   getEndedTenancies,
   getUpcomingTenancies,
@@ -205,13 +207,19 @@ async function RentKpisSection() {
 }
 
 async function SideListsSection() {
-  const [user, { data: endedData }, { data: upcomingData }, sidecars] =
-    await Promise.all([
-      getSessionUser(),
-      getEndedTenancies(),
-      getUpcomingTenancies(),
-      getSidecars(),
-    ]);
+  const [
+    user,
+    { data: endedData },
+    { data: upcomingData },
+    { data: activeData },
+    sidecars,
+  ] = await Promise.all([
+    getSessionUser(),
+    getEndedTenancies(),
+    getUpcomingTenancies(),
+    getActiveTenancies(),
+    getSidecars(),
+  ]);
   const { charges, allocations, rentChanges } = sidecars;
   const today = todayISO();
 
@@ -318,9 +326,32 @@ async function SideListsSection() {
     })
     .filter((r) => r.tenantId);
 
+  // Still-active tenants with a scheduled move-out of today or later — the
+  // cron only flips them to 'ended' after the date passes. Reuses the
+  // request-cached active-tenancies query already fetched by the tracker.
+  const moveOutRows: UpcomingMoveOutRow[] = (activeData ?? [])
+    .filter((t) => t.move_out_date && t.move_out_date >= today)
+    .map((t) => {
+      const tenant = one(t.tenants);
+      const room = one(t.rooms);
+      const property = one(room?.properties ?? null);
+      return {
+        tenancyId: t.id,
+        tenantId: tenant?.id ?? "",
+        name: tenant?.full_name ?? "—",
+        unitLabel: property ? unitLabel(property) : null,
+        roomLabel: room?.room_number ?? null,
+        moveOutDate: t.move_out_date as string,
+        monthlyRent: Number(t.monthly_rent),
+      };
+    })
+    .filter((r) => r.tenantId)
+    .sort((a, b) => a.moveOutDate.localeCompare(b.moveOutDate));
+
   return (
     <>
       <UpcomingTenants rows={upcomingRows} />
+      <UpcomingMoveOuts rows={moveOutRows} />
       <FormerTenants
         rows={formerRows}
         canDismiss={canEditLedger(user?.email)}

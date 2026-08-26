@@ -19,21 +19,26 @@ function fmtMoney(n: number) {
  * "Upcoming move-ins" — tenancies added with a future start date (status
  * 'upcoming'). They don't bill or appear in the tracker groups until the
  * daily cron activates them on the start date; this section keeps them
- * visible (and their profiles reachable) in the meantime.
+ * visible (and their profiles reachable) in the meantime. Collapsed by
+ * default.
  */
 export function UpcomingTenants({ rows }: { rows: UpcomingTenantRow[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <section className="mt-10">
-      <header className="flex items-end justify-between gap-3">
-        <h2 className="text-xl tracking-tight text-ink">
-          Upcoming <span className="font-display text-accent-text">move-ins</span>
+    <details className="group mt-10">
+      <summary className="flex cursor-pointer list-none items-end justify-between gap-3 [&::-webkit-details-marker]:hidden">
+        <h2 className="flex items-center gap-2 text-xl tracking-tight text-ink">
+          <span className="text-sm text-muted transition-transform group-open:rotate-90">
+            ▸
+          </span>
+          Upcoming{" "}
+          <span className="font-display text-accent-text">move-ins</span>
         </h2>
         <span className="text-xs text-muted">
           {rows.length} scheduled
         </span>
-      </header>
+      </summary>
 
       <ul className="mt-4 flex flex-col gap-1.5">
         {rows.map((r) => (
@@ -61,6 +66,6 @@ export function UpcomingTenants({ rows }: { rows: UpcomingTenantRow[] }) {
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }
