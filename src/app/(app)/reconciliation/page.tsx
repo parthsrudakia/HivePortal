@@ -471,7 +471,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
             post to tenant ledgers the moment they match.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <a
             href="/reconciliation/export"
             className="rounded-full border border-stone bg-white px-4 py-2 text-sm text-ink shadow-sm hover:bg-warm"
@@ -550,9 +550,9 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
         )}
       </div>
 
-      <section className="mt-4 rounded-2xl bg-white shadow-sm">
+      <section className="mt-4 overflow-x-auto rounded-2xl bg-white shadow-sm md:overflow-x-visible">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm md:top-14">
+          <thead className="z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm md:sticky md:top-14">
             <tr>
               <th className="rounded-tl-2xl bg-warm px-5 py-3 font-medium">Tenant</th>
               <th className="bg-warm px-5 py-3 font-medium">Unit</th>

@@ -226,7 +226,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
       )}
 
       {!error && rows.length > 0 && (
-        <section className="mt-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-stone/40">
+        <section className="mt-6 overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-stone/40">
           <table className="w-full text-sm">
             <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
               <tr>

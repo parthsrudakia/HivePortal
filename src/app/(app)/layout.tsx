@@ -72,8 +72,23 @@ export default function AppLayout({
           ),
         }}
         userInfo={
+          <>
+            <Suspense>
+              <MobileUserInfo />
+            </Suspense>
+            <form action={logout} className="px-3 pt-3">
+              <button
+                type="submit"
+                className="w-full whitespace-nowrap rounded-full border border-stone bg-white px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink transition hover:border-accent hover:text-accent-text"
+              >
+                Sign out
+              </button>
+            </form>
+          </>
+        }
+        headerExtra={
           <Suspense>
-            <MobileUserInfo />
+            <AssistantHeaderLink />
           </Suspense>
         }
       />

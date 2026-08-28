@@ -26,7 +26,7 @@ export function ScheduleTable({ rows }: { rows: ScheduleRow[] }) {
   );
 
   return (
-    <section className="mt-4 overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-stone/40 md:overflow-x-visible">
+    <section className="mt-4 overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-stone/40">
       <table className="w-full min-w-[720px] text-sm">
         <thead className="sticky top-0 z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm md:top-14">
           <tr>

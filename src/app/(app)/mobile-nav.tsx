@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { NavIcon, type NavIconName } from "./nav-icons";
+import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = { href: string; label: string; icon: NavIconName };
 
@@ -12,6 +13,7 @@ export function MobileNav({
   badges,
   userInfo,
   extraNav,
+  headerExtra,
 }: {
   items: NavItem[];
   // Server-rendered slots keyed by nav href / for the drawer footer, so the
@@ -20,6 +22,8 @@ export function MobileNav({
   userInfo?: React.ReactNode;
   /** Session-gated nav entries appended after the static items. */
   extraNav?: React.ReactNode;
+  /** Session-gated icon(s) shown in the top bar before Settings (assistant). */
+  headerExtra?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -67,6 +71,7 @@ export function MobileNav({
           </span>
         </Link>
         <div className="flex items-center gap-1">
+          {headerExtra}
           <Link
             href="/settings"
             aria-label="Admin Settings"
@@ -133,6 +138,10 @@ export function MobileNav({
               })}
               {extraNav}
             </nav>
+            {/* Pinned to the drawer bottom, mirroring the desktop sidebar. */}
+            <div className="mt-auto border-t border-stone/40 pt-3">
+              <ThemeToggle />
+            </div>
             {userInfo}
           </aside>
         </div>

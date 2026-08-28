@@ -200,7 +200,7 @@ async function CleanersSection() {
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-stone/40">
         <AddCleanerForm />
       </div>
-      <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-stone/40">
+      <div className="mt-3 overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-stone/40">
         <CleanersTable
           cleaners={(cleanersData ?? []).map((c) => ({
             ...c,

@@ -396,7 +396,7 @@ function OverageFlags({
       )}
       {flagged.length > 0 && (
     <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 px-5 py-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-semibold text-red-900">
           ⚡ Over the $200 utility threshold
         </p>

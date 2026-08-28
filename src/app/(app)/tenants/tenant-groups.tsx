@@ -106,9 +106,9 @@ export function TenantGroups({
         </div>
       )}
 
-      <div className="rounded-2xl bg-white shadow-sm">
-        <table className="w-full text-base">
-          <thead className="sticky top-0 z-10 bg-warm text-left text-sm uppercase tracking-wide text-muted shadow-sm md:top-14">
+      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm md:overflow-x-visible">
+        <table className="w-full text-sm md:text-base">
+          <thead className="z-10 bg-warm text-left text-sm uppercase tracking-wide text-muted shadow-sm md:sticky md:top-14">
             <tr>
               <th className="rounded-tl-2xl bg-warm px-5 py-3 font-medium">
                 Unit/Tenant

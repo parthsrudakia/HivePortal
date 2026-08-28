@@ -54,7 +54,7 @@ export function CredentialGroups({
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40 md:overflow-x-visible">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
         <table className="w-full min-w-[1100px] text-sm [&_td]:border-r [&_td]:border-stone/30 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-stone/30 [&_th:last-child]:border-r-0">
           <thead className="sticky top-0 z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm md:top-14">
             <tr>

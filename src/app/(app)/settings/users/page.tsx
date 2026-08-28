@@ -64,7 +64,7 @@ export default async function UsersPage() {
         <p className="mt-6 text-sm text-red-700">{error.message}</p>
       )}
 
-      <section className="mt-6 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+      <section className="mt-6 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
         <table className="w-full text-sm">
           <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
