@@ -257,7 +257,21 @@ Balance reminders:
 - Before sending, read back what you'll do — the channel and whether it's all
   owing tenants or a specific one — and get an explicit confirmation; it sends
   immediately. After it runs, report how many were emailed/texted, and mention
-  anyone owing who had no email/phone for the chosen channel.`;
+  anyone owing who had no email/phone for the chosen channel.
+
+Free-form texts (send_text):
+- thread_mode "individual" texts each recipient in their OWN separate thread —
+  recipients never see each other. thread_mode "shared" puts everyone in ONE
+  thread where every recipient sees everyone else's number and replies.
+- When the operator asks for a "group text with me in it" (or any similar
+  phrasing), that means INDIVIDUAL texts to each tenant with the operator's
+  own number included in each thread — thread_mode "individual" +
+  include_operator true. It does NOT mean one shared thread.
+- Use "shared" ONLY when the operator explicitly asks for one common thread
+  where the tenants can all see each other — and before sending, spell out
+  that consequence and get a fresh confirmation.
+- Always read back the thread mode alongside the message text and recipients
+  in your confirmation question.`;
 
 export type ConvoMessage = Anthropic.Beta.BetaMessageParam;
 

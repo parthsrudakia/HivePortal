@@ -195,13 +195,16 @@ export async function sendBalanceReminders(args: {
   };
 }
 
-// Free-form text message (optionally a group thread). Recipients may be phone
-// numbers or tenant names — names resolve against the tenants table and must
-// match exactly one tenant with a phone on file. include_operator adds the
-// operator's own number (OPERATOR_PHONE env) so they see the thread.
+// Free-form text message. Recipients may be phone numbers or tenant names —
+// names resolve against the tenants table and must match exactly one tenant
+// with a phone on file. thread_mode "individual" texts each recipient in
+// their own thread (recipients never see each other); "shared" puts everyone
+// in ONE thread. include_operator adds the operator's own number
+// (OPERATOR_PHONE env) to each thread so they see the message and replies.
 export async function sendTextMessage(args: {
   recipients: string[];
   message: string;
+  thread_mode: "individual" | "shared";
   include_operator?: boolean;
 }) {
   const supabase = admin();
@@ -234,30 +237,55 @@ export async function sendTextMessage(args: {
     }
     phones.push(matches[0].phone.trim());
   }
+  let operator: string | null = null;
   if (args.include_operator) {
-    const op = process.env.OPERATOR_PHONE?.trim();
-    if (!op) {
+    operator = process.env.OPERATOR_PHONE?.trim() || null;
+    if (!operator) {
       return {
         ok: false,
         error:
-          "OPERATOR_PHONE is not configured — set it in the environment to include the operator in group threads.",
+          "OPERATOR_PHONE is not configured — set it in the environment to include the operator in threads.",
       };
     }
-    phones.push(op);
   }
   if (phones.length === 0) {
     return { ok: false, error: "No recipients resolved." };
   }
 
-  const res = await sendSms(phones, args.message, {
-    type: "manual",
-    context: `bot send_text · ${phones.length} recipient${phones.length === 1 ? "" : "s"}`,
-  });
-  if (!res.ok) return { ok: false, error: res.error };
+  if (args.thread_mode === "shared") {
+    const all = operator ? [...phones, operator] : phones;
+    const res = await sendSms(all, args.message, {
+      type: "manual",
+      context: `bot send_text · shared thread · ${all.length} recipient${all.length === 1 ? "" : "s"}`,
+    });
+    if (!res.ok) return { ok: false, error: res.error };
+    return {
+      ok: true,
+      thread_mode: "shared",
+      recipients: all,
+      group_thread: all.length > 1,
+    };
+  }
+
+  // Individual: one thread per recipient (plus the operator in each, when
+  // requested) — recipients never see each other's numbers or replies.
+  const sent: string[] = [];
+  const failed: { recipient: string; error: string }[] = [];
+  for (const phone of phones) {
+    const res = await sendSms(operator ? [phone, operator] : phone, args.message, {
+      type: "manual",
+      context: `bot send_text · individual thread${operator ? " + operator" : ""}`,
+    });
+    if (res.ok) sent.push(phone);
+    else failed.push({ recipient: phone, error: res.error });
+  }
   return {
-    ok: true,
-    recipients: phones,
-    group_thread: phones.length > 1,
+    ok: failed.length === 0,
+    thread_mode: "individual",
+    threads_sent: sent.length,
+    sent,
+    failed,
+    operator_included_in_each: operator !== null,
   };
 }
 
@@ -331,33 +359,47 @@ export const messagingTools = [
   betaZodTool({
     name: "send_text",
     description:
-      "Send a free-form SMS from the Hive Zoom Phone number, optionally as a " +
-      "GROUP thread (multiple recipients share one thread and see each other's " +
-      "replies). Recipients can be phone numbers or tenant names (looked up in " +
-      "the portal; must match exactly one tenant with a phone on file). " +
-      "include_operator adds the operator's own number to the thread so they " +
-      "see the message and any replies. This sends immediately — ALWAYS read " +
-      "back the exact message text and the resolved recipients and get an " +
-      "explicit confirmation from the operator before calling this. Only " +
-      "US/Canada (+1) numbers can receive texts.",
+      "Send a free-form SMS from the Hive Zoom Phone number. Recipients can be " +
+      "phone numbers or tenant names (looked up in the portal; must match " +
+      "exactly one tenant with a phone on file). thread_mode 'individual' " +
+      "sends each recipient their OWN text in a separate thread — recipients " +
+      "never see each other; 'shared' puts ALL recipients in ONE thread where " +
+      "everyone sees everyone's number and replies. When the operator says " +
+      "'group text with me in it' (or similar), they mean INDIVIDUAL texts to " +
+      "each tenant with their own number included in each thread — " +
+      "thread_mode 'individual' + include_operator true — NOT one shared " +
+      "thread. Use 'shared' ONLY when the operator explicitly asks for one " +
+      "common thread where the tenants can see each other, and confirm that " +
+      "consequence first. include_operator adds the operator's own number to " +
+      "each thread so they see the message and any replies. This sends " +
+      "immediately — ALWAYS read back the exact message text, the resolved " +
+      "recipients, and the thread mode, and get an explicit confirmation from " +
+      "the operator before calling this. Only US/Canada (+1) numbers can " +
+      "receive texts.",
     inputSchema: z.object({
       recipients: z
         .array(z.string())
         .min(1)
-        .describe(
-          "Phone numbers and/or tenant names. More than one entry (or " +
-            "include_operator) makes it a single group thread.",
-        ),
+        .describe("Phone numbers and/or tenant names."),
       message: z
         .string()
         .min(1)
         .max(1200)
         .describe("The exact text to send, confirmed by the operator."),
+      thread_mode: z
+        .enum(["individual", "shared"])
+        .describe(
+          "'individual' = one text per recipient, separate threads (the " +
+            "default meaning of 'group text with me in it'). 'shared' = one " +
+            "thread everyone shares — only on an explicit request for a " +
+            "common thread.",
+        ),
       include_operator: z
         .boolean()
         .optional()
         .describe(
-          "Add the operator's own phone (OPERATOR_PHONE env) to the thread.",
+          "Add the operator's own phone (OPERATOR_PHONE env) to each thread " +
+            "('individual') or to the one thread ('shared').",
         ),
     }),
     run: async (args) => JSON.stringify(await sendTextMessage(args)),
