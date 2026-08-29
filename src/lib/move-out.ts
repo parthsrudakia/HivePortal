@@ -46,6 +46,16 @@ export async function applyMoveOut(
   if (tenancyUpdateError) return { error: tenancyUpdateError.message };
 
   if (tenancy?.room_id) {
+    // A room with no available_from is entering a NEW vacancy cycle (vs. a
+    // date edit on an already-listed opening, which must keep the ads posted
+    // for the current window).
+    const { data: roomBefore } = await supabase
+      .from("rooms")
+      .select("available_from")
+      .eq("id", tenancy.room_id)
+      .maybeSingle();
+    const freshListing = !roomBefore?.available_from;
+
     // Carry the last tenant's rent forward as the room's list price. Their
     // monthly_rent is the all-in total (base + $125 bundle), so split it back
     // into base_rent + the services bundle; the room's generated total_rent
@@ -77,6 +87,13 @@ export async function applyMoveOut(
         })
         .eq("id", tenancy_id);
       return { error: roomError.message };
+    }
+
+    // Fresh listings start with no ads — the previous cycle's ad URLs are
+    // stale (old price/date, possibly expired posts). Best-effort: a failed
+    // cleanup leaves stale ads behind but never blocks the move-out.
+    if (freshListing) {
+      await supabase.from("room_ads").delete().eq("room_id", tenancy.room_id);
     }
   }
   return {};

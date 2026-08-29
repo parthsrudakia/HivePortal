@@ -667,6 +667,71 @@ export async function setTenancyMoveOutDate(
   return { ok: true };
 }
 
+// ----- Cancel an upcoming move-in -----
+// Removes a not-yet-started tenancy (a reservation) so the room can be listed
+// again — used from the Add Inventory dialog when the operator chooses to drop
+// the reservation. The tenancy's ledger charges (deposit, etc.) go with it;
+// recorded payments block the delete the same way they block deleteTenant.
+
+export async function cancelUpcomingTenancy(
+  roomId: string,
+  availableFrom: string | null,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient();
+  const denied = await requireLedgerAdmin();
+  if (denied) return { error: denied };
+  if (!isValid(zUuid, roomId)) return { error: "Invalid room id." };
+  const value =
+    availableFrom && availableFrom.trim() ? availableFrom.trim() : null;
+  if (value !== null && !isValid(zIsoDate, value))
+    return { error: "Available-from date must be YYYY-MM-DD." };
+
+  // One live tenancy per room is DB-enforced, so at most one row matches.
+  const { data: tenancy, error: findError } = await supabase
+    .from("tenancies")
+    .select("id, tenant_id")
+    .eq("room_id", roomId)
+    .eq("status", "upcoming")
+    .maybeSingle();
+  if (findError) return { error: findError.message };
+  if (!tenancy) return { error: "No upcoming move-in found for this room." };
+
+  const { error: chargesError } = await supabase
+    .from("tenancy_charges")
+    .delete()
+    .eq("tenancy_id", tenancy.id);
+  if (chargesError) return { error: chargesError.message };
+
+  const { error: deleteError } = await supabase
+    .from("tenancies")
+    .delete()
+    .eq("id", tenancy.id);
+  if (deleteError)
+    return {
+      error:
+        deleteError.code === "23503"
+          ? "This move-in already has payments recorded, so it can't be cancelled here. Delete the payments on the tenant's ledger first, or keep the reservation."
+          : deleteError.message,
+    };
+
+  const { error: roomError } = await updateRoomsWithNotification(
+    supabase,
+    roomId,
+    { status: "available", available_from: value },
+  );
+  if (roomError) return { error: roomError.message };
+
+  // Fresh listing — drop ads left over from the previous vacancy cycle
+  // (best-effort; stale ads never block the cancel).
+  await supabase.from("room_ads").delete().eq("room_id", roomId);
+
+  revalidatePath("/tenants");
+  if (tenancy.tenant_id) revalidatePath(`/tenants/${tenancy.tenant_id}`);
+  revalidatePath("/inventory");
+  revalidatePath("/tenants/new");
+  return { ok: true };
+}
+
 // ----- Undo an end-tenancy (or revive a finalized one) -----
 
 export async function reactivateTenancy(formData: FormData) {

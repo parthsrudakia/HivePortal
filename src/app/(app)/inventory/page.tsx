@@ -131,6 +131,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       | {
           id: string;
           status: "active" | "ended" | "upcoming";
+          start_date: string;
           tenant_id: string | null;
           tenants: { full_name: string } | { full_name: string }[] | null;
         }[]
@@ -175,7 +176,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       .select(
         `id, room_number, status, available_from, pending_tenant,
          properties!inner(building_name, street_address, unit_number),
-         tenancies(id, status, tenant_id, tenants(full_name))`,
+         tenancies(id, status, start_date, tenant_id, tenants(full_name))`,
       )
       .is("properties.archived_at", null)
       .order("room_number", { ascending: true })
@@ -217,6 +218,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         : "—";
       const roomNum = r.room_number?.replace(/^room\s+/i, "") ?? "";
       const active = (r.tenancies ?? []).find((t) => t.status === "active");
+      const upcoming = (r.tenancies ?? []).find((t) => t.status === "upcoming");
       return {
         id: r.id,
         label: roomNum ? `${unit} · Room ${roomNum}` : unit,
@@ -224,6 +226,10 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         tenancyId: active?.id ?? null,
         tenantId: active?.tenant_id ?? null,
         tenantName: active ? one(active.tenants)?.full_name ?? null : null,
+        upcomingTenantName: upcoming
+          ? one(upcoming.tenants)?.full_name ?? null
+          : null,
+        upcomingStart: upcoming?.start_date ?? null,
       };
     })
     .sort((a, b) =>

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useHydrated } from "@/lib/use-hydrated";
 import { makeRoomAvailable } from "./actions";
-import { endTenancy } from "../tenants/actions";
+import { endTenancy, cancelUpcomingTenancy } from "../tenants/actions";
 
 export type AddableRoom = {
   id: string;
@@ -14,6 +14,8 @@ export type AddableRoom = {
   tenancyId: string | null;
   tenantId: string | null;
   tenantName: string | null;
+  upcomingTenantName: string | null;
+  upcomingStart: string | null;
 };
 
 const STATUS_LABEL: Record<AddableRoom["status"], string> = {
@@ -37,17 +39,22 @@ export function AddInventory({
   const [query, setQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [date, setDate] = useState("");
+  const [cancelMoveIn, setCancelMoveIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const selected = rooms.find((r) => r.id === roomId) ?? null;
   // A "filled" room we must vacate before it can be listed.
   const occupied = selected?.status === "occupied" && !!selected.tenancyId;
+  // A room already promised to a future tenant — listing it needs a warning.
+  const upcoming = selected?.upcomingStart
+    ? { name: selected.upcomingTenantName, start: selected.upcomingStart }
+    : null;
 
   const q = query.trim().toLowerCase();
   const matches = q
     ? rooms.filter((r) =>
-        `${r.label} ${r.tenantName ?? ""} ${STATUS_LABEL[r.status]}`
+        `${r.label} ${r.tenantName ?? ""} ${r.upcomingTenantName ?? ""} ${STATUS_LABEL[r.status]}`
           .toLowerCase()
           .includes(q),
       )
@@ -58,6 +65,7 @@ export function AddInventory({
     setQuery("");
     setListOpen(false);
     setDate("");
+    setCancelMoveIn(false);
     setError(null);
   }
 
@@ -69,6 +77,7 @@ export function AddInventory({
   function pickRoom(id: string) {
     setRoomId(id);
     setError(null);
+    setCancelMoveIn(false);
     const r = rooms.find((x) => x.id === id);
     setQuery(r?.label ?? "");
     setListOpen(false);
@@ -91,10 +100,26 @@ export function AddInventory({
         fd.set("tenant_id", selected.tenantId ?? "");
         fd.set("move_out_date", date);
         await endTenancy(fd);
+      } else if (upcoming && cancelMoveIn) {
+        const res = await cancelUpcomingTenancy(selected.id, date || null);
+        if ("error" in res) {
+          setError(res.error);
+          return;
+        }
       } else {
-        const res = await makeRoomAvailable(selected.id, date || null);
+        // listAnyway only once the operator has seen the warning box for the
+        // upcoming move-in; on stale page data the server bounces it back.
+        const res = await makeRoomAvailable(selected.id, date || null, {
+          listAnyway: !!upcoming,
+        });
         if (res && "error" in res) {
           setError(res.error);
+          return;
+        }
+        if (res && "upcoming" in res) {
+          setError(
+            `${res.upcoming.tenantName ?? "A tenant"} is scheduled to move into this room on ${res.upcoming.startDate}. Refresh the page and try again.`,
+          );
           return;
         }
       }
@@ -189,7 +214,11 @@ export function AddInventory({
                                 </span>
                                 <span className="text-xs text-muted">
                                   {STATUS_LABEL[r.status]}
-                                  {r.tenantName ? ` · ${r.tenantName}` : ""}
+                                  {r.tenantName
+                                    ? ` · ${r.tenantName}`
+                                    : r.upcomingTenantName
+                                      ? ` · ${r.upcomingTenantName} (moves in ${r.upcomingStart})`
+                                      : ""}
                                 </span>
                               </button>
                             </li>
@@ -217,6 +246,29 @@ export function AddInventory({
                         className="rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
                       />
                     </label>
+                  </div>
+                )}
+
+                {selected && upcoming && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent/10 p-3">
+                    <p className="text-sm text-ink">
+                      <span className="font-medium">
+                        {upcoming.name ?? "A tenant"}
+                      </span>{" "}
+                      is scheduled to move into this room on{" "}
+                      {upcoming.start}. Listing it will advertise it as open.
+                    </p>
+                    {!occupied && (
+                      <label className="flex items-center gap-2 text-sm text-ink">
+                        <input
+                          type="checkbox"
+                          checked={cancelMoveIn}
+                          onChange={(e) => setCancelMoveIn(e.target.checked)}
+                          className="h-4 w-4 rounded border-stone accent-accent"
+                        />
+                        Cancel the move-in and remove the reservation
+                      </label>
+                    )}
                   </div>
                 )}
 
@@ -260,7 +312,11 @@ export function AddInventory({
                     ? "Working…"
                     : occupied
                       ? "Move out & list"
-                      : "Add to inventory"}
+                      : upcoming && cancelMoveIn
+                        ? "Cancel move-in & list"
+                        : upcoming
+                          ? "List anyway"
+                          : "Add to inventory"}
                 </button>
               )}
             </div>

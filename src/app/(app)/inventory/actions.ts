@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
+import { one } from "@/lib/relations";
 import type { Database } from "@/lib/supabase/types";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 import {
@@ -260,18 +261,51 @@ export async function setRoomServicesFee(
  * occupied without an active tenancy) into the inventory by marking it
  * available. Optionally schedule a future availability date.
  */
+export type MakeAvailableResult =
+  | { ok: true }
+  | { error: string }
+  | { upcoming: { tenantName: string | null; startDate: string } };
+
 export async function makeRoomAvailable(
   roomId: string,
   availableFrom: string | null,
-): Promise<{ ok: true } | { error: string }> {
+  opts: { listAnyway?: boolean } = {},
+): Promise<MakeAvailableResult> {
   const value =
     availableFrom && availableFrom.trim() ? availableFrom.trim() : null;
   const supabase = await createClient();
+
+  // A room reserved by an upcoming move-in must not be silently relisted —
+  // listing overwrites its `reserved` status and advertises a promised room.
+  // Callers get the reservation back and pass listAnyway once the operator
+  // has confirmed (the Add Inventory dialog also offers cancelling the
+  // move-in via cancelUpcomingTenancy instead).
+  const { data: upcoming } = await supabase
+    .from("tenancies")
+    .select("start_date, tenants(full_name)")
+    .eq("room_id", roomId)
+    .eq("status", "upcoming")
+    .maybeSingle();
+  if (upcoming && !opts.listAnyway) {
+    return {
+      upcoming: {
+        tenantName: one(upcoming.tenants)?.full_name ?? null,
+        startDate: upcoming.start_date,
+      },
+    };
+  }
+
   const { error } = await supabase
     .from("rooms")
     .update({ status: "available", available_from: value })
     .eq("id", roomId);
   if (error) return { error: error.message };
+
+  // A fresh listing starts with no ads: this dialog only offers rooms that
+  // aren't currently listed, so any room_ads rows are leftovers from the
+  // previous vacancy cycle. Best-effort — stale ads never block the listing.
+  await supabase.from("room_ads").delete().eq("room_id", roomId);
+
   revalidatePath("/inventory");
   revalidatePath("/tenants/new");
   revalidatePath(`/inventory/${roomId}`);
