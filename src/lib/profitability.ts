@@ -8,7 +8,8 @@
  * unit's flat monthly figures, Amenity / Misc are yearly ÷ 12, and Utilities
  * come from uploaded bills (months without a bill fall back to the average
  * of same-bedroom units — flagged `estimated`). Cells are null outside the
- * unit's lease window and for months that haven't happened yet.
+ * unit's lease window, for months that haven't happened yet, and for months
+ * before PROFIT_DATA_START (no data was ever entered for them).
  */
 
 import { one } from "@/lib/relations";
@@ -18,6 +19,14 @@ export const PROFIT_MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
+
+/**
+ * The books start here (YYYY-MM). Months before this hold no input data, so
+ * every metric renders them as blank rather than misleading zeros/estimates.
+ */
+export const PROFIT_DATA_START = "2026-06";
+const START_YEAR = Number(PROFIT_DATA_START.slice(0, 4));
+const START_MONTH_IDX = Number(PROFIT_DATA_START.slice(5, 7)) - 1;
 
 export type ProfitCell = { value: number; estimated: boolean } | null;
 
@@ -91,6 +100,8 @@ export function profitUnitLabel(p: ProfitUnit): string {
 
 export type ProfitabilityData = {
   year: number;
+  /** First month index (0-11) that can hold data; 12 for pre-data years. */
+  firstMonthIdx: number;
   /** Last month index (0-11) that can hold data; -1 for future years. */
   lastMonthIdx: number;
   units: ProfitUnit[];
@@ -130,6 +141,9 @@ export async function loadProfitability(
       : year > currentYear
         ? -1
         : Number(todayIso.slice(5, 7)) - 1;
+  const firstMonthIdx =
+    year > START_YEAR ? 0 : year === START_YEAR ? START_MONTH_IDX : 12;
+  const inRange = (m: number) => m >= firstMonthIdx && m <= lastMonthIdx;
 
   const [
     { data: properties },
@@ -224,7 +238,7 @@ export async function loadProfitability(
   const flatMonthly =
     (p: ProfitUnit, amount: number | null) =>
     (m: number): ProfitCell =>
-      amount === null || !activeIn(p, m) || m > lastMonthIdx
+      amount === null || !activeIn(p, m) || !inRange(m)
         ? null
         : { value: Number(amount), estimated: false };
 
@@ -233,12 +247,12 @@ export async function loadProfitability(
     (p: ProfitUnit) => (m: number) => ProfitCell
   > = {
     collection: (p) => (m) =>
-      m > lastMonthIdx
+      !inRange(m)
         ? null
         : { value: collection.get(p.id)?.[m] ?? 0, estimated: false },
     rent_paid: (p) => flatMonthly(p, p.unit_rent),
     utilities: (p) => (m) => {
-      if (m > lastMonthIdx || !activeIn(p, m)) return null;
+      if (!inRange(m) || !activeIn(p, m)) return null;
       const actual = utilityActual.get(p.id)?.[m];
       if (actual !== undefined) return { value: actual, estimated: false };
       const est = estimateFor(p, m);
@@ -258,7 +272,7 @@ export async function loadProfitability(
       ),
     insurance: (p) => flatMonthly(p, p.insurance_monthly),
     profit: (p) => (m) => {
-      if (m > lastMonthIdx) return null;
+      if (!inRange(m)) return null;
       const active = activeIn(p, m);
       const revenue = collection.get(p.id)?.[m] ?? 0;
       if (!active && revenue === 0) return null;
@@ -280,7 +294,7 @@ export async function loadProfitability(
 
   const monthlyTotalOf = (metric: ProfitMetric): (number | null)[] =>
     PROFIT_MONTHS.map((_, m) => {
-      if (m > lastMonthIdx) return null;
+      if (!inRange(m)) return null;
       let sum = 0;
       for (const p of units) {
         const c = cellBuilders[metric](p)(m);
@@ -298,7 +312,7 @@ export async function loadProfitability(
     return { ...e, monthly, yearly: yearlyOf(monthly) };
   });
   const monthlyExpenses: (number | null)[] = PROFIT_MONTHS.map((_, m) =>
-    m > lastMonthIdx
+    !inRange(m)
       ? null
       : expenseSeries.reduce((s, e) => s + (e.monthly[m] ?? 0), 0),
   );
@@ -319,6 +333,7 @@ export async function loadProfitability(
 
   return {
     year,
+    firstMonthIdx,
     lastMonthIdx,
     units,
     lineItems,

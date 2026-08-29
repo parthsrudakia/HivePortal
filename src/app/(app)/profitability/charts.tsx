@@ -55,10 +55,12 @@ function barPath(x: number, w: number, yBase: number, yEnd: number): string {
 }
 
 function Frame({
+  months,
   yTicks,
   yFor,
   children,
 }: {
+  months: string[];
   yTicks: number[];
   yFor: (v: number) => number;
   children: React.ReactNode;
@@ -91,10 +93,10 @@ function Frame({
           </text>
         </g>
       ))}
-      {MONTHS.map((mo, m) => (
+      {months.map((mo, m) => (
         <text
           key={mo}
-          x={PAD.left + (m + 0.5) * (PLOT_W / 12)}
+          x={PAD.left + (m + 0.5) * (PLOT_W / months.length)}
           y={H - 8}
           textAnchor="middle"
           fontSize="11"
@@ -108,21 +110,27 @@ function Frame({
   );
 }
 
-/** Grouped monthly bars: revenue vs expenses. */
+/** Grouped monthly bars: revenue vs expenses. `firstMonth` drops the leading
+ *  months entirely (the books start mid-year — see PROFIT_DATA_START). */
 export function RevenueExpenseChart({
   revenue,
   expenses,
+  firstMonth = 0,
 }: {
   revenue: (number | null)[];
   expenses: (number | null)[];
+  firstMonth?: number;
 }) {
-  const max = Math.max(1, ...revenue.map((v) => v ?? 0), ...expenses.map((v) => v ?? 0));
+  const months = MONTHS.slice(firstMonth);
+  const rev = revenue.slice(firstMonth);
+  const exp = expenses.slice(firstMonth);
+  const max = Math.max(1, ...rev.map((v) => v ?? 0), ...exp.map((v) => v ?? 0));
   const step = niceStep(max, 4);
   const top = Math.ceil(max / step) * step;
   const yFor = (v: number) => PAD.top + PLOT_H * (1 - v / top);
   const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
 
-  const slot = PLOT_W / 12;
+  const slot = PLOT_W / months.length;
   const barW = Math.min(16, (slot - 10) / 2);
 
   return (
@@ -137,21 +145,21 @@ export function RevenueExpenseChart({
           Expenses
         </span>
       </div>
-      <Frame yTicks={ticks} yFor={yFor}>
-        {MONTHS.map((mo, m) => {
+      <Frame months={months} yTicks={ticks} yFor={yFor}>
+        {months.map((mo, m) => {
           const cx = PAD.left + (m + 0.5) * slot;
-          const rev = revenue[m];
-          const exp = expenses[m];
+          const r = rev[m];
+          const e = exp[m];
           return (
             <g key={mo}>
-              {rev !== null && (
-                <path d={barPath(cx - barW - 1, barW, yFor(0), yFor(rev))} fill={REVENUE}>
-                  <title>{`${mo}: revenue ${fmtFull(rev)}`}</title>
+              {r !== null && (
+                <path d={barPath(cx - barW - 1, barW, yFor(0), yFor(r))} fill={REVENUE}>
+                  <title>{`${mo}: revenue ${fmtFull(r)}`}</title>
                 </path>
               )}
-              {exp !== null && (
-                <path d={barPath(cx + 1, barW, yFor(0), yFor(exp))} fill={EXPENSE}>
-                  <title>{`${mo}: expenses ${fmtFull(exp)}`}</title>
+              {e !== null && (
+                <path d={barPath(cx + 1, barW, yFor(0), yFor(e))} fill={EXPENSE}>
+                  <title>{`${mo}: expenses ${fmtFull(e)}`}</title>
                 </path>
               )}
             </g>
@@ -168,11 +176,19 @@ const CUMULATIVE = "#1a1a18";
  * Net profit by month — bars anchored at zero (green up / red down) with a
  * cumulative year-to-date line over them. Same dollar axis for both.
  */
-export function NetProfitChart({ net }: { net: (number | null)[] }) {
+export function NetProfitChart({
+  net,
+  firstMonth = 0,
+}: {
+  net: (number | null)[];
+  firstMonth?: number;
+}) {
+  const months = MONTHS.slice(firstMonth);
+  const vis = net.slice(firstMonth);
   // Running YTD total, only through months that have data.
   const cumulative: (number | null)[] = [];
   let running = 0;
-  for (const v of net) {
+  for (const v of vis) {
     if (v === null) {
       cumulative.push(null);
       continue;
@@ -182,7 +198,7 @@ export function NetProfitChart({ net }: { net: (number | null)[] }) {
   }
 
   const values = [
-    ...net.filter((v): v is number => v !== null),
+    ...vis.filter((v): v is number => v !== null),
     ...cumulative.filter((v): v is number => v !== null),
   ];
   const max = Math.max(1, ...values, 0);
@@ -195,7 +211,7 @@ export function NetProfitChart({ net }: { net: (number | null)[] }) {
   const ticks: number[] = [];
   for (let t = bottom; t <= top; t += step) ticks.push(t);
 
-  const slot = PLOT_W / 12;
+  const slot = PLOT_W / months.length;
   const barW = Math.min(24, slot - 14);
   const xCenter = (m: number) => PAD.left + (m + 0.5) * slot;
 
@@ -221,9 +237,9 @@ export function NetProfitChart({ net }: { net: (number | null)[] }) {
           Cumulative (YTD)
         </span>
       </div>
-      <Frame yTicks={ticks} yFor={yFor}>
-        {MONTHS.map((mo, m) => {
-          const v = net[m];
+      <Frame months={months} yTicks={ticks} yFor={yFor}>
+        {months.map((mo, m) => {
+          const v = vis[m];
           if (v === null) return null;
           const x = xCenter(m) - barW / 2;
           return (
@@ -256,7 +272,7 @@ export function NetProfitChart({ net }: { net: (number | null)[] }) {
             stroke="#fefdfb"
             strokeWidth="2"
           >
-            <title>{`${MONTHS[p.m]}: cumulative ${fmtFull(p.v)}`}</title>
+            <title>{`${months[p.m]}: cumulative ${fmtFull(p.v)}`}</title>
           </circle>
         ))}
       </Frame>

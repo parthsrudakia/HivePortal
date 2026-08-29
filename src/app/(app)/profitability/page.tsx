@@ -8,6 +8,7 @@ import {
   loadProfitability,
   profitUnitLabel,
   PROFIT_MONTHS,
+  PROFIT_DATA_START,
   type ProfitCell,
 } from "@/lib/profitability";
 import { deleteLineItem } from "./actions";
@@ -64,8 +65,12 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const today = todayISO();
   const currentYear = Number(today.slice(0, 4));
+  // The books start in PROFIT_DATA_START's year — past years stay browsable
+  // forever (every figure is computed from dated rows), but there is nothing
+  // before it to navigate to.
+  const dataStartYear = Number(PROFIT_DATA_START.slice(0, 4));
   const year = /^\d{4}$/.test(sp.year ?? "")
-    ? Number(sp.year)
+    ? Math.max(dataStartYear, Number(sp.year))
     : currentYear;
   const view: ViewKey = (VIEWS.find((v) => v.key === sp.view)?.key ??
     "summary") as ViewKey;
@@ -119,6 +124,18 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
   const grandTotal = grid.reduce((s, r) => s + (r.total ?? 0), 0);
   const anyEstimates = grid.some((r) => r.cells.some((c) => c?.estimated));
 
+  // The books start at PROFIT_DATA_START — in the start year the empty
+  // leading months are dropped from the grid and charts entirely (earlier
+  // years keep the full grid of dashes).
+  const visibleFrom = data.firstMonthIdx <= 11 ? data.firstMonthIdx : 0;
+  const monthIdxs = MONTHS.map((_, i) => i).filter((i) => i >= visibleFrom);
+  const quarters = [1, 2, 3, 4]
+    .map((q) => ({
+      q,
+      span: monthIdxs.filter((i) => Math.floor(i / 3) === q - 1).length,
+    }))
+    .filter((x) => x.span > 0);
+
   const isProfit = view === "profit";
   const valueCls = (c: NonNullable<Cell>) =>
     c.estimated
@@ -139,13 +156,19 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/profitability?year=${year - 1}&view=${view}`}
-            aria-label="Previous year"
-            className="rounded-full border border-stone bg-white px-3 py-1.5 text-sm text-ink hover:bg-warm"
-          >
-            ←
-          </Link>
+          {year > dataStartYear ? (
+            <Link
+              href={`/profitability?year=${year - 1}&view=${view}`}
+              aria-label="Previous year"
+              className="rounded-full border border-stone bg-white px-3 py-1.5 text-sm text-ink hover:bg-warm"
+            >
+              ←
+            </Link>
+          ) : (
+            <span className="rounded-full border border-stone/40 bg-white px-3 py-1.5 text-sm text-muted/50">
+              ←
+            </span>
+          )}
           <span className="min-w-16 text-center text-sm font-medium text-ink">
             {year}
           </span>
@@ -305,6 +328,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                   <RevenueExpenseChart
                     revenue={monthlyRevenue}
                     expenses={monthlyExpenses}
+                    firstMonth={visibleFrom}
                   />
                 </div>
               </div>
@@ -313,7 +337,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                   Net profit by month
                 </h2>
                 <div className="mt-4">
-                  <NetProfitChart net={monthlyNet} />
+                  <NetProfitChart net={monthlyNet} firstMonth={visibleFrom} />
                 </div>
               </div>
             </div>
@@ -328,8 +352,8 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
           <thead className="text-xs uppercase tracking-wide text-muted">
             <tr className="bg-warm/60">
               <th className="rounded-tl-2xl px-4 py-2" />
-              {[1, 2, 3, 4].map((q) => (
-                <th key={q} colSpan={3} className="px-3 py-2 text-center font-medium">
+              {quarters.map(({ q, span }) => (
+                <th key={q} colSpan={span} className="px-3 py-2 text-center font-medium">
                   Q{q} {year}
                 </th>
               ))}
@@ -339,9 +363,9 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
               <th className="sticky left-0 z-10 bg-warm px-4 py-2.5 text-left font-medium">
                 Unit
               </th>
-              {MONTHS.map((mo) => (
-                <th key={mo} className="px-3 py-2.5 text-right font-medium">
-                  {mo}
+              {monthIdxs.map((i) => (
+                <th key={i} className="px-3 py-2.5 text-right font-medium">
+                  {MONTHS[i]}
                 </th>
               ))}
               <th className="px-4 py-2.5 text-right font-semibold">Total</th>
@@ -359,7 +383,9 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                     {r.label}
                   </Link>
                 </td>
-                {r.cells.map((c, m) => (
+                {monthIdxs.map((m) => {
+                  const c = r.cells[m];
+                  return (
                   <td
                     key={m}
                     className="px-3 py-3 text-right tabular-nums"
@@ -374,7 +400,8 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                       </span>
                     )}
                   </td>
-                ))}
+                  );
+                })}
                 <td
                   className={`px-4 py-3 text-right font-semibold tabular-nums ${
                     r.total !== null && isProfit
@@ -390,7 +417,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
             ))}
             {grid.length === 0 && (
               <tr>
-                <td colSpan={14} className="px-4 py-12 text-center text-muted">
+                <td colSpan={monthIdxs.length + 2} className="px-4 py-12 text-center text-muted">
                   No properties yet.
                 </td>
               </tr>
@@ -402,7 +429,9 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                 <td className="sticky left-0 z-10 rounded-bl-2xl bg-warm/40 px-4 py-3 text-ink backdrop-blur">
                   Total
                 </td>
-                {columnTotals.map((t, m) => (
+                {monthIdxs.map((m) => {
+                  const t = columnTotals[m];
+                  return (
                   <td
                     key={m}
                     className={`px-3 py-3 text-right tabular-nums ${
@@ -415,7 +444,8 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                   >
                     {t !== null ? fmtMoney(t) : ""}
                   </td>
-                ))}
+                  );
+                })}
                 <td
                   className={`rounded-br-2xl px-4 py-3 text-right tabular-nums ${
                     isProfit
