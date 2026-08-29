@@ -19,6 +19,7 @@ type RoomRow = {
   status: "available" | "occupied" | "reserved" | "maintenance";
   available_from: string | null;
   properties: PropertyRel | PropertyRel[] | null;
+  tenancies: { status: string }[];
 };
 
 type PageProps = {
@@ -74,28 +75,36 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
   const [rooms, { data: pendingData }] = await Promise.all([
     fetchAssignableRooms(supabase, { includeRoomId: defaultRoomId }),
     // Listings the admin pulled off Inventory ("delete listing") that are
-    // waiting to be filled with a tenant.
+    // waiting to be filled with a tenant. A room whose tenant is already in
+    // place (active/upcoming tenancy) is filled even if the flag went stale.
     supabase
       .from("rooms")
       .select(
-        "id, room_number, total_rent, properties(building_name, street_address, unit_number)",
+        "id, room_number, total_rent, properties(building_name, street_address, unit_number), tenancies(status)",
       )
       .eq("pending_tenant", true)
       .order("room_number", { ascending: true })
       .returns<RoomRow[]>(),
   ]);
 
-  const pending = (pendingData ?? []).map((r) => {
-    const p = one(r.properties);
-    const unitTitle = p
-      ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-      : "—";
-    return {
-      id: r.id,
-      label: `${unitTitle} · ${r.room_number ?? "Room"}`,
-      total_rent: r.total_rent,
-    };
-  });
+  const pending = (pendingData ?? [])
+    .filter(
+      (r) =>
+        !r.tenancies.some(
+          (tn) => tn.status === "active" || tn.status === "upcoming",
+        ),
+    )
+    .map((r) => {
+      const p = one(r.properties);
+      const unitTitle = p
+        ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
+        : "—";
+      return {
+        id: r.id,
+        label: `${unitTitle} · ${r.room_number ?? "Room"}`,
+        total_rent: r.total_rent,
+      };
+    });
 
   return (
     <div className="mx-auto w-full max-w-3xl">
