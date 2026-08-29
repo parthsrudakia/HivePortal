@@ -33,6 +33,7 @@
   --chart-grid: #e8e3db;
   --chart-axis: #8a8378;
   --chart-label: #1a1a18;
+  --chart-halo: #fefdfb; /* dot outline — matches the card surface */
 }
 
 html,
@@ -67,6 +68,7 @@ html.dark {
   --chart-grid: #35322c;
   --chart-axis: #a8a196;
   --chart-label: #f2efe8;
+  --chart-halo: #211f1b; /* dot outline — matches the dark card surface */
 }
 
 /* Inherited text: the body sets color:var(--color-ink), which stays near-black

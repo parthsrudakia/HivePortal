@@ -7,8 +7,8 @@ const REVENUE = "#b87d09";
 const EXPENSE = "#3f5f9e";
 const POSITIVE = "#166534";
 const NEGATIVE = "#b91c1c";
-const GRID = "#e8e3db";
-const AXIS_TEXT = "#8a8378";
+const GRID = "var(--chart-grid)";
+const AXIS_TEXT = "var(--chart-axis)";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -170,7 +170,7 @@ export function RevenueExpenseChart({
   );
 }
 
-const CUMULATIVE = "#1a1a18";
+const CUMULATIVE = "var(--chart-label)";
 
 /**
  * Net profit by month — bars anchored at zero (green up / red down) with a
@@ -269,7 +269,7 @@ export function NetProfitChart({
             cy={yFor(p.v)}
             r="3.5"
             fill={CUMULATIVE}
-            stroke="#fefdfb"
+            stroke="var(--chart-halo)"
             strokeWidth="2"
           >
             <title>{`${months[p.m]}: cumulative ${fmtFull(p.v)}`}</title>

@@ -143,7 +143,7 @@ export function MonthlyChart({ data }: { data: Point[] }) {
               cy={p.y}
               r={hover === i ? 5 : 3.5}
               fill={LINE}
-              stroke="#fefdfb"
+              stroke="var(--chart-halo)"
               strokeWidth="2"
             />
           ))}
