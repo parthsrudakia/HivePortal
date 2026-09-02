@@ -12,7 +12,7 @@ export async function listInventory() {
     .from("rooms")
     .select(
       `id, room_number, total_rent, available_from, status, listing_action,
-       has_private_bathroom, has_ac,
+       has_private_bathroom, has_ac, facebook_ads,
        marketing_description, photos_url,
        properties(id, building_name, street_address, unit_number, neighborhood)`,
     )
@@ -44,6 +44,7 @@ export async function listInventory() {
       available_from: r.available_from,
       status: r.status,
       listing_action: r.listing_action,
+      facebook_ads: r.facebook_ads,
       ads: adsByRoom.get(r.id) ?? [],
       has_private_bathroom: r.has_private_bathroom,
       has_ac: r.has_ac,
@@ -68,6 +69,16 @@ export async function setListingAction(args: {
   });
   if (error) throw new Error(error.message);
   return { ok: true };
+}
+
+export async function setFacebookAds(args: { room_id: string; on: boolean }) {
+  const supabase = admin();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ facebook_ads: args.on })
+    .eq("id", args.room_id);
+  if (error) throw new Error(error.message);
+  return { ok: true, facebook_ads: args.on };
 }
 
 export async function updateRoomRent(args: {
@@ -128,6 +139,18 @@ export const roomsTools = [
       ]),
     }),
     run: async (args) => JSON.stringify(await setListingAction(args)),
+  }),
+  betaZodTool({
+    name: "set_facebook_ads",
+    description:
+      "Turn a listing's Facebook-ads flag on or off (whether FB ads are " +
+      "currently running for that room). It resets to off whenever a room " +
+      "re-enters inventory.",
+    inputSchema: z.object({
+      room_id: z.string(),
+      on: z.boolean(),
+    }),
+    run: async (args) => JSON.stringify(await setFacebookAds(args)),
   }),
   betaZodTool({
     name: "set_room_status",

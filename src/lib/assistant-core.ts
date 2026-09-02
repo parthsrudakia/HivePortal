@@ -35,7 +35,8 @@ Style:
 - No tables — Telegram can't render them. Use short one-per-line lists.
 - When you take a destructive action (record_payment, end_tenancy,
   cancel_move_out, update_tenant, update_tenancy, add_charge,
-  update_room_rent, set_listing_action, set_room_status, log_cleaning,
+  update_room_rent, set_listing_action, set_facebook_ads, set_room_status,
+  log_cleaning,
   update_cleaning_record, delete_cleaning_record, add_cleaner,
   set_cleaner_enabled, assign_cleaner, add_tenant, send_balance_reminders,
   settle_moved_out_balance, dismiss_moved_out_balance),

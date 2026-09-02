@@ -223,12 +223,12 @@ From the tally you can dismiss requests (the link then behaves like a dead URL),
     title: "The Telegram bot & APIs",
     body: `
 ### The Telegram ops bot
-Private to the operators (an explicit Telegram user-ID allowlist, plus a webhook secret; unknown users are turned away and logged). It runs on Claude with the full portal toolset — 41 tools across properties, inventory, tenants, tenancies, payments and charges, agreements (it can send one), balance reminders (it must ask which channel and confirm before sending), cleaning management, utility bills, stored credentials, profitability/collections analytics, and a read-only SQL query tool that physically cannot write.
+Private to the operators (an explicit Telegram user-ID allowlist, plus a webhook secret; unknown users are turned away and logged). It runs on Claude with the full portal toolset — 44 tools across properties, inventory, tenants, tenancies, payments and charges, agreements (it can send one), balance reminders (it must ask which channel and confirm before sending), cleaning management, utility bills, stored credentials, profitability/collections analytics, and a read-only SQL query tool that physically cannot write.
 
 Trust guards: the bot cannot claim an email was sent unless a send tool actually succeeded that turn, can't cite record IDs it didn't look up, and every tool call is logged with its real result before the model can summarize it. Credentials fetched via the bot are redacted from the logs. Conversation memory is per-chat (last ~20 turns; \`/reset\` clears it), and the full diagnostic log lives in Settings → Telegram bot log. The same assistant, with the same tools and guards, is available in-portal to the operators as the chat widget.
 
 ### The two read-only APIs
-- **Inventory API** — bearer-token protected; returns currently-listable rooms (same rule as the Inventory page) with rent breakdown, amenities, photos link, and description — deliberately **no tenant data, ads, or listing actions**. Used by internal scripts and tooling.
+- **Inventory API** — bearer-token protected; returns currently-listable rooms (same rule as the Inventory page) with rent breakdown, amenities, photos link, description, and the Facebook-ads on/off flag — deliberately **no tenant data, ads, or listing actions**. Used by internal scripts and tooling.
 - **Tenants API** — a **separate** bearer token because it returns PII (name/email/phone/unit/room of active tenants, with phone lookup matching on the last 10 digits). Built for the automated text-responder so an inbound SMS can be resolved to a tenant.
 
 Both are documented on the public /developers page (with fictional example data). When a route changes, the docs components must be updated in the same change.
