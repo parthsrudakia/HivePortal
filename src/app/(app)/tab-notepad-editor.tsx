@@ -33,7 +33,9 @@ export function TabNotepadEditor({
   // renders collapsed, so there's nothing to mismatch).
   useEffect(() => {
     try {
-      if (localStorage.getItem(storageKey(tab)) === "1") setOpen(true);
+      if (localStorage.getItem(storageKey(tab)) === "1")
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of the persisted preference
+        setOpen(true);
     } catch {
       // storage unavailable — stay collapsed
     }
