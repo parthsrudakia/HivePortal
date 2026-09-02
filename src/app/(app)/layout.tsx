@@ -5,6 +5,7 @@ import { MobileNav } from "./mobile-nav";
 import { CommandPalette } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
 import { NavIcon, type NavIconName } from "./nav-icons";
+import { Sidebar } from "./sidebar";
 import {
   AssistantHeaderLink,
   AssistantSlot,
@@ -93,10 +94,11 @@ export default function AppLayout({
         }
       />
       <CommandPalette />
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start overflow-hidden border-r border-stone/60 bg-white/60 px-4 py-8 md:flex">
+      <Sidebar>
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-2 px-2 text-2xl tracking-tight text-ink"
+          title="Hive Portal"
+          className="sidebar-item flex shrink-0 items-center gap-2 px-2 text-2xl tracking-tight text-ink"
         >
           <svg
             width="24"
@@ -114,7 +116,7 @@ export default function AppLayout({
             <rect x="28" y="74" width="24" height="6" rx="3" fill="currentColor" />
             <circle cx="40" cy="88" r="4" fill="currentColor" />
           </svg>
-          <span className="font-serif font-bold">
+          <span className="sidebar-label min-w-0 truncate font-serif font-bold">
             Hive <span className="font-display text-accent-text">Portal</span>
           </span>
         </Link>
@@ -123,20 +125,25 @@ export default function AppLayout({
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              title={item.label}
+              className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
             >
               <NavIcon name={item.icon} className="shrink-0 text-accent" />
-              {item.label}
+              <span className="min-w-0 truncate sidebar-label">
+                {item.label}
+              </span>
               {item.href === "/projects" && (
-                <Suspense>
-                  <ProjectsBadge className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white" />
-                </Suspense>
+                <span className="sidebar-label ml-auto">
+                  <Suspense>
+                    <ProjectsBadge className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white" />
+                  </Suspense>
+                </span>
               )}
             </Link>
           ))}
           <Suspense>
             <ProfitabilityNavLink
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
               iconClassName="shrink-0 text-accent"
             />
           </Suspense>
@@ -145,7 +152,7 @@ export default function AppLayout({
         <div className="mt-3 shrink-0 border-t border-stone/40 pt-3">
           <ThemeToggle />
         </div>
-      </aside>
+      </Sidebar>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-stone/60 bg-cream/90 px-10 backdrop-blur md:flex">

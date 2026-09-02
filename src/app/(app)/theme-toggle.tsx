@@ -35,7 +35,8 @@ export function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-pressed={dark}
-      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink transition hover:bg-warm"
+      title={dark ? "Light mode" : "Dark mode"}
+      className="sidebar-item flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink transition hover:bg-warm"
     >
       {dark ? (
         // Sun — switch to light
@@ -71,7 +72,9 @@ export function ThemeToggle() {
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
         </svg>
       )}
-      {dark ? "Light mode" : "Dark mode"}
+      <span className="sidebar-label min-w-0 truncate">
+        {dark ? "Light mode" : "Dark mode"}
+      </span>
     </button>
   );
 }

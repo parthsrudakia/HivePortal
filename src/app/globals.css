@@ -391,3 +391,20 @@ button:not(:disabled),
   background-size: 1rem 1rem;
   padding-right: 2.25rem;
 }
+
+/* Resizable desktop sidebar (sidebar.tsx). Dragged narrower than the label
+   threshold it becomes an icon-only rail: the aside carries [data-collapsed],
+   labels and badges (.sidebar-label) hide, and each row (.sidebar-item)
+   centers its icon within the slimmer padding. */
+aside[data-collapsed] {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+aside[data-collapsed] .sidebar-label {
+  display: none;
+}
+aside[data-collapsed] .sidebar-item {
+  justify-content: center;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
