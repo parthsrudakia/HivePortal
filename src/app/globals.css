@@ -244,6 +244,25 @@ html.dark .border-amber-300 {
   border-color: rgba(251, 191, 36, 0.3);
 }
 
+/* Listing-action pills (inventory). Their light palette (gray/yellow/orange/
+   purple 100-bg + 700/900-text + 300-border) needs the same dark treatment as
+   the chips above — without these, "No action" renders dark-on-dark. */
+html.dark .text-gray-700 {
+  color: #c9c4ba;
+}
+html.dark .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+html.dark .border-yellow-300 {
+  border-color: rgba(250, 204, 21, 0.3);
+}
+html.dark .border-orange-300 {
+  border-color: rgba(251, 146, 60, 0.3);
+}
+html.dark .border-purple-300 {
+  border-color: rgba(192, 132, 252, 0.3);
+}
+
 /* Italic display accent (e.g. *Vacancy*) — bold to match the page titles. */
 .font-display {
   font-family: var(--font-serif);
