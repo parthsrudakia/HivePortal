@@ -75,6 +75,8 @@ export async function applyMoveOut(
       status: hasMovedOut ? "available" : "occupied",
       available_from: addDaysISO(move_out_date, 1),
       listing_action: "no_action",
+      // A new vacancy cycle starts with Facebook ads off (like room_ads below).
+      ...(freshListing ? { facebook_ads: false } : {}),
       ...rentPatch,
       },
     );

@@ -1467,6 +1467,7 @@ export type Database = {
           base_rent: number | null
           bundle_fee: number | null
           created_at: string
+          facebook_ads: boolean
           has_ac: boolean
           has_private_bathroom: boolean
           id: string
@@ -1489,6 +1490,7 @@ export type Database = {
           base_rent?: number | null
           bundle_fee?: number | null
           created_at?: string
+          facebook_ads?: boolean
           has_ac?: boolean
           has_private_bathroom?: boolean
           id?: string
@@ -1511,6 +1513,7 @@ export type Database = {
           base_rent?: number | null
           bundle_fee?: number | null
           created_at?: string
+          facebook_ads?: boolean
           has_ac?: boolean
           has_private_bathroom?: boolean
           id?: string

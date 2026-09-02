@@ -63,6 +63,7 @@ export type RoomRow = {
   photos_url: string | null;
   has_private_bathroom: boolean;
   has_ac: boolean;
+  facebook_ads: boolean;
   properties: PropertyRel | PropertyRel[] | null;
 };
 
@@ -70,7 +71,7 @@ export type RoomRow = {
 // rooms of retired (archived) properties must never be served by this API.
 export const ROOM_SELECT = `id, room_number, base_rent, bundle_fee, total_rent,
   available_from, status, marketing_description, photos_url,
-  has_private_bathroom, has_ac,
+  has_private_bathroom, has_ac, facebook_ads,
   properties!inner(id, building_name, street_address, unit_number, neighborhood,
              unit_amenities, building_amenities)`;
 
@@ -113,5 +114,6 @@ export function serializeRoom(r: RoomRow) {
     },
     photos_url: r.photos_url,
     marketing_description: r.marketing_description,
+    facebook_ads: r.facebook_ads,
   };
 }

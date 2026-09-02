@@ -43,6 +43,7 @@ type Row = {
   photos_url: string | null;
   has_private_bathroom: boolean;
   has_ac: boolean;
+  facebook_ads: boolean;
   listing_action: Action;
   ads: { url: string; posted_by: string | null }[];
   properties: PropertyRel | PropertyRel[] | null;
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
     .from("rooms")
     .select(
       `id, room_number, status, available_from, base_rent, bundle_fee, total_rent,
-       photos_url, has_private_bathroom, has_ac, listing_action,
+       photos_url, has_private_bathroom, has_ac, facebook_ads, listing_action,
        properties(building_name, street_address, unit_number, neighborhood,
                   unit_amenities, building_amenities),
        tenancies(status, start_date, move_out_date, tenants(full_name))`,
@@ -135,6 +136,7 @@ export async function GET(request: Request) {
     { header: "Listing action", key: "listing_action", width: 16 },
     { header: "Ads", key: "ad", width: 40 },
     { header: "Ad Posted", key: "ad_posted", width: 24 },
+    { header: "FB Ads", key: "facebook_ads", width: 10 },
   ];
   ws.getRow(1).font = { bold: true };
 
@@ -175,6 +177,7 @@ export async function GET(request: Request) {
       listing_action: ACTION_LABELS[r.listing_action] ?? r.listing_action,
       ad: adUrls.length ? adUrls.join("\n") : "None",
       ad_posted: adPosters.join(", "),
+      facebook_ads: r.facebook_ads ? "On" : "Off",
     });
     if (r.photos_url) row.getCell("photos").font = LINK_FONT;
     if (adUrls.length > 1) row.getCell("ad").alignment = { wrapText: true };

@@ -61,7 +61,8 @@ export function InventoryApiDocs() {
         "building": ["Elevator"]
       },
       "photos_url": "https://drive.google.com/...",
-      "marketing_description": null
+      "marketing_description": null,
+      "facebook_ads": false
     }
   ]
 }`}</CodeBlock>
@@ -125,6 +126,11 @@ function FieldNotes() {
       <li>
         <Code>amenities.unit</Code> / <Code>amenities.building</Code> — apply
         to every room in the unit or building.
+      </li>
+      <li>
+        <Code>facebook_ads</Code> — whether Facebook ads are currently running
+        for this listing. Starts <Code>false</Code> whenever a room enters
+        inventory.
       </li>
     </ul>
   );

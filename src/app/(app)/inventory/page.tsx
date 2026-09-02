@@ -10,6 +10,7 @@ import {
   InlineBaseRentEdit,
   InlineServicesEdit,
   InlineDateEdit,
+  InlineFacebookAdsToggle,
   InlinePhotosEdit,
 } from "./inline-edit";
 import { InlineAmenitiesEdit } from "./amenities-edit";
@@ -66,6 +67,7 @@ type Row = {
   photos_url: string | null;
   has_private_bathroom: boolean;
   has_ac: boolean;
+  facebook_ads: boolean;
   listing_action: Action;
   // Every ad posted for this room (see room_ads); attached after the query.
   ads: AdRow[];
@@ -150,7 +152,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       .select(
         `id, room_number, base_rent, bundle_fee, total_rent, available_from, status,
          marketing_description, photos_url, has_private_bathroom, has_ac,
-         listing_action,
+         facebook_ads, listing_action,
          properties!inner(id, building_name, street_address, unit_number, neighborhood,
                     unit_amenities, building_amenities),
          tenancies(id, status, start_date, move_out_date, tenants(id, full_name))`,
@@ -438,7 +440,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
 
       {filtered.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-          <table className="w-full min-w-[1400px] text-sm">
+          <table className="w-full min-w-[1450px] text-sm">
             <thead className="sticky top-0 z-10 bg-warm text-center text-xs uppercase tracking-wide text-muted">
               <tr className="divide-x divide-stone/40">
                 {/* One sticky cell for the whole frozen pane (row #, delete,
@@ -501,6 +503,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                 <th className="px-3 py-2 font-medium">Listing action</th>
                 <th className="px-3 py-2 font-medium">Ad</th>
                 <th className="px-3 py-2 font-medium">Ad Posted</th>
+                <th className="px-3 py-2 font-medium">FB Ads</th>
                 <th className="px-3 py-2 font-medium">Roommates</th>
                 <th className="px-3 py-2 font-medium" />
               </tr>
@@ -705,6 +708,9 @@ function InventoryRow({
             <span className="text-muted">-</span>
           );
         })()}
+      </td>
+      <td className="px-3 py-2.5 text-center align-middle">
+        <InlineFacebookAdsToggle roomId={room.id} on={room.facebook_ads} />
       </td>
       <td className="px-3 py-2.5 text-center align-middle">
         {p ? (

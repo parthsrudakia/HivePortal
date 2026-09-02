@@ -7,6 +7,7 @@ import {
   deleteRoomAd,
   setRoomAvailableFrom,
   setRoomBaseRent,
+  setRoomFacebookAds,
   setRoomPhotosUrl,
   setRoomServicesFee,
 } from "./actions";
@@ -273,6 +274,42 @@ export function InlineAdEdit({
         </button>
       )}
     </div>
+  );
+}
+
+// On/off pill for the "Facebook ads running?" flag on a listing.
+export function InlineFacebookAdsToggle({
+  roomId,
+  on,
+}: {
+  roomId: string;
+  on: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  const toggle = () => {
+    startTransition(async () => {
+      const res = await setRoomFacebookAds(roomId, !on);
+      if ("error" in res)
+        toast.error(`Couldn't update Facebook ads: ${res.error}`);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      role="switch"
+      aria-checked={on}
+      aria-label="Facebook ads"
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+        on
+          ? "border-accent bg-accent/15 text-accent-text hover:border-accent-dark"
+          : "border-stone bg-cream/60 text-muted hover:border-accent hover:text-ink"
+      } ${pending ? "opacity-60" : ""}`}
+    >
+      {on ? "On" : "Off"}
+    </button>
   );
 }
 

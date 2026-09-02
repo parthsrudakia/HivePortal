@@ -216,6 +216,22 @@ export async function setRoomAmenities(
   return { ok: true };
 }
 
+/** Toggle whether Facebook ads are running for a listing. */
+export async function setRoomFacebookAds(
+  roomId: string,
+  on: boolean,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ facebook_ads: on })
+    .eq("id", roomId);
+  if (error) return { error: error.message };
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/${roomId}`);
+  return { ok: true };
+}
+
 /** Edit base_rent inline from the inventory table. */
 export async function setRoomBaseRent(
   roomId: string,
@@ -295,9 +311,10 @@ export async function makeRoomAvailable(
     };
   }
 
+  // A fresh listing always starts with Facebook ads off.
   const { error } = await supabase
     .from("rooms")
-    .update({ status: "available", available_from: value })
+    .update({ status: "available", available_from: value, facebook_ads: false })
     .eq("id", roomId);
   if (error) return { error: error.message };
 
