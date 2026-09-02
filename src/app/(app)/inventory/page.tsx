@@ -439,7 +439,11 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       )}
 
       {filtered.length > 0 && (
-        <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+        <div className="mt-4 max-h-[calc(100vh-5.5rem)] overflow-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+          {/* This wrapper is also the vertical scroller (viewport-capped):
+              sticky sticks only within its scroll container, so the top-0
+              thead needs the vertical scrolling to happen here, not on the
+              page. */}
           <table className="w-full min-w-[1450px] text-sm">
             <thead className="sticky top-0 z-10 bg-warm text-center text-xs uppercase tracking-wide text-muted">
               <tr className="divide-x divide-stone/40">
