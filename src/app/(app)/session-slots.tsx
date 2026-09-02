@@ -78,7 +78,7 @@ export async function ProfitabilityNavLink({
   const user = await getSessionUser();
   if (!canViewProfitability(user?.email)) return null;
   return (
-    <Link href="/profitability" title="Profitability" className={className}>
+    <Link href="/profitability" data-label="Profitability" className={className}>
       <NavIcon name="profitability" className={iconClassName} />
       <span className="sidebar-label min-w-0 truncate">Profitability</span>
     </Link>

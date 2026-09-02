@@ -97,7 +97,7 @@ export default function AppLayout({
       <Sidebar>
         <Link
           href="/"
-          title="Hive Portal"
+          data-label="Hive Portal"
           className="sidebar-item flex shrink-0 items-center gap-2 px-2 text-2xl tracking-tight text-ink"
         >
           <svg
@@ -125,7 +125,7 @@ export default function AppLayout({
             <Link
               key={item.href}
               href={item.href}
-              title={item.label}
+              data-label={item.label}
               className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
             >
               <NavIcon name={item.icon} className="shrink-0 text-accent" />

@@ -35,7 +35,7 @@ export function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-pressed={dark}
-      title={dark ? "Light mode" : "Dark mode"}
+      data-label={dark ? "Light mode" : "Dark mode"}
       className="sidebar-item flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink transition hover:bg-warm"
     >
       {dark ? (
