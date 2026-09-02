@@ -408,15 +408,12 @@ aside[data-collapsed] .sidebar-item {
   padding-left: 0.5rem;
   padding-right: 0.5rem;
 }
-/* In the rail the icon is the whole affordance: honey on cream is under 3:1,
-   so render nav icons in ink, larger and heavier, and bring the honey back on
-   hover. The logo (first .sidebar-item) keeps its brand colour. */
-aside[data-collapsed] nav .sidebar-item svg {
-  width: 22px;
-  height: 22px;
-  stroke-width: 2.1;
+/* In the rail the icon is the whole affordance, and honey on cream is under
+   3:1 — so in light mode only, render collapsed nav icons in ink and bring
+   the honey back on hover. Dark mode keeps its honey icons untouched. */
+html:not(.dark) aside[data-collapsed] nav .sidebar-item svg {
   color: var(--color-ink);
 }
-aside[data-collapsed] nav .sidebar-item:hover svg {
+html:not(.dark) aside[data-collapsed] nav .sidebar-item:hover svg {
   color: var(--color-accent-text);
 }
