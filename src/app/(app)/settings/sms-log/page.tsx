@@ -4,6 +4,7 @@ import { SMS_TYPE_LABELS, type SmsType } from "@/lib/sms-log";
 import { isMaster, isOperator } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { ClearLogButton } from "../clear-log-button";
+import { LogFilters } from "../log-filters";
 import { clearSmsLog } from "../log-actions";
 
 export const dynamic = "force-dynamic";
@@ -78,20 +79,6 @@ export default async function SmsLogPage({ searchParams }: PageProps) {
   const { data, error } = await query;
   const rows = (data ?? []) as LogRow[];
 
-  const hrefWith = (next: { type?: string | null; status?: string | null }) => {
-    const t = next.type === undefined ? typeFilter : next.type;
-    const s = next.status === undefined ? statusFilter : next.status;
-    const params = new URLSearchParams();
-    if (t) params.set("type", t);
-    if (s) params.set("status", s);
-    const qs = params.toString();
-    return qs ? `/settings/sms-log?${qs}` : "/settings/sms-log";
-  };
-
-  const chip = (active: boolean) =>
-    `rounded-full px-3 py-1 text-xs font-medium transition ${
-      active ? "bg-ink text-white" : "border border-stone text-ink hover:bg-warm"
-    }`;
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -113,35 +100,17 @@ export default async function SmsLogPage({ searchParams }: PageProps) {
         {master && <ClearLogButton onClear={clearSmsLog} label="text log" />}
       </header>
 
-      <div className="mt-6 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-muted">For</span>
-          <Link href={hrefWith({ type: null })} className={chip(!typeFilter)}>
-            All
-          </Link>
-          {TYPES.map((t) => (
-            <Link key={t} href={hrefWith({ type: t })} className={chip(typeFilter === t)}>
-              {SMS_TYPE_LABELS[t]}
-            </Link>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-muted">
-            Status
-          </span>
-          <Link href={hrefWith({ status: null })} className={chip(!statusFilter)}>
-            All
-          </Link>
-          <Link href={hrefWith({ status: "sent" })} className={chip(statusFilter === "sent")}>
-            Sent
-          </Link>
-          <Link href={hrefWith({ status: "failed" })} className={chip(statusFilter === "failed")}>
-            Failed
-          </Link>
-          <Link href={hrefWith({ status: "skipped" })} className={chip(statusFilter === "skipped")}>
-            Skipped
-          </Link>
-        </div>
+      <div className="mt-6">
+        <LogFilters
+          typeOptions={TYPES.map((t) => ({ value: t, label: SMS_TYPE_LABELS[t] }))}
+          statusOptions={[
+            { value: "sent", label: "Sent" },
+            { value: "failed", label: "Failed" },
+            { value: "skipped", label: "Skipped" },
+          ]}
+          type={typeFilter}
+          status={statusFilter}
+        />
       </div>
 
       {error && (
