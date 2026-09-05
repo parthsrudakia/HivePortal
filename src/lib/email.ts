@@ -662,6 +662,89 @@ export async function sendUtilityChargeNoticeGmail(
   return result;
 }
 
+// ----------------------------------------------------------------------------
+// Other-charge notice: sent to a tenant the moment an ad-hoc "Other" charge
+// (penalty, replacement key, damage, ...) is posted to their ledger, asking
+// them to include it with a rent payment. Which month is the caller's call:
+// this month if nothing has been paid yet, otherwise next month. Branded via
+// Resend for non-NY; plain unbranded Gmail for NY.
+// ----------------------------------------------------------------------------
+
+export type OtherChargeNotice = {
+  amount: number;
+  /** The operator's description, shown verbatim. */
+  description: string;
+  /** ISO date the charge was posted for (YYYY-MM-DD). */
+  chargedOn: string;
+  unitLabel: string;
+  /** The rent month to include it with, e.g. "September" */
+  rentMonthLabel: string;
+};
+
+function otherChargeText(n: OtherChargeNotice, signoff: string): string {
+  const amount = `$${n.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `Hi,
+
+A charge of ${amount} has been added to your account for the following:
+
+  ${n.description} (${formatDate(n.chargedOn)} · ${n.unitLabel})
+
+Please include it with your ${n.rentMonthLabel} rent payment. If you have any questions about this charge, just reply to this email.
+
+${signoff}`;
+}
+
+export async function sendOtherChargeNotice(
+  to: string,
+  n: OtherChargeNotice,
+): Promise<SendResult> {
+  const amount = `$${n.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const subject = `New charge on your account — please include with your ${n.rentMonthLabel} rent`;
+  const text = otherChargeText(n, "Thanks");
+  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
+    <div style="height:6px; background:#d4920b;"></div>
+    <div style="padding:24px 20px;">
+      <h1 style="margin:0 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">New charge</h1>
+      <p style="margin:0; font-size:15px; color:#8a8378;">${escapeHtml(formatDate(n.chargedOn))} · ${escapeHtml(n.unitLabel)}</p>
+      <div style="margin:20px 0; background:#f5f2ed; border-radius:12px; padding:16px 18px;">
+        <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Amount</p>
+        <p style="margin:4px 0 0; font-size:24px; font-weight:600; color:#1a1a18;">${amount}</p>
+        <p style="margin:14px 0 0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">For</p>
+        <p style="margin:4px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${escapeHtml(n.description)}</p>
+      </div>
+      <p style="margin:0; font-size:15px; color:#1a1a18; line-height:1.5;">This has been added to your account &mdash; please include it with your <strong>${escapeHtml(n.rentMonthLabel)} rent payment</strong>.</p>
+      <p style="margin:16px 0 0; font-size:13px; color:#8a8378;">Questions about this charge? Reply to this email.</p>
+      <p style="margin:16px 0 0; font-size:15px; color:#1a1a18;">Thanks</p>
+    </div>
+  </div>
+</div>`;
+  return sendViaResend(
+    { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
+    { type: "other_charge", context: `${n.unitLabel} · ${n.description}` },
+  );
+}
+
+export async function sendOtherChargeNoticeGmail(
+  to: string,
+  n: OtherChargeNotice,
+): Promise<SendResult> {
+  const subject = `New charge on your account — please include with your ${n.rentMonthLabel} rent`;
+  const text = otherChargeText(n, "Thanks\nVinny");
+  const result = await sendGmailMessage({ to, subject, text });
+  await logEmail({
+    type: "other_charge",
+    recipient: to,
+    subject,
+    context: `${n.unitLabel} · ${n.description} · new_york_gmail`,
+    channel: "gmail",
+    status: result.ok ? "sent" : "failed",
+    error: result.ok ? null : result.error,
+    resend_id: result.ok ? result.id || null : null,
+  });
+  return result;
+}
+
 // Internal heads-up to the operator that a tenant's lease is ending soon (45
 // days out by default). Not sent to the tenant.
 export async function sendLeaseEndReminder(

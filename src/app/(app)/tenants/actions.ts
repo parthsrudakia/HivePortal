@@ -13,6 +13,8 @@ import {
   sendBalanceReminderOutlook,
   sendBalanceReminderGmail,
   balanceReminderText,
+  sendOtherChargeNotice,
+  sendOtherChargeNoticeGmail,
 } from "@/lib/email";
 import { sendSms } from "@/lib/sms";
 import { todayISO, addDaysISO, proratedMonthRemainder } from "@/lib/date";
@@ -1319,9 +1321,91 @@ export async function addCharge(
     });
   if (error) return { error: error.message };
 
+  // Tell the tenant. Best-effort: a failed send must never undo or block
+  // the charge, which is already on the ledger.
+  if (kind === "other" && note) {
+    try {
+      await notifyOtherCharge(supabase, tenancyId, amount, charged_on, note);
+    } catch (e) {
+      console.error("[addCharge] other-charge notice failed", e);
+    }
+  }
+
   revalidatePath("/tenants");
   revalidatePath(`/tenants/${tenantId}`);
   return undefined;
+}
+
+// Emails the tenant about an "Other" charge just posted to their ledger.
+// Which rent month to fold it into: this month if nothing has been paid on
+// the tenancy yet this calendar month, otherwise next month (they've likely
+// already sent what they meant to for this month). NY tenants get plain
+// Gmail, everyone else the branded Resend card — same split as the
+// utility-charge notice.
+async function notifyOtherCharge(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenancyId: string,
+  amount: number,
+  chargedOn: string,
+  description: string,
+): Promise<void> {
+  type Row = {
+    tenants: { email: string | null } | { email: string | null }[] | null;
+    rooms:
+      | {
+          room_number: string | null;
+          properties:
+            | { building_name: string | null; street_address: string; unit_number: string; is_new_york: boolean }
+            | { building_name: string | null; street_address: string; unit_number: string; is_new_york: boolean }[]
+            | null;
+        }
+      | {
+          room_number: string | null;
+          properties:
+            | { building_name: string | null; street_address: string; unit_number: string; is_new_york: boolean }
+            | { building_name: string | null; street_address: string; unit_number: string; is_new_york: boolean }[]
+            | null;
+        }[]
+      | null;
+  };
+  const { data: row } = await supabase
+    .from("tenancies")
+    .select(
+      "tenants(email), rooms(room_number, properties(building_name, street_address, unit_number, is_new_york))",
+    )
+    .eq("id", tenancyId)
+    .maybeSingle<Row>();
+  const email = one(row?.tenants ?? null)?.email?.trim();
+  if (!email) return;
+
+  const room = one(row?.rooms ?? null);
+  const prop = one(room?.properties ?? null);
+  const unitLabel = prop
+    ? `${prop.building_name?.trim() || prop.street_address} Apt ${prop.unit_number}${
+        room?.room_number ? ` · Room ${room.room_number}` : ""
+      }`
+    : "your unit";
+  const isNewYork = prop?.is_new_york ?? false;
+
+  const today = todayISO();
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const { count } = await supabase
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("tenancy_id", tenancyId)
+    .gte("paid_on", monthStart)
+    .lte("paid_on", today);
+  const paidThisMonth = (count ?? 0) > 0;
+
+  const [y, m] = today.slice(0, 7).split("-").map(Number);
+  // Date.UTC month is 0-based: `m - 1` is this month, `m` is next.
+  const rentMonthLabel = new Date(
+    Date.UTC(y, paidThisMonth ? m : m - 1, 1),
+  ).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+
+  const notice = { amount, description, chargedOn, unitLabel, rentMonthLabel };
+  if (isNewYork) await sendOtherChargeNoticeGmail(email, notice);
+  else await sendOtherChargeNotice(email, notice);
 }
 
 // ----- Acknowledge utility-overage alerts (moved-out tenants) -----
