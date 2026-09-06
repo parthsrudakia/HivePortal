@@ -7,6 +7,7 @@ import { KpiRowSkeleton, TableSkeleton } from "@/components/section-skeletons";
 import { BalanceFilter } from "./balance-filter";
 import { RentReminderButton } from "./rent-reminder-button";
 import { computeLedger } from "@/lib/rent";
+import { tenantLedger } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
 import { canEditLedger, isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
@@ -26,6 +27,7 @@ import {
   getUpcomingTenancies,
   getOverageAlerts,
   getSidecars,
+  getTenantLedgers,
   getRowsWithStatus,
   getTenantsReminderInfo,
 } from "./data";
@@ -213,12 +215,14 @@ async function SideListsSection() {
     { data: upcomingData },
     { data: activeData },
     sidecars,
+    tl,
   ] = await Promise.all([
     getSessionUser(),
     getEndedTenancies(),
     getUpcomingTenancies(),
     getActiveTenancies(),
     getSidecars(),
+    getTenantLedgers(),
   ]);
   const { charges, allocations, rentChanges } = sidecars;
   const today = todayISO();
@@ -255,17 +259,22 @@ async function SideListsSection() {
       | null;
     payments: { amount: number; paid_on: string; payment_type: string }[];
   };
+  // One ledger per tenant: a departed tenant's balance is their tenant-wide
+  // position. Tenants who moved to another room aren't "moved out" — their
+  // balance shows on the active row instead.
   const formerRows: FormerTenantRow[] = ((endedData ?? []) as EndedRow[])
     .map((t) => {
-      const { netBalance } = computeLedger(
-        t,
-        t.payments ?? [],
-        charges.get(t.id) ?? [],
-        allocations.get(t.id) ?? [],
-        today,
-        rentChanges.get(t.id) ?? [],
-      );
       const tenant = one(t.tenants);
+      const { netBalance } = tenantLedger(tl, tenant?.id, () =>
+        computeLedger(
+          t,
+          t.payments ?? [],
+          charges.get(t.id) ?? [],
+          allocations.get(t.id) ?? [],
+          today,
+          rentChanges.get(t.id) ?? [],
+        ),
+      );
       const room = one(t.rooms);
       const property = one(room?.properties ?? null);
       return {
@@ -279,7 +288,10 @@ async function SideListsSection() {
         dismissed: !!t.balance_dismissed_at,
       };
     })
-    .filter((r) => r.tenantId && r.balance > 0.005)
+    .filter(
+      (r) =>
+        r.tenantId && r.balance > 0.005 && !tl.activeTenants.has(r.tenantId),
+    )
     .sort((a, b) => b.balance - a.balance);
 
   type UpcomingQueryRow = {

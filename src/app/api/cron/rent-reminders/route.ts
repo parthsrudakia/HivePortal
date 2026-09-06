@@ -39,8 +39,12 @@ import {
 import { sendSms } from "@/lib/sms";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
-import { buildBalanceDetail, type BalanceDetail } from "@/lib/balance-detail";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
+import {
+  buildBalanceDetail,
+  buildTenantBalanceDetail,
+  type BalanceDetail,
+} from "@/lib/balance-detail";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -216,8 +220,10 @@ export async function GET(req: NextRequest) {
 
   // Ledger sidecars for the balance split: tenants owing at month end get the
   // personal balance email instead of the generic blast.
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
   const today = todayISO();
 
   // Eligible = active tenant with an email and no move-out scheduled. A set
@@ -242,13 +248,16 @@ export async function GET(req: NextRequest) {
       skipped++;
       continue;
     }
-    const { netBalance } = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    // Tenant-wide: one ledger per tenant across every room they've had.
+    const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     eligible.push({
       tenancyId: row.id,
@@ -379,13 +388,16 @@ export async function GET(req: NextRequest) {
     // Mini ledger + statement links; best-effort, never blocks the send.
     let detail: BalanceDetail | undefined;
     try {
-      detail = await buildBalanceDetail(supabase, {
-        tenancy: e.row,
-        payments: e.row.payments ?? [],
-        charges: charges.get(e.tenancyId) ?? [],
-        rentChanges: rentChanges.get(e.tenancyId) ?? [],
-        today,
-      });
+      const inputs = tl.inputs.get(e.tenantId);
+      detail = inputs
+        ? await buildTenantBalanceDetail(supabase, { inputs, today })
+        : await buildBalanceDetail(supabase, {
+            tenancy: e.row,
+            payments: e.row.payments ?? [],
+            charges: charges.get(e.tenancyId) ?? [],
+            rentChanges: rentChanges.get(e.tenancyId) ?? [],
+            today,
+          });
     } catch (err) {
       console.error("[rent-reminders] balance breakdown failed:", err);
     }

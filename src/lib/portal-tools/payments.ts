@@ -2,7 +2,7 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { todayISO } from "@/lib/date";
 import { computeLedger, LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { getToolContext } from "./context";
 import { admin, one } from "./helpers";
 
@@ -95,18 +95,25 @@ export async function listMovedOutBalances() {
     .eq("status", "ended");
   if (error) throw new Error(error.message);
 
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
   const today = todayISO();
   return (data ?? [])
+    // One ledger per tenant: someone who moved to another room isn't "moved
+    // out" — their balance shows on the active tenancy instead.
+    .filter((t) => !tl.activeTenants.has(t.tenant_id))
     .map((t) => {
-      const { netBalance, deposit } = computeLedger(
-        t,
-        t.payments ?? [],
-        charges.get(t.id) ?? [],
-        allocations.get(t.id) ?? [],
-        today,
-        rentChanges.get(t.id) ?? [],
+      const { netBalance, deposit } = tenantLedger(tl, t.tenant_id, () =>
+        computeLedger(
+          t,
+          t.payments ?? [],
+          charges.get(t.id) ?? [],
+          allocations.get(t.id) ?? [],
+          today,
+          rentChanges.get(t.id) ?? [],
+        ),
       );
       const room = one(t.rooms);
       const property = one(room?.properties ?? null);

@@ -3,9 +3,10 @@ import { z } from "zod";
 import { todayISO, currentRentCycle, rentCycleForMonth } from "@/lib/date";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 import { computeLedger, rateForMonthISO } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import type { Database } from "@/lib/supabase/types";
 import { admin, one, propertyLabel } from "./helpers";
+import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
 
 export async function listActiveTenants(args: {
   month?: string;
@@ -36,8 +37,10 @@ export async function listActiveTenants(args: {
   // Ledger sidecars (ad-hoc charges, credit allocations, rent-rate history).
   // The history also reprices a past cycle's due figure to the rate in effect
   // that month, not today's monthly_rent.
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
   const rentMonth = `${yyyymm}-01`;
   const today = todayISO();
 
@@ -61,15 +64,18 @@ export async function listActiveTenants(args: {
     const tenancyChanges = rentChanges.get(t.id) ?? [];
     const rate = rateForMonthISO(rentMonth, t.monthly_rent, tenancyChanges);
     // Carry-forward ledger balance — what the tenant owes overall right now,
-    // prior months and non-rent charges included. This is the number to quote
-    // when asked for someone's balance; cycle_balance is this cycle only.
-    const { netBalance } = computeLedger(
-      t,
-      t.payments ?? [],
-      charges.get(t.id) ?? [],
-      allocations.get(t.id) ?? [],
-      today,
-      tenancyChanges,
+    // prior months, previous rooms, and non-rent charges included (one ledger
+    // per tenant). This is the number to quote when asked for someone's
+    // balance; cycle_balance is this cycle only.
+    const { netBalance } = tenantLedger(tl, t.tenant_id, () =>
+      computeLedger(
+        t,
+        t.payments ?? [],
+        charges.get(t.id) ?? [],
+        allocations.get(t.id) ?? [],
+        today,
+        tenancyChanges,
+      ),
     );
     const due =
       t.start_date > today || t.start_date > end
@@ -161,19 +167,54 @@ export async function addTenant(args: {
   const property = one(room.properties);
   const roomLabel = `${property ? propertyLabel(property) : "room"} room ${room.room_number}`;
 
-  // 1. Insert the tenant record.
-  const { data: tenant, error: tErr } = await supabase
-    .from("tenants")
-    .insert({
-      full_name,
-      email,
+  // 1. Resolve the tenant record. A tenant is unique by email: the same
+  //    address with a matching name is a returning tenant, so their existing
+  //    record (one ledger, one history) is reused rather than duplicated.
+  const existing = await findExistingTenant(supabase, { email, full_name });
+  let tenantId: string;
+  let createdTenant = false;
+  let reused = false;
+  if (existing) {
+    const { data: live } = await supabase
+      .from("tenancies")
+      .select("id")
+      .eq("tenant_id", existing.id)
+      .in("status", ["active", "upcoming"]);
+    if ((live ?? []).length > 0) {
+      throw new Error(
+        `${existing.full_name} is already in the system with that email and has an active or upcoming tenancy — use a room transfer instead of adding them again.`,
+      );
+    }
+    const patch = mergeTenantProfile(existing, {
       phone,
-      pays_as: args.pays_as?.trim() || null,
-      notes: args.notes?.trim() || null,
-    })
-    .select("id")
-    .single();
-  if (tErr) throw new Error(tErr.message);
+      pays_as: args.pays_as,
+      notes: args.notes,
+    });
+    if (Object.keys(patch).length > 0) {
+      const { error: uErr } = await supabase
+        .from("tenants")
+        .update(patch)
+        .eq("id", existing.id);
+      if (uErr) throw new Error(uErr.message);
+    }
+    tenantId = existing.id;
+    reused = true;
+  } else {
+    const { data: tenant, error: tErr } = await supabase
+      .from("tenants")
+      .insert({
+        full_name,
+        email,
+        phone,
+        pays_as: args.pays_as?.trim() || null,
+        notes: args.notes?.trim() || null,
+      })
+      .select("id")
+      .single();
+    if (tErr) throw new Error(tErr.message);
+    tenantId = tenant.id;
+    createdTenant = true;
+  }
 
   // 2. Open the tenancy. Roll the tenant back if this fails so we don't leave
   //    an orphaned contact with no room.
@@ -181,7 +222,7 @@ export async function addTenant(args: {
     .from("tenancies")
     .insert({
       room_id: args.room_id,
-      tenant_id: tenant.id,
+      tenant_id: tenantId,
       start_date: args.start_date,
       lease_end_date: args.lease_end_date,
       monthly_rent: args.monthly_rent,
@@ -194,7 +235,10 @@ export async function addTenant(args: {
     .select("id")
     .single();
   if (leErr) {
-    await supabase.from("tenants").delete().eq("id", tenant.id);
+    // Only a record this call created is removed — a reused tenant keeps
+    // their profile and history.
+    if (createdTenant)
+      await supabase.from("tenants").delete().eq("id", tenantId);
     throw new Error(leErr.message);
   }
 
@@ -206,9 +250,11 @@ export async function addTenant(args: {
 
   return {
     ok: true,
-    tenant_id: tenant.id,
+    tenant_id: tenantId,
     tenancy_id: tenancy.id,
-    full_name,
+    /** True when an existing tenant (same email, matching name) was reused. */
+    reused_existing_tenant: reused,
+    full_name: reused ? existing!.full_name : full_name,
     room: roomLabel,
     monthly_rent: args.monthly_rent,
     lease: { start: args.start_date, end: args.lease_end_date },
@@ -299,7 +345,10 @@ export const tenantsTools = [
       "operator before calling this. Ask for any missing required field; do not " +
       "guess. Do NOT collect or record a security deposit here, even if the " +
       "message includes one. This does not send an agreement (use send_agreement " +
-      "for that).",
+      "for that). A tenant is unique by email: if the email already belongs to " +
+      "a tenant with a matching name, that existing record is reused (the result " +
+      "has reused_existing_tenant: true) — tell the operator it was a returning " +
+      "tenant, not a new one.",
     inputSchema: z.object({
       full_name: z.string().describe("Tenant's full name"),
       email: z.string().describe("Tenant email address"),

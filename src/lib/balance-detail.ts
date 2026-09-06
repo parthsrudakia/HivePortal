@@ -11,10 +11,13 @@
 
 import {
   buildLedgerEntries,
+  buildTenantLedgerEntries,
   type LedgerEntry,
+  type LedgerEntryCharge,
   type LedgerEntryPayment,
   type LedgerTenancy,
   type RentChange,
+  type TenancyLedgerInput,
 } from "@/lib/rent";
 import type { LedgerChargeRow } from "@/lib/rent-data";
 import { formatDate } from "@/lib/date";
@@ -93,6 +96,31 @@ export async function buildBalanceDetail(
     opts.today,
     opts.rentChanges,
   );
+  return detailFromEntries(supabase, entries, opts.charges);
+}
+
+/**
+ * Tenant-wide breakdown: the same mini ledger, but built from the tenant's
+ * ONE ledger across every room, so a balance carried from a previous room is
+ * explained by the lines that produced it rather than by a bare carry figure.
+ */
+export async function buildTenantBalanceDetail(
+  supabase: StorageCapableClient,
+  opts: { inputs: TenancyLedgerInput[]; today: string },
+): Promise<BalanceDetail> {
+  const entries = buildTenantLedgerEntries(opts.inputs, opts.today);
+  return detailFromEntries(
+    supabase,
+    entries,
+    opts.inputs.flatMap((i) => i.charges),
+  );
+}
+
+async function detailFromEntries(
+  supabase: StorageCapableClient,
+  entries: LedgerEntry[],
+  charges: LedgerEntryCharge[],
+): Promise<BalanceDetail> {
 
   // The tail starts after the last line where the account was settled (or in
   // credit); those lines sum to the current balance by construction.
@@ -117,7 +145,7 @@ export async function buildBalanceDetail(
   );
   const billIds = Array.from(
     new Set(
-      opts.charges
+      charges
         .filter(
           (c) => c.kind === "utility_overage" && c.bill_id && tailIds.has(c.id),
         )

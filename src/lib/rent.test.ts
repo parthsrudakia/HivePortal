@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildLedgerEntries,
+  buildTenantLedgerEntries,
   computeLedger,
+  computeTenantLedger,
   rateForMonthISO,
   type LedgerTenancy,
 } from "@/lib/rent";
@@ -239,5 +241,143 @@ describe("rent ledger financial controls", () => {
       "2026-06-30",
     );
     expect(ledger.netBalance).toBe(0);
+  });
+});
+
+describe("tenant-wide ledger (one ledger per tenant across rooms)", () => {
+  const oldRoom = {
+    id: "old",
+    unitLabel: "Newark Apt 202 · Room 2",
+    tenancy: tenancy({
+      start_date: "2026-07-01",
+      move_out_date: "2026-08-31",
+      monthly_rent: 1_500,
+    }),
+    payments: [
+      {
+        id: "p1",
+        amount: 1_500,
+        paid_on: "2026-07-03",
+        payment_type: "rent",
+        notes: null,
+      },
+      {
+        id: "p2",
+        amount: 1_500,
+        paid_on: "2026-08-05",
+        payment_type: "rent",
+        notes: null,
+      },
+      {
+        id: "d1",
+        amount: 1_500,
+        paid_on: "2026-06-22",
+        payment_type: "security_deposit",
+        notes: null,
+      },
+    ],
+    charges: [
+      {
+        id: "c1",
+        kind: "security_deposit",
+        amount: 1_500,
+        charged_on: "2026-07-01",
+        note: null,
+      },
+    ],
+  };
+  const newRoom = {
+    id: "new",
+    unitLabel: "Singh Tower Apt 506 · Room 1",
+    tenancy: tenancy({ start_date: "2026-09-01", monthly_rent: 1_650 }),
+    payments: [
+      {
+        id: "p3",
+        amount: 1_600,
+        paid_on: "2026-09-04",
+        payment_type: "rent",
+        notes: null,
+      },
+    ],
+    charges: [
+      {
+        id: "c2",
+        kind: "security_deposit",
+        amount: 150,
+        charged_on: "2026-09-01",
+        note: "Deposit top-up",
+      },
+    ],
+  };
+
+  it("carries one running balance straight through a room change", () => {
+    const entries = buildTenantLedgerEntries([newRoom, oldRoom], "2026-09-06");
+    expect(entries.map((e) => e.description)).toEqual([
+      "Payment · Security deposit",
+      "Rent · Jul 2026",
+      "Security Deposit Charge",
+      "Payment",
+      "Rent · Aug 2026",
+      "Payment",
+      "Rent · Sep 2026",
+      "Security Deposit Charge · Deposit top-up",
+      "Payment",
+    ]);
+    // Every line is tagged with its room once the tenant has had more than one.
+    expect(entries[1].unit).toBe("Newark Apt 202 · Room 2");
+    expect(entries[6].unit).toBe("Singh Tower Apt 506 · Room 1");
+    // $50 short on September rent + $150 deposit top-up.
+    expect(entries.at(-1)?.balance).toBe(200);
+    expect(computeTenantLedger([newRoom, oldRoom], "2026-09-06").netBalance).toBe(
+      200,
+    );
+  });
+
+  it("hides a transfer's offsetting carry pair, keeps an orphaned half", () => {
+    const carried = {
+      ...oldRoom,
+      payments: oldRoom.payments.slice(0, 1), // Aug rent + deposit unpaid → $3,000 carried
+      charges: [
+        ...oldRoom.charges,
+        {
+          id: "s1",
+          kind: "settlement",
+          amount: 3_000,
+          charged_on: "2026-08-31",
+          note: "Balance carried to Singh Tower Apt 506 · Room 1",
+        },
+      ],
+    };
+    const receiving = {
+      ...newRoom,
+      charges: [
+        ...newRoom.charges,
+        {
+          id: "a1",
+          kind: "adjustment",
+          amount: -3_000,
+          charged_on: "2026-09-01",
+          note: "Balance carried from Newark Apt 202 · Room 2",
+        },
+      ],
+    };
+    const entries = buildTenantLedgerEntries([carried, receiving], "2026-09-06");
+    expect(entries.some((e) => e.description.includes("carried"))).toBe(false);
+    expect(entries.at(-1)?.balance).toBe(3_200);
+    expect(computeTenantLedger([carried, receiving], "2026-09-06").netBalance).toBe(
+      3_200,
+    );
+
+    // If the operator deleted the adjustment, the settlement really does
+    // change the balance — so it must stay visible.
+    const orphaned = buildTenantLedgerEntries([carried, newRoom], "2026-09-06");
+    expect(orphaned.some((e) => e.description.includes("carried"))).toBe(true);
+    expect(orphaned.at(-1)?.balance).toBe(200);
+  });
+
+  it("leaves lines untagged for a single-room tenant", () => {
+    const entries = buildTenantLedgerEntries([newRoom], "2026-09-06");
+    expect(entries.every((e) => e.unit === undefined)).toBe(true);
+    expect(entries.at(-1)?.balance).toBe(200);
   });
 });

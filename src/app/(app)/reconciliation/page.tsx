@@ -4,7 +4,7 @@ import { canEditLedger } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { todayISO, addDaysISO, currentRentCycle } from "@/lib/date";
 import { computeLedger, rateForMonthISO } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ServerSearchInput } from "@/components/server-search-input";
 import { AddStatementForm } from "./add-statement-form";
@@ -261,6 +261,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   if (tenancyIds.length > 0) {
     type LedgerTenancyRow = {
       id: string;
+      tenant_id: string;
       start_date: string;
       move_out_date: string | null;
       monthly_rent: number;
@@ -272,20 +273,24 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     const { data: ledgerRows } = await supabase
       .from("tenancies")
       .select(
-        `id, start_date, move_out_date, monthly_rent, first_month_rent, security_deposit, paused_at,
+        `id, tenant_id, start_date, move_out_date, monthly_rent, first_month_rent, security_deposit, paused_at,
          payments(amount, paid_on, payment_type)`,
       )
       .in("id", tenancyIds)
       .returns<LedgerTenancyRow[]>();
+    const tl = await fetchTenantLedgers(supabase);
     const cents = (n: number) => Math.round(n * 100) / 100;
     for (const t of ledgerRows ?? []) {
-      const { netBalance } = computeLedger(
-        t,
-        t.payments ?? [],
-        sidecars.charges.get(t.id) ?? [],
-        sidecars.allocations.get(t.id) ?? [],
-        today,
-        sidecars.rentChanges.get(t.id) ?? [],
+      // Tenant-wide: one ledger per tenant across every room they've had.
+      const { netBalance } = tenantLedger(tl, t.tenant_id, () =>
+        computeLedger(
+          t,
+          t.payments ?? [],
+          sidecars.charges.get(t.id) ?? [],
+          sidecars.allocations.get(t.id) ?? [],
+          today,
+          sidecars.rentChanges.get(t.id) ?? [],
+        ),
       );
       balanceByTenancy.set(t.id, cents(netBalance));
     }

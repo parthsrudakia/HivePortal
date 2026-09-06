@@ -18,19 +18,23 @@ import { RentAmountEdit } from "./rent-edit";
 import { TenantBackLink } from "./tenant-back-link";
 import { TransferDialog } from "./transfer-dialog";
 import { StartTenancyDialog } from "./start-tenancy-dialog";
-import { computeLedger, buildLedgerEntries, type RentChange } from "@/lib/rent";
+import {
+  computeTenantLedger,
+  buildTenantLedgerEntries,
+  type RentChange,
+  type TenancyLedgerInput,
+} from "@/lib/rent";
 import { canEditLedger } from "@/lib/access";
 import { pauseTenancy, resumeTenancy } from "../actions";
 import { fetchAssignableRooms, type RoomOption } from "../room-options";
 import { getSessionUser } from "@/lib/session";
 import { todayISO } from "@/lib/date";
-import { isValid, zUuid } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ from?: string; tenancy?: string }>;
+  searchParams: Promise<{ from?: string }>;
 };
 
 /** Known referrers for the profile back link, so the fallback href/label point
@@ -125,7 +129,7 @@ export default async function TenantDetailPage({
   searchParams,
 }: PageProps) {
   const { id } = await params;
-  const { from, tenancy: tenancyParam } = await searchParams;
+  const { from } = await searchParams;
   const back = (from ? BACK_TARGETS[from] : undefined) ?? {
     href: "/tenants",
     label: "Rent Tracker",
@@ -173,19 +177,12 @@ export default async function TenantDetailPage({
   const upcoming = (tenancies ?? []).filter((t) => t.status === "upcoming");
   const past = (tenancies ?? []).filter((t) => t.status === "ended");
 
-  // Running ledger tenancy: the active one, or — so a move-out with money
-  // still owed can be seen and settled here — the most recent ended one.
-  // ?tenancy=<id> overrides so any past tenancy's ledger stays reachable
-  // (after a transfer, the tenant has several ledgers).
-  const requestedTenancy =
-    tenancyParam && isValid(zUuid, tenancyParam)
-      ? (tenancies ?? []).find((t) => t.id === tenancyParam)
-      : undefined;
+  // ONE ledger per tenant: every tenancy (past, active, upcoming) feeds the
+  // same running balance, so a room change never starts a fresh ledger. New
+  // charges and payments post to the active tenancy, or — so a move-out with
+  // money still owed can be settled here — the most recent one.
   const ledgerTenancy =
-    requestedTenancy ??
-    active ??
-    past.find((t) => t.status === "ended") ??
-    null;
+    active ?? upcoming[0] ?? past.find((t) => t.status === "ended") ?? null;
 
   // Room options for the transfer / start-new-tenancy dialogs — only
   // fetched when a ledger admin can actually see one of those buttons.
@@ -201,54 +198,47 @@ export default async function TenantDetailPage({
   }
 
   // Running ledger: auto monthly rent + ad-hoc charges (deposit / late fee)
-  // + payments, in one carry-forward balance.
-  let charges: Charge[] = [];
-  let allocations: Allocation[] = [];
-  let rentChanges: RentChange[] = [];
-  if (ledgerTenancy) {
+  // + payments across every tenancy, in one carry-forward balance.
+  const tenancyIds = (tenancies ?? []).map((t) => t.id);
+  let charges: (Charge & { tenancy_id: string })[] = [];
+  let allocations: (Allocation & { tenancy_id: string })[] = [];
+  let rentChanges: (RentChange & { tenancy_id: string })[] = [];
+  if (tenancyIds.length > 0) {
     const [chargeRes, allocRes, rentHistRes] = await Promise.all([
       supabase
         .from("tenancy_charges")
-        .select("id, kind, amount, charged_on, note, bill_id")
-        .eq("tenancy_id", ledgerTenancy.id)
+        .select("id, kind, amount, charged_on, note, bill_id, tenancy_id")
+        .in("tenancy_id", tenancyIds)
         .order("charged_on", { ascending: false }),
       // Legacy credit allocations are no longer created, but existing rows are
       // still fed to computeLedger so historical balances stay consistent.
       supabase
         .from("credit_allocations")
-        .select("id, kind, amount, note, created_at")
-        .eq("tenancy_id", ledgerTenancy.id)
+        .select("id, kind, amount, note, created_at, tenancy_id")
+        .in("tenancy_id", tenancyIds)
         .order("created_at", { ascending: false }),
       supabase
         .from("tenancy_rent_history")
-        .select("effective_month, monthly_rent")
-        .eq("tenancy_id", ledgerTenancy.id),
+        .select("effective_month, monthly_rent, tenancy_id")
+        .in("tenancy_id", tenancyIds),
     ]);
     charges = chargeRes.data ?? [];
     allocations = allocRes.data ?? [];
     rentChanges = rentHistRes.data ?? [];
   }
-  const activePayments = ledgerTenancy
-    ? (payments ?? []).filter((p) => p.tenancy_id === ledgerTenancy.id)
-    : [];
-  const ledger = ledgerTenancy
-    ? computeLedger(
-        ledgerTenancy,
-        activePayments,
-        charges,
-        allocations,
-        todayISO(),
-        rentChanges,
-      )
-    : null;
+  const ledgerInputs: TenancyLedgerInput[] = (tenancies ?? []).map((t) => ({
+    id: t.id,
+    tenancy: t,
+    unitLabel: `${unitTitle(t)} · ${one(t.rooms)?.room_number ?? "—"}`,
+    payments: (payments ?? []).filter((p) => p.tenancy_id === t.id),
+    charges: charges.filter((c) => c.tenancy_id === t.id),
+    allocations: allocations.filter((a) => a.tenancy_id === t.id),
+    rentChanges: rentChanges.filter((r) => r.tenancy_id === t.id),
+  }));
+  const today = todayISO();
+  const ledger = ledgerTenancy ? computeTenantLedger(ledgerInputs, today) : null;
   const ledgerEntries = ledgerTenancy
-    ? buildLedgerEntries(
-        ledgerTenancy,
-        activePayments,
-        charges,
-        todayISO(),
-        rentChanges,
-      )
+    ? buildTenantLedgerEntries(ledgerInputs, today)
     : [];
   const summaryRows = ledger
     ? [
@@ -451,11 +441,7 @@ export default async function TenantDetailPage({
                         currentRoomLabel={`${unitTitle(active)} · ${one(active.rooms)?.room_number ?? "—"}`}
                         // Carry preview only — the server recomputes the
                         // exact balance at transfer time.
-                        netBalance={
-                          ledgerTenancy?.id === active.id
-                            ? (ledger?.netBalance ?? 0)
-                            : 0
-                        }
+                        netBalance={ledger?.netBalance ?? 0}
                         rooms={assignableRooms}
                       />
                     </>
@@ -529,9 +515,9 @@ export default async function TenantDetailPage({
               <div>
                 <h2 className="text-xl tracking-tight text-ink">
                   <span className="font-display text-accent-text">Ledger</span>
-                  {ledgerTenancy.status !== "active" && (
+                  {ledgerTenancy.status === "ended" && (
                     <span className="ml-2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 align-middle text-xs font-medium text-amber-800">
-                      past tenancy — {unitTitle(ledgerTenancy)} · moved out{" "}
+                      moved out{" "}
                       {ledgerTenancy.move_out_date
                         ? formatDate(ledgerTenancy.move_out_date)
                         : ""}
@@ -539,7 +525,10 @@ export default async function TenantDetailPage({
                   )}
                 </h2>
                 <p className="mt-1 text-xs text-muted">
-                  Every rent charge, fee, and payment in one running balance.
+                  Every rent charge, fee, and payment in one running balance
+                  {ledgerInputs.length > 1
+                    ? " — carried across every room this tenant has had."
+                    : "."}
                   {ledger.availableCredit > 0.005
                     ? ` ${fmtMoney(ledger.availableCredit)} in credit.`
                     : ""}
@@ -619,6 +608,11 @@ export default async function TenantDetailPage({
                         ) : (
                           e.description
                         )}
+                        {e.unit && (
+                          <span className="mt-0.5 block text-xs text-muted">
+                            {e.unit}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-right tabular-nums text-ink">
                         {e.charge > 0 ? fmtMoney(e.charge) : ""}
@@ -683,14 +677,6 @@ export default async function TenantDetailPage({
                   </p>
                 </div>
                 <span className="flex shrink-0 flex-wrap items-center gap-3">
-                  {ledgerTenancy?.id !== t.id && (
-                    <Link
-                      href={`/tenants/${tenant.id}?tenancy=${t.id}`}
-                      className="text-xs uppercase tracking-wide text-muted hover:text-accent-text"
-                    >
-                      View ledger
-                    </Link>
-                  )}
                   {t.lease_pdf_path && <LeaseDownload tenancyId={t.id} />}
                   {ledgerAdmin && (
                     <ReactivateTenancyButton

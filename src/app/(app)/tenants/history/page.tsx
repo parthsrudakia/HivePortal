@@ -7,7 +7,7 @@ import { TableSkeleton } from "@/components/section-skeletons";
 import { isMaster, canEditLedger } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { computeLedger } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
 import {
   BalanceToggle,
@@ -75,7 +75,7 @@ const loadHistory = cache(async () => {
   // Moved-out tenants keep their running ledger balance here — money owed
   // at move-out must stay visible (dismissed from the Rent Tracker or not)
   // and gets resolved from the tenant's page.
-  const [user, { data, error }, { charges, allocations, rentChanges }] =
+  const [user, { data, error }, { charges, allocations, rentChanges }, tl] =
     await Promise.all([
       getSessionUser(),
       supabase
@@ -92,6 +92,7 @@ const loadHistory = cache(async () => {
         .order("move_out_date", { ascending: false, nullsFirst: false })
         .returns<Row[]>(),
       fetchLedgerSidecars(supabase),
+      fetchTenantLedgers(supabase),
     ]);
   const today = todayISO();
 
@@ -131,14 +132,21 @@ const loadHistory = cache(async () => {
       monthly_rent: Number(r.monthly_rent),
       total_paid: totalPaid,
       dismissed: !!r.balance_dismissed_at,
-      balance: computeLedger(
-        r,
-        r.payments ?? [],
-        charges.get(r.id) ?? [],
-        allocations.get(r.id) ?? [],
-        today,
-        rentChanges.get(r.id) ?? [],
-      ).netBalance,
+      // One ledger per tenant: a former tenant's balance is their tenant-wide
+      // position. If they moved to another room the balance lives on that
+      // active tenancy, so their old room shows nothing owed here.
+      balance: tl.activeTenants.has(r.tenant_id)
+        ? 0
+        : tenantLedger(tl, r.tenant_id, () =>
+            computeLedger(
+              r,
+              r.payments ?? [],
+              charges.get(r.id) ?? [],
+              allocations.get(r.id) ?? [],
+              today,
+              rentChanges.get(r.id) ?? [],
+            ),
+          ).netBalance,
       haystack: [tenantName, tenant?.email, unit, roomNumber]
         .filter(Boolean)
         .join(" ")

@@ -7,7 +7,7 @@
 
 import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { computeLedger } from "@/lib/rent";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
@@ -179,24 +179,28 @@ export type RentEntry = {
 
 // Rent worklist: active tenancies whose running net balance is positive.
 export const getRentWorklist = cache(async (): Promise<RentEntry[]> => {
-  const [{ data: tenancies }, { paymentsByTenancy }, sidecars] =
+  const [{ data: tenancies }, { paymentsByTenancy }, sidecars, tl] =
     await Promise.all([
       getDashTenancies(),
       getPaymentsThisCycle(),
       getDashSidecars(),
+      fetchTenantLedgers(await getCachedClient()),
     ]);
   const { charges, allocations, rentChanges } = sidecars;
   const today = todayISO();
 
   const rentWorklist: RentEntry[] = [];
   for (const t of (tenancies ?? []) as TenancyRow[]) {
-    const { netBalance } = computeLedger(
-      t,
-      paymentsByTenancy.get(t.id) ?? [],
-      charges.get(t.id) ?? [],
-      allocations.get(t.id) ?? [],
-      today,
-      rentChanges.get(t.id) ?? [],
+    // Tenant-wide: one ledger per tenant across every room they've had.
+    const { netBalance } = tenantLedger(tl, t.tenant_id, () =>
+      computeLedger(
+        t,
+        paymentsByTenancy.get(t.id) ?? [],
+        charges.get(t.id) ?? [],
+        allocations.get(t.id) ?? [],
+        today,
+        rentChanges.get(t.id) ?? [],
+      ),
     );
     if (netBalance <= 0.01) continue;
     const room = one(t.rooms);

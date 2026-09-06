@@ -7,7 +7,7 @@
 
 import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { computeLedger, rateForMonthISO } from "@/lib/rent";
 import { todayISO, currentRentCycle } from "@/lib/date";
 import { getReminderInfo } from "./reminder-info";
@@ -125,6 +125,11 @@ export const getSidecars = cache(async () =>
   fetchLedgerSidecars(await getCachedClient()),
 );
 
+// One ledger per tenant: balances sum every tenancy the tenant has had.
+export const getTenantLedgers = cache(async () =>
+  fetchTenantLedgers(await getCachedClient()),
+);
+
 // Balance-reminder button state, reusing the already-loaded roster instead of
 // re-fetching tenancies+payments (previously the page's duplicate query).
 export const getTenantsReminderInfo = cache(async () => {
@@ -177,8 +182,8 @@ export type RowWithStatus = ActiveTenancyRow & {
 // ledger balance, which carries arrears/credit across months. Shared by the
 // KPI section and the tracker table.
 export const getRowsWithStatus = cache(async () => {
-  const [{ data, error }, { charges, allocations, rentChanges }] =
-    await Promise.all([getActiveTenancies(), getSidecars()]);
+  const [{ data, error }, { charges, allocations, rentChanges }, tl] =
+    await Promise.all([getActiveTenancies(), getSidecars(), getTenantLedgers()]);
   const today = todayISO();
   // Rent is collected on a 27th→26th cycle (tenants pay from the 27th), so
   // "this month" runs from the 27th of the prior month to the 26th.
@@ -211,13 +216,17 @@ export const getRowsWithStatus = cache(async () => {
       monthEnd,
       today,
     );
-    const ledger = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    // Balance is tenant-wide (every room this tenant has had), so a balance
+    // from a previous room follows them into this one.
+    const ledger = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     const inCycle = (d: string | null | undefined) =>
       !!d && d >= monthStart && d <= monthEnd && d <= today;

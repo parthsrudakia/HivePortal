@@ -4,11 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { todayISO, formatDate } from "@/lib/date";
 import {
-  computeLedger,
-  buildLedgerEntries,
-  type LedgerCharge,
+  computeTenantLedger,
+  buildTenantLedgerEntries,
   type RentChange,
-  type LedgerAllocation,
+  type TenancyLedgerInput,
 } from "@/lib/rent";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +41,26 @@ type Charge = {
   amount: number;
   charged_on: string;
   note: string | null;
+  tenancy_id: string;
 };
-type Allocation = { id: string; kind: string; amount: number; note: string | null; created_at: string };
+type Allocation = {
+  id: string;
+  kind: string;
+  amount: number;
+  note: string | null;
+  created_at: string;
+  tenancy_id: string;
+};
+
+function unitLabel(t: Tenancy): string {
+  const room = one(t.rooms);
+  const p = one(room?.properties ?? null);
+  return p
+    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}${
+        room?.room_number ? ` · ${room.room_number}` : ""
+      }`
+    : "—";
+}
 type Payment = {
   id: string;
   paid_on: string;
@@ -94,60 +111,69 @@ export async function GET(
     return new NextResponse("Tenant not found", { status: 404 });
   }
 
-  // Export the active tenancy's ledger, or the most recent ended one so a
-  // moved-out tenant's outstanding balance is still exportable.
-  const active =
-    tenancies?.find((t) => t.status === "active") ??
-    tenancies?.find((t) => t.status === "ended") ??
-    null;
-  if (!active) {
+  // One statement per tenant: every tenancy's charges and payments on the
+  // same running balance, so a room change never splits the export.
+  const all = tenancies ?? [];
+  if (all.length === 0) {
     return new NextResponse("No tenancy to export", { status: 400 });
   }
+  const ids = all.map((t) => t.id);
 
   const [chargeRes, allocRes, rentHistRes] = await Promise.all([
     supabase
       .from("tenancy_charges")
-      .select("id, kind, amount, charged_on, note")
-      .eq("tenancy_id", active.id)
+      .select("id, kind, amount, charged_on, note, tenancy_id")
+      .in("tenancy_id", ids)
       .order("charged_on", { ascending: false }),
     supabase
       .from("credit_allocations")
-      .select("id, kind, amount, note, created_at")
-      .eq("tenancy_id", active.id)
+      .select("id, kind, amount, note, created_at, tenancy_id")
+      .in("tenancy_id", ids)
       .order("created_at", { ascending: false }),
     supabase
       .from("tenancy_rent_history")
-      .select("effective_month, monthly_rent")
-      .eq("tenancy_id", active.id),
+      .select("effective_month, monthly_rent, tenancy_id")
+      .in("tenancy_id", ids),
   ]);
   const charges: Charge[] = chargeRes.data ?? [];
   const allocations: Allocation[] = allocRes.data ?? [];
-  const rentChanges: RentChange[] = rentHistRes.data ?? [];
-  const activePayments = (payments ?? []).filter((p) => p.tenancy_id === active.id);
+  const rentChanges: (RentChange & { tenancy_id: string })[] =
+    rentHistRes.data ?? [];
 
-  const ledger = computeLedger(
-    active,
-    activePayments,
-    charges as LedgerCharge[],
-    allocations as LedgerAllocation[],
-    today,
-    rentChanges,
-  );
-  const entries = buildLedgerEntries(
-    active,
-    activePayments,
-    charges,
-    today,
-    rentChanges,
-  );
+  const inputs: TenancyLedgerInput[] = all.map((t) => ({
+    id: t.id,
+    tenancy: t,
+    unitLabel: unitLabel(t),
+    payments: (payments ?? []).filter((p) => p.tenancy_id === t.id),
+    charges: charges.filter((c) => c.tenancy_id === t.id),
+    allocations: allocations.filter((a) => a.tenancy_id === t.id),
+    rentChanges: rentChanges.filter((r) => r.tenancy_id === t.id),
+  }));
+  const ledger = computeTenantLedger(inputs, today);
+  const entries = buildTenantLedgerEntries(inputs, today);
 
-  const room = one(active.rooms);
-  const p = one(room?.properties ?? null);
-  const unit = p
-    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}${
-        room?.room_number ? ` · ${room.room_number}` : ""
-      }`
-    : "—";
+  // Header: the current room first, then every earlier one; the statement
+  // spans from the earliest move-in to the latest move-out (or present).
+  const current =
+    all.find((t) => t.status === "active") ??
+    all.find((t) => t.status === "upcoming") ??
+    all[0];
+  const unit =
+    all.length === 1
+      ? unitLabel(current)
+      : [current, ...all.filter((t) => t.id !== current.id)]
+          .map(unitLabel)
+          .join(" · previously ");
+  const firstStart = all
+    .map((t) => t.start_date)
+    .sort()[0];
+  const open = all.some((t) => !t.move_out_date);
+  const lastEnd = open
+    ? null
+    : all
+        .map((t) => t.move_out_date as string)
+        .sort()
+        .at(-1) ?? null;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hive Portal";
@@ -163,8 +189,8 @@ export async function GET(
   const title = ws.addRow([tenant.full_name]);
   title.font = { size: 16, bold: true };
   ws.addRow([unit]).font = { color: { argb: "FF8A8378" } };
-  const period = `Statement period: ${formatDate(active.start_date)} – ${
-    active.move_out_date ? formatDate(active.move_out_date) : "present"
+  const period = `Statement period: ${formatDate(firstStart)} – ${
+    lastEnd ? formatDate(lastEnd) : "present"
   }`;
   ws.addRow([period]).font = { color: { argb: "FF8A8378" } };
   ws.addRow([`Generated: ${formatDate(today)}`]).font = {
@@ -215,7 +241,7 @@ export async function GET(
   for (const e of entries) {
     const r = ws.addRow([
       formatDate(e.date),
-      e.description,
+      e.unit ? `${e.description} (${e.unit})` : e.description,
       e.charge > 0 ? e.charge : null,
       e.payment > 0 ? e.payment : null,
       e.balance,

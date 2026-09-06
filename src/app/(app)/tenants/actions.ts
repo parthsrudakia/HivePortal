@@ -21,9 +21,15 @@ import { todayISO, addDaysISO, proratedMonthRemainder } from "@/lib/date";
 import { computeLedger, LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
 import {
   fetchLedgerSidecars,
+  fetchTenantLedgers,
   loadTenancyNetBalance,
+  tenantLedger,
 } from "@/lib/rent-data";
-import { buildBalanceDetail, type BalanceDetail } from "@/lib/balance-detail";
+import {
+  buildBalanceDetail,
+  buildTenantBalanceDetail,
+  type BalanceDetail,
+} from "@/lib/balance-detail";
 import { updateTenancyRent } from "@/lib/rent-history";
 import { applyMoveOut } from "@/lib/move-out";
 import {
@@ -32,6 +38,7 @@ import {
 } from "@/lib/tenancy-create";
 import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
+import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
 
 // Accrual-affecting mutations (rent amounts, tenancy dates, deleting
 // payments/tenants) change what a tenant owes just as directly as a charge
@@ -194,20 +201,63 @@ export async function createTenant(
     if (clash) return clash;
   }
 
-  const { data: tenant, error: tErr } = await supabase
-    .from("tenants")
-    .insert({
-      full_name,
-      email,
+  // A tenant is unique by email: the same address with a matching name is
+  // the same person coming back, so reuse their record (one ledger, one
+  // history) instead of creating a second tenant.
+  const existing = await findExistingTenant(supabase, { email, full_name });
+  let tenantId = "";
+  let createdTenant = false;
+  if (existing) {
+    if (room_id && start_date) {
+      // One live tenancy per tenant — same rule as Start new tenancy.
+      const { data: live } = await supabase
+        .from("tenancies")
+        .select("id, status, rooms(room_number, properties(building_name, street_address, unit_number))")
+        .eq("tenant_id", existing.id)
+        .in("status", ["active", "upcoming"]);
+      if ((live ?? []).length > 0) {
+        return {
+          error: `${existing.full_name} is already in the system with this email and has an active or upcoming tenancy. Open their profile and use Transfer to move them instead of adding them again.`,
+        };
+      }
+    }
+    const patch = mergeTenantProfile(existing, {
       phone,
       pays_as,
       notes,
       social_links,
-    })
-    .select("id")
-    .single();
-
-  if (tErr) return { error: tErr.message };
+    });
+    if (Object.keys(patch).length > 0) {
+      const { error: uErr } = await supabase
+        .from("tenants")
+        .update(patch)
+        .eq("id", existing.id);
+      if (uErr) return { error: uErr.message };
+    }
+    tenantId = existing.id;
+  } else {
+    const { data: tenant, error: tErr } = await supabase
+      .from("tenants")
+      .insert({
+        full_name,
+        email,
+        phone,
+        pays_as,
+        notes,
+        social_links,
+      })
+      .select("id")
+      .single();
+    if (tErr) return { error: tErr.message };
+    tenantId = tenant.id;
+    createdTenant = true;
+  }
+  // Only a record this submit created is removed on a later failure — a
+  // reused tenant keeps their profile and history.
+  const rollbackTenant = async () => {
+    if (createdTenant)
+      await supabase.from("tenants").delete().eq("id", tenantId);
+  };
 
   if (room_id && start_date) {
     const monthly_rent = Number(monthly_rent_str);
@@ -225,7 +275,7 @@ export async function createTenant(
         .eq("id", agreement_request_id)
         .maybeSingle();
       if (!request || request.status !== "signed" || !request.signed_pdf_path) {
-        await supabase.from("tenants").delete().eq("id", tenant.id);
+        await rollbackTenant();
         return {
           error: "That signed agreement could not be found — it may have been cleared.",
         };
@@ -234,22 +284,22 @@ export async function createTenant(
         .from(AGREEMENTS_BUCKET)
         .download(request.signed_pdf_path);
       if (downloadError || !pdfBlob) {
-        await supabase.from("tenants").delete().eq("id", tenant.id);
+        await rollbackTenant();
         return { error: "The signed agreement PDF could not be read from storage." };
       }
-      const filename = `${tenant.id}/${Date.now()}-signed-agreement.pdf`;
+      const filename = `${tenantId}/${Date.now()}-signed-agreement.pdf`;
       const { error: upErr } = await supabase.storage
         .from("leases")
         .upload(filename, Buffer.from(await pdfBlob.arrayBuffer()), {
           contentType: "application/pdf",
         });
       if (upErr) {
-        await supabase.from("tenants").delete().eq("id", tenant.id);
+        await rollbackTenant();
         return { error: `Failed to attach the signed agreement: ${upErr.message}` };
       }
       lease_pdf_path = filename;
     } else if (leaseFile instanceof File && leaseFile.size > 0) {
-      const filename = `${tenant.id}/${Date.now()}-${leaseFile.name.replace(/[^\w.\-]/g, "_")}`;
+      const filename = `${tenantId}/${Date.now()}-${leaseFile.name.replace(/[^\w.\-]/g, "_")}`;
       const { error: upErr } = await supabase.storage
         .from("leases")
         .upload(filename, leaseFile, {
@@ -257,7 +307,7 @@ export async function createTenant(
           upsert: false,
         });
       if (upErr) {
-        await supabase.from("tenants").delete().eq("id", tenant.id);
+        await rollbackTenant();
         return { error: `Failed to upload lease PDF: ${upErr.message}` };
       }
       lease_pdf_path = filename;
@@ -273,7 +323,7 @@ export async function createTenant(
       if (lease_pdf_path) {
         await supabase.storage.from("leases").remove([lease_pdf_path]);
       }
-      await supabase.from("tenants").delete().eq("id", tenant.id);
+      await rollbackTenant();
       return { error: "First month rent must be a non-negative number." };
     }
 
@@ -281,7 +331,7 @@ export async function createTenant(
       .from("tenancies")
       .insert({
         room_id,
-        tenant_id: tenant.id,
+        tenant_id: tenantId,
         start_date,
         lease_end_date,
         monthly_rent,
@@ -297,7 +347,7 @@ export async function createTenant(
       if (lease_pdf_path) {
         await supabase.storage.from("leases").remove([lease_pdf_path]);
       }
-      await supabase.from("tenants").delete().eq("id", tenant.id);
+      await rollbackTenant();
       return { error: leErr.message };
     }
 
@@ -319,7 +369,7 @@ export async function createTenant(
         if (lease_pdf_path) {
           await supabase.storage.from("leases").remove([lease_pdf_path]);
         }
-        await supabase.from("tenants").delete().eq("id", tenant.id);
+        await rollbackTenant();
         return {
           error: `Failed to post the security-deposit charge: ${depositError.message}`,
         };
@@ -352,7 +402,7 @@ export async function createTenant(
   revalidatePath("/inventory");
   revalidatePath("/tenants/new");
   revalidatePath("/properties");
-  redirect(`/tenants/${tenant.id}`);
+  redirect(`/tenants/${tenantId}`);
 }
 
 // Generate a short-lived signed URL for downloading the lease PDF.
@@ -1485,6 +1535,7 @@ export async function sendBalanceReminders(
 
   type ReminderTenancy = {
     id: string;
+    tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
     security_deposit: number | null;
@@ -1511,7 +1562,7 @@ export async function sendBalanceReminders(
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
        tenants(full_name, email, phone),
        rooms(properties(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,
@@ -1521,8 +1572,10 @@ export async function sendBalanceReminders(
 
   if (error) return { error: error.message };
 
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
 
   let processed = 0;
   let sent = 0;
@@ -1540,13 +1593,16 @@ export async function sendBalanceReminders(
     // Paused tenancies are excluded from all reminders, email and SMS.
     if (row.paused_at) continue;
 
-    const { netBalance } = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    // Tenant-wide: one ledger per tenant across every room they've had.
+    const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     if (netBalance <= 0.01) continue;
     processed++;
@@ -1566,13 +1622,16 @@ export async function sendBalanceReminders(
       // blocks the reminder itself.
       let detail: BalanceDetail | undefined;
       try {
-        detail = await buildBalanceDetail(supabase, {
-          tenancy: row,
-          payments: row.payments ?? [],
-          charges: charges.get(row.id) ?? [],
-          rentChanges: rentChanges.get(row.id) ?? [],
-          today,
-        });
+        const inputs = tl.inputs.get(row.tenant_id);
+        detail = inputs
+          ? await buildTenantBalanceDetail(supabase, { inputs, today })
+          : await buildBalanceDetail(supabase, {
+              tenancy: row,
+              payments: row.payments ?? [],
+              charges: charges.get(row.id) ?? [],
+              rentChanges: rentChanges.get(row.id) ?? [],
+              today,
+            });
       } catch (e) {
         console.error("[balance-reminders] breakdown failed:", e);
       }

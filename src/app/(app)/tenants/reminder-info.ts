@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
@@ -47,6 +47,7 @@ export type ReminderTenancy = {
   start_date: string;
   move_out_date: string | null;
   paused_at: string | null;
+  tenant_id: string;
   payments: { amount: number; paid_on: string; payment_type: string }[];
 };
 
@@ -65,7 +66,7 @@ export async function getReminderInfo(
         : supabase
             .from("tenancies")
             .select(
-              `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+              `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, tenant_id,
                payments(amount, paid_on, payment_type)`,
             )
             .eq("status", "active")
@@ -87,8 +88,10 @@ export async function getReminderInfo(
         .limit(20),
     ]);
 
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
 
   let outstandingCount = 0;
   for (const row of tenancies ?? []) {
@@ -96,13 +99,15 @@ export async function getReminderInfo(
     if (row.start_date > today) continue;
     // Mirrors sendBalanceReminders: paused tenancies get no reminders.
     if (row.paused_at) continue;
-    const { netBalance } = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     if (netBalance > 0.01) outstandingCount++;
   }

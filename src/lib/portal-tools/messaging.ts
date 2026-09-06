@@ -2,8 +2,12 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
-import { buildBalanceDetail, type BalanceDetail } from "@/lib/balance-detail";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
+import {
+  buildBalanceDetail,
+  buildTenantBalanceDetail,
+  type BalanceDetail,
+} from "@/lib/balance-detail";
 import {
   inventorySheetEmailTemplate,
   sendBalanceReminderOutlook,
@@ -42,6 +46,7 @@ export async function sendBalanceReminders(args: {
   type PropertyRel = { is_new_york: boolean };
   type ReminderRow = {
     id: string;
+    tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
     security_deposit: number | null;
@@ -68,7 +73,7 @@ export async function sendBalanceReminders(args: {
   let query = supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
        tenants(full_name, email, phone),
        rooms(properties(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,
@@ -81,8 +86,10 @@ export async function sendBalanceReminders(args: {
     return { ok: false, error: "No active tenancy found for that id." };
   }
 
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
 
   let owing = 0;
   let emailed = 0;
@@ -97,13 +104,16 @@ export async function sendBalanceReminders(args: {
     // Paused tenancies are excluded from all reminders, email and SMS.
     if (row.paused_at) continue;
 
-    const { netBalance } = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    // Tenant-wide: one ledger per tenant across every room they've had.
+    const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     if (netBalance <= 0.01) continue;
     owing++;
@@ -127,13 +137,16 @@ export async function sendBalanceReminders(args: {
       // Mini ledger + utility statement links; best-effort, never blocks the send.
       let detail: BalanceDetail | undefined;
       try {
-        detail = await buildBalanceDetail(supabase, {
-          tenancy: row,
-          payments: row.payments ?? [],
-          charges: charges.get(row.id) ?? [],
-          rentChanges: rentChanges.get(row.id) ?? [],
-          today,
-        });
+        const inputs = tl.inputs.get(row.tenant_id);
+        detail = inputs
+          ? await buildTenantBalanceDetail(supabase, { inputs, today })
+          : await buildBalanceDetail(supabase, {
+              tenancy: row,
+              payments: row.payments ?? [],
+              charges: charges.get(row.id) ?? [],
+              rentChanges: rentChanges.get(row.id) ?? [],
+              today,
+            });
       } catch (e) {
         console.error("[balance-reminders] breakdown failed:", e);
       }

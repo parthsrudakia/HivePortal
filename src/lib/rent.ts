@@ -346,6 +346,10 @@ export type LedgerEntry = {
   refIds: string[];
   /** Utility bill behind this line (utility overcharges) — linked in the UI. */
   billId?: string | null;
+  /** Tenancy this line belongs to (set by the tenant-wide ledger). */
+  tenancyId?: string;
+  /** Unit label for this line, set when the tenant has had more than one room. */
+  unit?: string;
 };
 
 /**
@@ -510,6 +514,155 @@ export function buildLedgerEntries(
   rows.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;
     return (a.payment > 0 ? 1 : 0) - (b.payment > 0 ? 1 : 0);
+  });
+
+  let balance = 0;
+  return rows.map((r) => {
+    balance = cents(balance + r.charge - r.payment);
+    return { ...r, balance };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tenant-wide ledger — ONE running balance per tenant across every tenancy.
+// A tenant who moves rooms keeps a single ledger: the old room's rent, deposit
+// and payments stay on the same statement and the balance simply carries
+// through into the new room, instead of each tenancy owning a separate ledger.
+// ---------------------------------------------------------------------------
+
+/** One tenancy's inputs to the tenant-wide ledger. */
+export type TenancyLedgerInput = {
+  id: string;
+  tenancy: LedgerTenancy;
+  /** "Building Apt 5 · Room 2" — tags each line when the tenant had >1 room. */
+  unitLabel: string;
+  payments: LedgerEntryPayment[];
+  charges: LedgerEntryCharge[];
+  allocations?: LedgerAllocation[];
+  rentChanges?: RentChange[];
+};
+
+/** Bucket-by-bucket sum of several ledgers (the tenant-wide position). */
+export function sumLedgers(ledgers: Ledger[]): Ledger {
+  const add = (a: Bucket, b: Bucket): Bucket => ({
+    owed: cents(a.owed + b.owed),
+    paid: cents(a.paid + b.paid),
+    balance: cents(a.balance + b.balance),
+  });
+  const zero = (): Bucket => ({ owed: 0, paid: 0, balance: 0 });
+  const out: Ledger = {
+    rent: zero(),
+    deposit: zero(),
+    lateFee: zero(),
+    other: zero(),
+    netBalance: 0,
+    availableCredit: 0,
+  };
+  for (const l of ledgers) {
+    out.rent = add(out.rent, l.rent);
+    out.deposit = add(out.deposit, l.deposit);
+    out.lateFee = add(out.lateFee, l.lateFee);
+    out.other = add(out.other, l.other);
+    out.netBalance = cents(out.netBalance + l.netBalance);
+  }
+  out.availableCredit = Math.max(0, -out.netBalance);
+  return out;
+}
+
+/** The tenant-wide ledger position: every tenancy's buckets summed. */
+export function computeTenantLedger(
+  inputs: TenancyLedgerInput[],
+  todayIso: string = todayISO(),
+): Ledger {
+  return sumLedgers(
+    inputs.map((i) =>
+      computeLedger(
+        i.tenancy,
+        i.payments,
+        i.charges,
+        i.allocations ?? [],
+        todayIso,
+        i.rentChanges ?? [],
+      ),
+    ),
+  );
+}
+
+/** Note prefix the room-transfer action stamps on its carry rows. */
+const CARRY_NOTE = /^Balance carried (to|from) /;
+
+/**
+ * Chronological ledger across ALL of a tenant's tenancies, oldest first, with
+ * one running balance carried straight through room changes. Lines carry the
+ * tenancy's `unit` so the room each charge belongs to stays visible.
+ *
+ * A room transfer books the carried balance as a 'settlement' on the old
+ * tenancy and an equal-and-opposite 'adjustment' on the new one so the
+ * per-tenancy figures (Rent Tracker, reminders) stay right. On one unified
+ * statement that pair is pure bookkeeping — it nets to zero and would read as
+ * "balance vanishes, balance reappears" — so it is dropped here whenever it
+ * still nets to zero. If either half was deleted the survivor is kept, since
+ * it then genuinely changes the balance.
+ */
+export function buildTenantLedgerEntries(
+  inputs: TenancyLedgerInput[],
+  todayIso: string = todayISO(),
+): LedgerEntry[] {
+  const carryTotal = inputs
+    .flatMap((i) => i.charges)
+    .filter(
+      (c) =>
+        (c.kind === "settlement" || c.kind === "adjustment") &&
+        c.note != null &&
+        CARRY_NOTE.test(c.note) &&
+        c.charged_on <= todayIso,
+    )
+    .reduce((s, c) => s + num(c.amount), 0);
+  const hideCarry = Math.abs(cents(carryTotal)) < 0.005;
+
+  const tag = inputs.length > 1;
+  const rows: Omit<LedgerEntry, "balance">[] = [];
+  for (const i of inputs) {
+    const charges = hideCarry
+      ? i.charges.filter(
+          (c) =>
+            !(
+              (c.kind === "settlement" || c.kind === "adjustment") &&
+              c.note != null &&
+              CARRY_NOTE.test(c.note)
+            ),
+        )
+      : i.charges;
+    for (const e of buildLedgerEntries(
+      i.tenancy,
+      i.payments,
+      charges,
+      todayIso,
+      i.rentChanges ?? [],
+    )) {
+      rows.push({
+        ...e,
+        // Auto rent ids are per-tenancy ("rent-<month>"); keep them unique
+        // across the merged list.
+        id: e.refIds.length ? e.id : `${i.id}:${e.id}`,
+        tenancyId: i.id,
+        unit: tag ? i.unitLabel : undefined,
+      });
+    }
+  }
+
+  // Same ordering rule as the per-tenancy list: by date, charges before
+  // payments within a day; ties broken by tenancy start so an old room's
+  // final month sorts before the new room's first month.
+  const startOf = new Map(inputs.map((i) => [i.id, i.tenancy.start_date]));
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const ap = a.payment > 0 ? 1 : 0;
+    const bp = b.payment > 0 ? 1 : 0;
+    if (ap !== bp) return ap - bp;
+    const as = startOf.get(a.tenancyId ?? "") ?? "";
+    const bs = startOf.get(b.tenancyId ?? "") ?? "";
+    return as < bs ? -1 : as > bs ? 1 : 0;
   });
 
   let balance = 0;

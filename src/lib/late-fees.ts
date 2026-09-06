@@ -18,7 +18,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { computeLedger } from "@/lib/rent";
-import { fetchLedgerSidecars } from "@/lib/rent-data";
+import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 
@@ -88,6 +88,7 @@ export async function applyMonthlyLateFees(
   type RoomRel = { properties: PropertyRel | PropertyRel[] | null };
   type TenancyRow = {
     id: string;
+    tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
     security_deposit: number | null;
@@ -101,7 +102,7 @@ export async function applyMonthlyLateFees(
   const { data: tenancies, error } = await supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
        tenants(full_name),
        rooms(properties(is_new_york)),
        payments(amount, paid_on, payment_type)`,
@@ -116,8 +117,10 @@ export async function applyMonthlyLateFees(
     return { ran: false, error: error.message, period };
   }
 
-  const { charges, allocations, rentChanges } =
-    await fetchLedgerSidecars(supabase);
+  const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
+    fetchLedgerSidecars(supabase),
+    fetchTenantLedgers(supabase),
+  ]);
 
   // Tenancies that already have a late fee this month (manual or auto).
   const alreadyFeed = new Set<string>();
@@ -163,13 +166,16 @@ export async function applyMonthlyLateFees(
     // started on/after the 1st of the current month is skipped this cycle.
     if (row.start_date >= `${period}-01`) continue;
 
-    const { netBalance } = computeLedger(
-      row,
-      row.payments ?? [],
-      charges.get(row.id) ?? [],
-      allocations.get(row.id) ?? [],
-      today,
-      rentChanges.get(row.id) ?? [],
+    // Tenant-wide: one ledger per tenant across every room they've had.
+    const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
+      computeLedger(
+        row,
+        row.payments ?? [],
+        charges.get(row.id) ?? [],
+        allocations.get(row.id) ?? [],
+        today,
+        rentChanges.get(row.id) ?? [],
+      ),
     );
     if (netBalance <= MIN_OWED) continue;
 
