@@ -151,6 +151,7 @@ export function TenantsExplorer({
       defaultExpanded={owingOnly}
       admin={admin}
       hideGroupHeaders={owingOnly}
+      openInNewTab={owingOnly}
     />
   );
 }

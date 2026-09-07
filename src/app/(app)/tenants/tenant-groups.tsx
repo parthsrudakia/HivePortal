@@ -57,6 +57,7 @@ export function TenantGroups({
   defaultExpanded = false,
   admin = false,
   hideGroupHeaders = false,
+  openInNewTab = false,
 }: {
   groups: DisplayGroup[];
   defaultExpanded?: boolean;
@@ -66,6 +67,9 @@ export function TenantGroups({
   // When true, drop the per-unit "Unit total" header rows and show a flat
   // list — used for the balance-only + sort-by-balance ranked view.
   hideGroupHeaders?: boolean;
+  // Open tenant pages in a new tab — used in the balance-only view so the
+  // operator can work down the owing list without losing their place.
+  openInNewTab?: boolean;
 }) {
   // Track collapsed groups by label; empty = everything expanded. Start with
   // every property collapsed each time the page opens — unless defaultExpanded
@@ -238,6 +242,9 @@ export function TenantGroups({
                             <Link
                               href={`/tenants/${r.tenant_id}`}
                               className={`${rowTxt} hover:text-accent-text`}
+                              {...(openInNewTab
+                                ? { target: "_blank", rel: "noopener noreferrer" }
+                                : {})}
                             >
                               {r.tenant_name}
                             </Link>
