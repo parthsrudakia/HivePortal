@@ -26,6 +26,8 @@ type PropertyRel = {
   unit_number: string;
   cross_street: string | null;
   neighborhood: string | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
   unit_amenities: string[];
   building_amenities: string[];
 };
@@ -74,7 +76,7 @@ export default async function VacancyDetailPage({ params }: PageProps) {
          available_from, has_private_bathroom, has_ac,
          marketing_description, photos_url, listing_action,
          properties(id, building_name, street_address, unit_number,
-                    cross_street, neighborhood,
+                    cross_street, neighborhood, bedrooms, bathrooms,
                     unit_amenities, building_amenities)`,
         )
         .eq("id", roomId)
@@ -192,6 +194,26 @@ export default async function VacancyDetailPage({ params }: PageProps) {
               </p>
             )}
             <p className="mt-2 text-xs text-muted">{p?.neighborhood ?? "—"}</p>
+            {p && (
+              <dl className="mt-4 flex gap-6 border-t border-stone/40 pt-4">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted">
+                    Rooms
+                  </dt>
+                  <dd className="mt-0.5 text-lg tabular-nums text-ink">
+                    {p.bedrooms ?? <span className="text-muted">—</span>}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted">
+                    Bathrooms
+                  </dt>
+                  <dd className="mt-0.5 text-lg tabular-nums text-ink">
+                    {p.bathrooms ?? <span className="text-muted">—</span>}
+                  </dd>
+                </div>
+              </dl>
+            )}
           </div>
 
           <RentEdit
