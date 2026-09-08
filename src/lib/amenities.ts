@@ -20,9 +20,6 @@ export const BUILDING_AMENITIES = [
   "Package Room",
   "Laundry Room",
   "Elevator",
-  "Courtyard",
-  "Parking Garage",
-  "Swimming Pool",
   "Lounge",
 ] as const;
 
