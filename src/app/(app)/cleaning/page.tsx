@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { addDaysISO, todayISO } from "@/lib/date";
+import { unitLabel as propertyLabel } from "@/lib/unit-label";
 import { CLEANING_CADENCE_DAYS } from "@/lib/cleaning";
 import { scheduleUrl } from "@/lib/cleaner-schedule";
 import { SearchInput } from "@/components/search-input";
@@ -17,14 +18,6 @@ type Row = {
   property_id: string;
   cleaning_date: string;
 };
-
-function propertyLabel(p: {
-  building_name: string | null;
-  street_address: string;
-  unit_number: string;
-}) {
-  return `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`;
-}
 
 type PageProps = {
   searchParams: Promise<{ view?: string; q?: string }>;

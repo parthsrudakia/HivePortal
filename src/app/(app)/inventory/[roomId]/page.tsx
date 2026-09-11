@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
+import { unitLabel } from "@/lib/unit-label";
 import { formatDate, todayISO } from "@/lib/date";
 import { UNIT_AMENITIES, BUILDING_AMENITIES } from "@/lib/amenities";
 import { CopyListing } from "../copy-listing";
@@ -105,9 +106,7 @@ export default async function VacancyDetailPage({ params }: PageProps) {
   const isNow =
     room.status === "available" &&
     (!room.available_from || room.available_from <= today);
-  const unitTitle = p
-    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-    : "—";
+  const unitTitle = p ? unitLabel(p) : "—";
 
   const amenities = p
     ? [

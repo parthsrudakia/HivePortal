@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
+import { unitLabel } from "@/lib/unit-label";
 import { formatDate, todayISO } from "@/lib/date";
 import {
   AGREEMENTS_BUCKET,
@@ -104,9 +105,9 @@ export default async function AgreementsPage() {
     const address = property
       ? `${property.street_address}${property.unit_number ? `, Apt ${property.unit_number}` : ""}`
       : "";
-    const place = property
-      ? property.building_name?.trim() || property.street_address
-      : "";
+    // Apt number included: buildings hold many units, so the name alone
+    // (e.g. "Singh Tower") would name every unit in the building alike.
+    const place = property ? unitLabel(property) : "";
     const upcomingTag =
       row.status === "upcoming" ? ` · moves in ${formatDate(row.start_date)}` : "";
     return [
@@ -131,9 +132,9 @@ export default async function AgreementsPage() {
     if (!tenant) return [];
     const room = one(row.rooms);
     const property = room ? one(room.properties) : null;
-    const place = property
-      ? property.building_name?.trim() || property.street_address
-      : "";
+    // Apt number included: buildings hold many units, so the name alone
+    // (e.g. "Singh Tower") would name every unit in the building alike.
+    const place = property ? unitLabel(property) : "";
     const upcomingTag =
       row.status === "upcoming" ? ` · moves in ${formatDate(row.start_date)}` : "";
     return [

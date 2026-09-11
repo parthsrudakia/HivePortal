@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
+import { unitLabel } from "@/lib/unit-label";
 import { todayISO } from "@/lib/date";
 import { TabNotepad } from "../tab-notepad";
 import { CopyListing } from "./copy-listing";
@@ -215,9 +216,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     .filter((r) => !r.pending_tenant && !inInventory(r.status, r.available_from))
     .map((r) => {
       const pr = one(r.properties);
-      const unit = pr
-        ? `${pr.building_name?.trim() || pr.street_address} Apt ${pr.unit_number}`
-        : "—";
+      const unit = pr ? unitLabel(pr) : "—";
       const roomNum = r.room_number?.replace(/^room\s+/i, "") ?? "";
       const active = (r.tenancies ?? []).find((t) => t.status === "active");
       const upcoming = (r.tenancies ?? []).find((t) => t.status === "upcoming");
@@ -585,9 +584,7 @@ function InventoryRow({
   striped: boolean;
 }) {
   const p = one(room.properties);
-  const unitTitle = p
-    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-    : "—";
+  const unitTitle = p ? unitLabel(p) : "—";
 
   const tenancies = (room.tenancies ?? [])
     .slice()

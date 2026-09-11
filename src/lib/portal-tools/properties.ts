@@ -292,7 +292,7 @@ export async function createProperty(args: CreatePropertyArgs) {
     cleanerNames = (found ?? []).map((c) => c.name);
   }
 
-  // Refuse duplicates up front with a friendly message (the unique index
+  // Refuse duplicates up front with a friendly message (the unique indexes
   // on street + unit would reject it anyway).
   const { data: dup } = await supabase
     .from("properties")
@@ -304,6 +304,23 @@ export async function createProperty(args: CreatePropertyArgs) {
     throw new Error(
       `A property at ${street_address} Apt ${unit_number} already exists (property ${dup.id}).`,
     );
+  }
+
+  // A named building is shown as "<building> Apt <unit>", so that pair must be
+  // unique too — otherwise the new unit is indistinguishable from the old one
+  // on every screen, whatever its street address says.
+  if (building_name) {
+    const { data: nameDup } = await supabase
+      .from("properties")
+      .select("id, street_address")
+      .ilike("building_name", building_name)
+      .ilike("unit_number", unit_number)
+      .maybeSingle();
+    if (nameDup) {
+      throw new Error(
+        `${building_name} Apt ${unit_number} already exists at ${nameDup.street_address} (property ${nameDup.id}). Both would show the same label.`,
+      );
+    }
   }
 
   // Leaseholder: reuse by name (case-insensitive) or create.

@@ -226,10 +226,7 @@ export async function createProperty(
 
   if (error) {
     return {
-      error:
-        error.code === "23505"
-          ? "A property with that street address + unit number already exists."
-          : error.message,
+      error: error.code === "23505" ? duplicateMessage(error) : error.message,
     };
   }
 
@@ -282,10 +279,7 @@ export async function updateProperty(
 
   if (error) {
     return {
-      error:
-        error.code === "23505"
-          ? "A property with that street address + unit number already exists."
-          : error.message,
+      error: error.code === "23505" ? duplicateMessage(error) : error.message,
     };
   }
 
@@ -297,6 +291,15 @@ export async function updateProperty(
   revalidatePath(`/properties/${id}`);
   revalidatePath("/inventory");
   return undefined;
+}
+
+// Two unique indexes guard a property's identity: the street address + unit,
+// and — for a named building — the building name + unit, since that pair is
+// what every screen shows ("Singh Tower Apt 901"). Say which one collided.
+function duplicateMessage(error: { message: string }): string {
+  return error.message.includes("properties_building_unit_unique")
+    ? "Another property already uses that building name + apartment number. They would show the same label, so one of them needs a different building name or unit."
+    : "A property with that street address + unit number already exists.";
 }
 
 // Deleting a property must not silently erase active tenants. The client

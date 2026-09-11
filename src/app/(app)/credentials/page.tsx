@@ -3,6 +3,7 @@ import { getCachedClient } from "@/lib/supabase/server";
 import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { one } from "@/lib/relations";
+import { unitLabel as propertyLabel } from "@/lib/unit-label";
 import { SearchInput } from "@/components/search-input";
 import { TableSkeleton } from "@/components/section-skeletons";
 import { AddCredential } from "./add-credential";
@@ -36,10 +37,6 @@ type Row = {
   notes: string | null;
   properties: PropertyRel | PropertyRel[] | null;
 };
-
-function propertyLabel(p: PropertyRel) {
-  return `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`;
-}
 
 const getPropertyOptions = cache(async (): Promise<PropertyOption[]> => {
   const supabase = await getCachedClient();
