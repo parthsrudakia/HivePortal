@@ -108,8 +108,11 @@ function BalanceCell({ n }: { n: number }) {
     return <span className="text-red-700">{fmtMoney(n)}</span>;
   }
   if (n < -0.005) {
+    // inline-block + nowrap: in the narrow balance column the pill used to
+    // wrap between "Credit" and the amount, painting the rounded background
+    // twice and reading as two broken badges.
     return (
-      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text">
+      <span className="inline-block whitespace-nowrap rounded-full bg-accent/15 px-2 py-0.5 text-xs uppercase tracking-wide text-accent-text">
         Credit {fmtMoney(-n)}
       </span>
     );
@@ -582,31 +585,53 @@ export default async function TenantDetailPage({
               <table className="w-full text-sm">
                 <thead className="bg-warm/60 text-left text-xs uppercase tracking-wide text-muted">
                   <tr>
-                    <th className="px-5 py-3 font-medium">Date</th>
-                    <th className="px-5 py-3 font-medium">Description</th>
-                    <th className="px-5 py-3 text-right font-medium">Charge</th>
-                    <th className="px-5 py-3 text-right font-medium">Payment</th>
-                    <th className="px-5 py-3 text-right font-medium">Balance</th>
-                    <th />
+                    <th className="whitespace-nowrap px-5 py-3 font-medium">
+                      Date
+                    </th>
+                    {/* Takes the slack so the numeric columns stay snug
+                        against the right edge. */}
+                    <th className="w-full px-5 py-3 font-medium">
+                      Description
+                    </th>
+                    <th className="whitespace-nowrap px-5 py-3 text-right font-medium">
+                      Charge
+                    </th>
+                    <th className="whitespace-nowrap px-5 py-3 text-right font-medium">
+                      Payment
+                    </th>
+                    <th className="whitespace-nowrap px-5 py-3 text-right font-medium">
+                      Balance
+                    </th>
+                    <th className="px-5 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {ledgerEntries.map((e) => (
                     <tr key={e.id} className="border-t border-stone/40">
-                      <td className="whitespace-nowrap px-5 py-3 text-ink">
+                      <td className="whitespace-nowrap px-5 py-3 align-top text-ink">
                         {formatDate(e.date)}
                       </td>
-                      <td className="px-5 py-3 text-ink">
+                      {/* Bank-imported payments carry the raw wire memo, which
+                          runs to several lines and dwarfs every other row.
+                          Clamp it to two and keep the full text on hover. */}
+                      <td
+                        className="px-5 py-3 align-top text-ink"
+                        title={e.description}
+                      >
                         {e.billId ? (
                           <Link
                             href={`/utilities?bill=${e.billId}`}
                             title="Open the utility bill behind this charge"
-                            className="underline decoration-stone underline-offset-2 hover:text-accent-text"
+                            className="line-clamp-2 break-words underline decoration-stone underline-offset-2 hover:text-accent-text"
                           >
                             {e.description}
                           </Link>
                         ) : (
-                          e.description
+                          <span className="line-clamp-2 break-words">
+                            {e.description}
+                          </span>
                         )}
                         {e.unit && (
                           <span className="mt-0.5 block text-xs text-muted">
@@ -614,16 +639,16 @@ export default async function TenantDetailPage({
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-ink">
+                      <td className="whitespace-nowrap px-5 py-3 text-right align-top tabular-nums text-ink">
                         {e.charge > 0 ? fmtMoney(e.charge) : ""}
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-accent-text">
+                      <td className="whitespace-nowrap px-5 py-3 text-right align-top tabular-nums text-accent-text">
                         {e.payment > 0 ? `−${fmtMoney(e.payment)}` : ""}
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-5 py-3 text-right align-top tabular-nums">
                         <BalanceCell n={e.balance} />
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-5 py-3 text-right align-top">
                         {e.deletable === "payment" && ledgerAdmin ? (
                           <DeletePaymentButton
                             paymentId={e.refIds[0]}
