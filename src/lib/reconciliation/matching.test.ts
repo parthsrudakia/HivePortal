@@ -77,6 +77,51 @@ describe("buildPayerIndex / autoAssign", () => {
     expect(index.get("john doe")).toBe("late");
   });
 
+  it("lets a stale alias on another tenant's own name capture their rent", () => {
+    // Sep 2026 incident. A misassigned deposit left an alias mapping
+    // "tanvi mahadik" — Tanvi's OWN payer key — onto Ankush's tenant record.
+    // It lay dormant while his tenancy was `upcoming` (loadPayerTenancies only
+    // loads active/ended), then his Sep 1 start beat her Aug 1 on the
+    // latest-start tiebreak and swallowed her September rent.
+    //
+    // The index behaviour below is correct and deliberate; what must never
+    // happen is an alias landing on a key another tenant already owns.
+    // assignDeposit now refuses to write one — this pins the blast radius if
+    // such a row ever reappears.
+    const index = buildPayerIndex([
+      payerTenancy({
+        tenancy_id: "tanvi",
+        start_date: "2026-08-01",
+        keys: ["tanvi mahadik"],
+      }),
+      payerTenancy({
+        tenancy_id: "ankush",
+        start_date: "2026-09-01",
+        keys: ["ankush a sinha", "tanvi mahadik"], // the stale alias
+      }),
+    ]);
+    expect(index.get("tanvi mahadik")).toBe("ankush");
+
+    // ...and with the alias gone, her money comes home.
+    const clean = buildPayerIndex([
+      payerTenancy({
+        tenancy_id: "tanvi",
+        start_date: "2026-08-01",
+        keys: ["tanvi mahadik"],
+      }),
+      payerTenancy({
+        tenancy_id: "ankush",
+        start_date: "2026-09-01",
+        keys: ["ankush a sinha"],
+      }),
+    ]);
+    const [assigned] = autoAssign(
+      [deposit({ description: "tanvi mahadik", date: "2026-09-08" })],
+      clean,
+    );
+    expect(assigned.tenancyId).toBe("tanvi");
+  });
+
   it("indexes a tenancy that starts AFTER the deposit month (prepayment bug regression)", () => {
     // July deposit, tenancy starting in September: the old per-month runs
     // dropped this tenancy entirely; the continuous index must include it.

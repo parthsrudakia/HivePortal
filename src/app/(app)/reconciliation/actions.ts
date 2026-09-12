@@ -11,6 +11,7 @@ import {
   parseBankFile,
   parseOtherFile,
   bankPayerNameDisplay,
+  tenantKey,
   type Deposit,
 } from "@/lib/reconciliation/parsers";
 import {
@@ -21,6 +22,7 @@ import {
   assignSyntheticOrdinals,
 } from "@/lib/reconciliation/matching";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { isValid, zUuid } from "@/lib/validation";
 
 // Store a statement's negative Zelle rows (chargebacks) as reversal alerts,
@@ -354,13 +356,24 @@ export async function assignDeposit(
   const alias = dep.raw_description
     ? bankPayerNameDisplay(dep.raw_description)
     : dep.payer_key;
-  const { error: upErr } = await supabase
-    .from("tenant_payer_aliases")
-    .upsert(
-      { tenant_id: ten.tenant_id, payer_key: dep.payer_key, display_name: alias },
-      { onConflict: "payer_key" },
-    );
-  if (upErr) return { error: `Failed to remember the payer: ${upErr.message}` };
+
+  // ...unless this payer key is some OTHER tenant's own name. Remembering it
+  // would silently steal that tenant's future rent: buildPayerIndex resolves a
+  // key to exactly one tenancy, so whichever is active with the later
+  // start_date wins. That is how a one-off misassignment of Tanvi's deposit to
+  // Ankush quietly captured her September rent two months later. Post this
+  // deposit — the operator may well be right about this one payment — but do
+  // not turn it into a standing rule.
+  const keyOwner = await payerKeyOwner(supabase, dep.payer_key, ten.tenant_id);
+  if (!keyOwner) {
+    const { error: upErr } = await supabase
+      .from("tenant_payer_aliases")
+      .upsert(
+        { tenant_id: ten.tenant_id, payer_key: dep.payer_key, display_name: alias },
+        { onConflict: "payer_key" },
+      );
+    if (upErr) return { error: `Failed to remember the payer: ${upErr.message}` };
+  }
 
   // Assigning affirms this payer IS rent — clear any stale not-rent flag.
   const { error: clearIgnoredError } = await supabase
@@ -406,11 +419,29 @@ export async function assignDeposit(
   const tenant = one(ten.tenants);
   revalidatePath("/reconciliation");
   revalidatePath("/tenants");
+  const posted = `Posted ${postedCount} deposit${postedCount === 1 ? "" : "s"} to ${tenant?.full_name ?? "tenant"}'s ledger`;
   return {
-    success:
-      `Posted ${postedCount} deposit${postedCount === 1 ? "" : "s"} to ${tenant?.full_name ?? "tenant"}'s ledger — ` +
-      `"${alias}" will match them automatically from now on.`,
+    success: keyOwner
+      ? `${posted}. "${alias}" was NOT remembered — that name belongs to ${keyOwner}, ` +
+        `so remembering it would send their future rent here too. Assign any further ` +
+        `deposits from this payer by hand.`
+      : `${posted} — "${alias}" will match them automatically from now on.`,
   };
+}
+
+/** The OTHER tenant whose own payer key (pays_as, else full_name) is exactly
+ *  `payerKey`, or null when the key is unclaimed. An alias on a claimed key is
+ *  never safe: the payer index maps one key to one tenancy. */
+async function payerKeyOwner(
+  supabase: SupabaseClient<Database>,
+  payerKey: string,
+  assigningTo: string,
+): Promise<string | null> {
+  const { data } = await supabase.from("tenants").select("id, full_name, pays_as");
+  const owner = (data ?? []).find(
+    (t) => t.id !== assigningTo && tenantKey(t.pays_as, t.full_name) === payerKey,
+  );
+  return owner?.full_name ?? null;
 }
 
 // ----------------------------------------------------------------------------

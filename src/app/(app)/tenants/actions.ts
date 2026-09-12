@@ -1321,9 +1321,34 @@ export async function deletePayment(formData: FormData) {
     (tenant_id !== "" && !isValid(zUuid, tenant_id))
   )
     return;
+
+  // Taking a reconciliation-posted payment off a ledger says "this payer's
+  // money is not this tenant's". The remembered payer → tenant alias has to go
+  // with it, or the next statement silently re-posts to the same wrong ledger.
+  // Only retract a mapping that points at the tenant we are removing from —
+  // a mapping since moved elsewhere is somebody else's correct answer.
+  const { data: dep } = await supabase
+    .from("reconciliation_deposits")
+    .select("payer_key, tenancies(tenant_id)")
+    .eq("payment_id", payment_id)
+    .maybeSingle<{
+      payer_key: string;
+      tenancies: { tenant_id: string } | { tenant_id: string }[] | null;
+    }>();
+  const depTenantId = dep ? one(dep.tenancies)?.tenant_id : null;
+
   await supabase.from("payments").delete().eq("id", payment_id);
 
+  if (dep && depTenantId) {
+    await supabase
+      .from("tenant_payer_aliases")
+      .delete()
+      .eq("payer_key", dep.payer_key)
+      .eq("tenant_id", depTenantId);
+  }
+
   revalidatePath("/tenants");
+  revalidatePath("/reconciliation");
   if (tenant_id) revalidatePath(`/tenants/${tenant_id}`);
 }
 
