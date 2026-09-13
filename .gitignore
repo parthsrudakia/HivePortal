@@ -48,3 +48,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 Hive-Project-Management-main/
+
+# Local work products (spreadsheets, exports) — never source
+outputs/
