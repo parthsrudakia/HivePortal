@@ -7,7 +7,7 @@ import { KpiRowSkeleton, TableSkeleton } from "@/components/section-skeletons";
 import { BalanceFilter } from "./balance-filter";
 import { RentReminderButton } from "./rent-reminder-button";
 import { computeLedger } from "@/lib/rent";
-import { tenantLedger } from "@/lib/rent-data";
+import { LedgerDataError, tenantLedger } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
 import { canEditLedger, isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
@@ -209,21 +209,27 @@ async function RentKpisSection() {
 }
 
 async function SideListsSection() {
-  const [
-    user,
-    { data: endedData },
-    { data: upcomingData },
-    { data: activeData },
-    sidecars,
-    tl,
-  ] = await Promise.all([
-    getSessionUser(),
-    getEndedTenancies(),
-    getUpcomingTenancies(),
-    getActiveTenancies(),
-    getSidecars(),
-    getTenantLedgers(),
-  ]);
+  const [user, endedRes, upcomingRes, activeRes, sidecars, tl] =
+    await Promise.all([
+      getSessionUser(),
+      getEndedTenancies(),
+      getUpcomingTenancies(),
+      getActiveTenancies(),
+      getSidecars(),
+      getTenantLedgers(),
+    ]);
+  // Money integrity: a failed tenancy read throws instead of rendering a
+  // tracker with rows (and their balances) silently missing.
+  for (const [what, res] of [
+    ["ended tenancies", endedRes],
+    ["upcoming tenancies", upcomingRes],
+    ["active tenancies", activeRes],
+  ] as const) {
+    if (res.error) throw new LedgerDataError(what, res.error.message);
+  }
+  const { data: endedData } = endedRes;
+  const { data: upcomingData } = upcomingRes;
+  const { data: activeData } = activeRes;
   const { charges, allocations, rentChanges } = sidecars;
   const today = todayISO();
 

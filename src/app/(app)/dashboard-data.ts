@@ -7,7 +7,12 @@
 
 import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
-import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
+import {
+  LedgerDataError,
+  fetchLedgerSidecars,
+  fetchTenantLedgers,
+  tenantLedger,
+} from "@/lib/rent-data";
 import { computeLedger } from "@/lib/rent";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
@@ -131,10 +136,16 @@ export const getDashSidecars = cache(async () =>
 // payments — mirrors the Rent Tracker KPIs: Zelle can't tell deposits from
 // rent, so the applied charge is what marks that money as deposit.
 export const getPaymentsThisCycle = cache(async () => {
-  const [{ data }, { charges }] = await Promise.all([
+  const [paymentsRes, { charges }] = await Promise.all([
     getAllPayments(),
     getDashSidecars(),
   ]);
+  // Money integrity: a failed payments read throws rather than reporting
+  // $0 collected and every tenant as owing.
+  if (paymentsRes.error) {
+    throw new LedgerDataError("payments", paymentsRes.error.message);
+  }
+  const data = paymentsRes.data;
   const today = todayISO();
   const tm = currentRentCycle();
   const inCycle = (d: string | null | undefined) =>
@@ -179,13 +190,17 @@ export type RentEntry = {
 
 // Rent worklist: active tenancies whose running net balance is positive.
 export const getRentWorklist = cache(async (): Promise<RentEntry[]> => {
-  const [{ data: tenancies }, { paymentsByTenancy }, sidecars, tl] =
+  const [tenanciesRes, { paymentsByTenancy }, sidecars, tl] =
     await Promise.all([
       getDashTenancies(),
       getPaymentsThisCycle(),
       getDashSidecars(),
       fetchTenantLedgers(await getCachedClient()),
     ]);
+  if (tenanciesRes.error) {
+    throw new LedgerDataError("active tenancies", tenanciesRes.error.message);
+  }
+  const tenancies = tenanciesRes.data;
   const { charges, allocations, rentChanges } = sidecars;
   const today = todayISO();
 

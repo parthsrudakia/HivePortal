@@ -24,6 +24,7 @@ import {
   type RentChange,
   type TenancyLedgerInput,
 } from "@/lib/rent";
+import { ledgerRows } from "@/lib/rent-data";
 import { canEditLedger } from "@/lib/access";
 import { pauseTenancy, resumeTenancy } from "../actions";
 import { fetchAssignableRooms, type RoomOption } from "../room-options";
@@ -139,7 +140,9 @@ export default async function TenantDetailPage({
   };
   const supabase = await createClient();
 
-  const [user, { data: tenant }, { data: tenancies }, { data: payments }] =
+  // Every ledger input is a must-succeed read (LedgerDataError otherwise):
+  // a balance is never rendered from a partial picture.
+  const [user, { data: tenant }, tenancies, payments] =
     await Promise.all([
       getSessionUser(),
       supabase
@@ -149,26 +152,30 @@ export default async function TenantDetailPage({
         )
         .eq("id", id)
         .maybeSingle(),
-      supabase
-        .from("tenancies")
-        .select(
-          `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, pause_source, lease_start_date, lease_end_date, status,
-           lease_pdf_path,
-           rooms(id, room_number,
-                 properties(id, building_name, street_address, unit_number))`,
-        )
-        .eq("tenant_id", id)
-        .order("start_date", { ascending: false })
-        .returns<Tenancy[]>(),
-      supabase
-        .from("payments")
-        .select(
-          `id, paid_on, amount, payment_type, method, notes, tenancy_id,
-           tenancies!inner(tenant_id)`,
-        )
-        .eq("tenancies.tenant_id", id)
-        .order("paid_on", { ascending: false })
-        .returns<Payment[]>(),
+      ledgerRows("tenancies", () =>
+        supabase
+          .from("tenancies")
+          .select(
+            `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, pause_source, lease_start_date, lease_end_date, status,
+             lease_pdf_path,
+             rooms(id, room_number,
+                   properties(id, building_name, street_address, unit_number))`,
+          )
+          .eq("tenant_id", id)
+          .order("start_date", { ascending: false })
+          .returns<Tenancy[]>(),
+      ),
+      ledgerRows("payments", () =>
+        supabase
+          .from("payments")
+          .select(
+            `id, paid_on, amount, payment_type, method, notes, tenancy_id,
+             tenancies!inner(tenant_id)`,
+          )
+          .eq("tenancies.tenant_id", id)
+          .order("paid_on", { ascending: false })
+          .returns<Payment[]>(),
+      ),
     ]);
 
   if (!tenant) notFound();
@@ -176,9 +183,9 @@ export default async function TenantDetailPage({
   // Ledger charges (add/delete) are operator-only; payments stay open to all.
   const ledgerAdmin = canEditLedger(user?.email);
 
-  const active = tenancies?.find((t) => t.status === "active") ?? null;
-  const upcoming = (tenancies ?? []).filter((t) => t.status === "upcoming");
-  const past = (tenancies ?? []).filter((t) => t.status === "ended");
+  const active = tenancies.find((t) => t.status === "active") ?? null;
+  const upcoming = tenancies.filter((t) => t.status === "upcoming");
+  const past = tenancies.filter((t) => t.status === "ended");
 
   // ONE ledger per tenant: every tenancy (past, active, upcoming) feeds the
   // same running balance, so a room change never starts a fresh ledger. New
@@ -202,38 +209,41 @@ export default async function TenantDetailPage({
 
   // Running ledger: auto monthly rent + ad-hoc charges (deposit / late fee)
   // + payments across every tenancy, in one carry-forward balance.
-  const tenancyIds = (tenancies ?? []).map((t) => t.id);
+  const tenancyIds = tenancies.map((t) => t.id);
   let charges: (Charge & { tenancy_id: string })[] = [];
   let allocations: (Allocation & { tenancy_id: string })[] = [];
   let rentChanges: (RentChange & { tenancy_id: string })[] = [];
   if (tenancyIds.length > 0) {
-    const [chargeRes, allocRes, rentHistRes] = await Promise.all([
-      supabase
-        .from("tenancy_charges")
-        .select("id, kind, amount, charged_on, note, bill_id, tenancy_id")
-        .in("tenancy_id", tenancyIds)
-        .order("charged_on", { ascending: false }),
+    [charges, allocations, rentChanges] = await Promise.all([
+      ledgerRows("charges", () =>
+        supabase
+          .from("tenancy_charges")
+          .select("id, kind, amount, charged_on, note, bill_id, tenancy_id")
+          .in("tenancy_id", tenancyIds)
+          .order("charged_on", { ascending: false }),
+      ),
       // Legacy credit allocations are no longer created, but existing rows are
       // still fed to computeLedger so historical balances stay consistent.
-      supabase
-        .from("credit_allocations")
-        .select("id, kind, amount, note, created_at, tenancy_id")
-        .in("tenancy_id", tenancyIds)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("tenancy_rent_history")
-        .select("effective_month, monthly_rent, tenancy_id")
-        .in("tenancy_id", tenancyIds),
+      ledgerRows("credit allocations", () =>
+        supabase
+          .from("credit_allocations")
+          .select("id, kind, amount, note, created_at, tenancy_id")
+          .in("tenancy_id", tenancyIds)
+          .order("created_at", { ascending: false }),
+      ),
+      ledgerRows("rent history", () =>
+        supabase
+          .from("tenancy_rent_history")
+          .select("effective_month, monthly_rent, tenancy_id")
+          .in("tenancy_id", tenancyIds),
+      ),
     ]);
-    charges = chargeRes.data ?? [];
-    allocations = allocRes.data ?? [];
-    rentChanges = rentHistRes.data ?? [];
   }
-  const ledgerInputs: TenancyLedgerInput[] = (tenancies ?? []).map((t) => ({
+  const ledgerInputs: TenancyLedgerInput[] = tenancies.map((t) => ({
     id: t.id,
     tenancy: t,
     unitLabel: `${unitTitle(t)} · ${one(t.rooms)?.room_number ?? "—"}`,
-    payments: (payments ?? []).filter((p) => p.tenancy_id === t.id),
+    payments: payments.filter((p) => p.tenancy_id === t.id),
     charges: charges.filter((c) => c.tenancy_id === t.id),
     allocations: allocations.filter((a) => a.tenancy_id === t.id),
     rentChanges: rentChanges.filter((r) => r.tenancy_id === t.id),

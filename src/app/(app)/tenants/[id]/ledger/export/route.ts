@@ -9,6 +9,7 @@ import {
   type RentChange,
   type TenancyLedgerInput,
 } from "@/lib/rent";
+import { ledgerRows } from "@/lib/rent-data";
 
 export const dynamic = "force-dynamic";
 // Building the workbook scales with ledger-entry count; lift the ceiling off
@@ -80,13 +81,15 @@ export async function GET(
   const supabase = await createClient();
   const today = todayISO();
 
-  const [{ data: tenant }, { data: tenancies }, { data: payments }] =
-    await Promise.all([
-      supabase
-        .from("tenants")
-        .select("id, full_name, email, phone")
-        .eq("id", id)
-        .maybeSingle(),
+  // Ledger inputs are must-succeed reads: a failed query throws rather than
+  // exporting a statement with charges or payments missing.
+  const [{ data: tenant }, tenancies, payments] = await Promise.all([
+    supabase
+      .from("tenants")
+      .select("id, full_name, email, phone")
+      .eq("id", id)
+      .maybeSingle(),
+    ledgerRows("tenancies", () =>
       supabase
         .from("tenancies")
         .select(
@@ -96,6 +99,8 @@ export async function GET(
         .eq("tenant_id", id)
         .order("start_date", { ascending: false })
         .returns<Tenancy[]>(),
+    ),
+    ledgerRows("payments", () =>
       supabase
         .from("payments")
         .select(
@@ -105,7 +110,8 @@ export async function GET(
         .eq("tenancies.tenant_id", id)
         .order("paid_on", { ascending: false })
         .returns<Payment[]>(),
-    ]);
+    ),
+  ]);
 
   if (!tenant) {
     return new NextResponse("Tenant not found", { status: 404 });
@@ -113,38 +119,44 @@ export async function GET(
 
   // One statement per tenant: every tenancy's charges and payments on the
   // same running balance, so a room change never splits the export.
-  const all = tenancies ?? [];
+  const all = tenancies;
   if (all.length === 0) {
     return new NextResponse("No tenancy to export", { status: 400 });
   }
   const ids = all.map((t) => t.id);
 
-  const [chargeRes, allocRes, rentHistRes] = await Promise.all([
-    supabase
-      .from("tenancy_charges")
-      .select("id, kind, amount, charged_on, note, tenancy_id")
-      .in("tenancy_id", ids)
-      .order("charged_on", { ascending: false }),
-    supabase
-      .from("credit_allocations")
-      .select("id, kind, amount, note, created_at, tenancy_id")
-      .in("tenancy_id", ids)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("tenancy_rent_history")
-      .select("effective_month, monthly_rent, tenancy_id")
-      .in("tenancy_id", ids),
+  const [charges, allocations, rentChanges]: [
+    Charge[],
+    Allocation[],
+    (RentChange & { tenancy_id: string })[],
+  ] = await Promise.all([
+    ledgerRows("charges", () =>
+      supabase
+        .from("tenancy_charges")
+        .select("id, kind, amount, charged_on, note, tenancy_id")
+        .in("tenancy_id", ids)
+        .order("charged_on", { ascending: false }),
+    ),
+    ledgerRows("credit allocations", () =>
+      supabase
+        .from("credit_allocations")
+        .select("id, kind, amount, note, created_at, tenancy_id")
+        .in("tenancy_id", ids)
+        .order("created_at", { ascending: false }),
+    ),
+    ledgerRows("rent history", () =>
+      supabase
+        .from("tenancy_rent_history")
+        .select("effective_month, monthly_rent, tenancy_id")
+        .in("tenancy_id", ids),
+    ),
   ]);
-  const charges: Charge[] = chargeRes.data ?? [];
-  const allocations: Allocation[] = allocRes.data ?? [];
-  const rentChanges: (RentChange & { tenancy_id: string })[] =
-    rentHistRes.data ?? [];
 
   const inputs: TenancyLedgerInput[] = all.map((t) => ({
     id: t.id,
     tenancy: t,
     unitLabel: unitLabel(t),
-    payments: (payments ?? []).filter((p) => p.tenancy_id === t.id),
+    payments: payments.filter((p) => p.tenancy_id === t.id),
     charges: charges.filter((c) => c.tenancy_id === t.id),
     allocations: allocations.filter((a) => a.tenancy_id === t.id),
     rentChanges: rentChanges.filter((r) => r.tenancy_id === t.id),
