@@ -37,9 +37,10 @@ export type HistoryGroup = {
   subPaid: number;
 };
 
+// Exact cents: balances are money, never a rounded approximation.
 function fmtMoney(n: number | null) {
   if (n === null || n === undefined) return "—";
-  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 function formatDuration(months: number | null) {

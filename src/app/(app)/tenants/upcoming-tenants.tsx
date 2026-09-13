@@ -12,7 +12,7 @@ export type UpcomingTenantRow = {
 };
 
 function fmtMoney(n: number) {
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 /**

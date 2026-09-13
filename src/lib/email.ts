@@ -94,7 +94,7 @@ export function balanceReminderText(
   monthLabel: string,
   lateFeeCharged = false,
 ): string {
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   return lateFeeCharged
     ? `Hi,
 
@@ -532,7 +532,7 @@ export function balanceReminderGmailEmail(
   lateFeeCharged = false,
 ): { subject: string; text: string } {
   const subject = `Rent balance due — ${monthLabel}`;
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const closing = lateFeeCharged
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let me know."
     : "Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.";
@@ -805,7 +805,7 @@ export function balanceReminderEmail(
   detail?: BalanceDetail,
   lateFeeCharged = false,
 ): { subject: string; text: string; html: string } {
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent balance due — ${monthLabel}`;
   // Once this month's late fee is on the account, "avoid a late fee" is a
   // false promise — acknowledge the fee instead.
@@ -915,7 +915,7 @@ export async function sendBalanceReminderOutlook(
 // ----------------------------------------------------------------------------
 
 export function monthEndBalanceText(amountDue: number): string {
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   return `Hi,
 
 This is a friendly reminder that your rent is due. Our records also show an outstanding balance of ${amount} on your account — please include it along with your rent payment by the 5th to avoid a $50 late fee.
@@ -929,7 +929,7 @@ export function monthEndBalanceEmail(
   nextMonthLabel: string,
   detail?: BalanceDetail,
 ): { subject: string; text: string; html: string } {
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent reminder — please include your ${amount} balance`;
   const breakdown = detail ? `\n${balanceBreakdownText(detail, amountDue)}\n` : "";
   const text = `Hi,
@@ -997,7 +997,7 @@ export async function sendMonthEndBalanceReminderGmail(
   nextMonthLabel: string,
   detail?: BalanceDetail,
 ): Promise<SendResult> {
-  const amount = `$${Math.round(amountDue).toLocaleString()}`;
+  const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent reminder — please include your ${amount} balance`;
   const breakdown = detail ? `\n${balanceBreakdownText(detail, amountDue)}\n` : "";
   const text = `Hi,

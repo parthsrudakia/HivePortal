@@ -30,8 +30,9 @@ export type DisplayGroup = {
   subBalance: number;
 };
 
+// Exact cents: balances are money, never a rounded approximation.
 function fmtMoney(n: number) {
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 // Running net balance: red amount when owed, honey "Credit" badge when in

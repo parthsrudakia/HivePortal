@@ -40,8 +40,9 @@ export const dynamic = "force-dynamic";
 // maxDuration set at the page level covers all Server Actions used on it.
 export const maxDuration = 60;
 
+// Exact cents: balances are money, never a rounded approximation.
 function fmtMoney(n: number) {
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 function unitLabel(p: {

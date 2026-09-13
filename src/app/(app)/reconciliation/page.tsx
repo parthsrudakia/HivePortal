@@ -52,12 +52,6 @@ function fmtMoney(n: number | null) {
   return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
-// KPI cards show whole dollars; the table rows keep their cents.
-function fmtMoneyRounded(n: number | null) {
-  if (n === null || n === undefined) return "—";
-  return `$${Math.round(Number(n)).toLocaleString()}`;
-}
-
 function monthLabel(monthIso: string) {
   const [y, m] = monthIso.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1, 1));
@@ -508,7 +502,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
           label="Total Inward Amount"
-          value={fmtMoneyRounded(totalInward)}
+          value={fmtMoney(totalInward)}
           href={hrefWith(new Set())}
           active={activeFilters.size === 0}
         />

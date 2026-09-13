@@ -25,8 +25,9 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Exact cents: balances are money, never a rounded approximation.
 function fmtMoney(n: number) {
-  return `$${Math.round(n).toLocaleString()}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 async function StatsSection() {

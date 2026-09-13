@@ -15,8 +15,9 @@ export const dynamic = "force-dynamic";
 // off Vercel's default to the 60s the rest of the portal's heavy work uses.
 export const maxDuration = 60;
 
+// Exact cents: collection figures are money, never a rounded approximation.
 function fmtMoney(n: number) {
-  return `$${Math.round(n).toLocaleString()}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 function fmtPct(num: number, denom: number) {
