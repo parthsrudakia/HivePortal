@@ -12,7 +12,9 @@ import { cancelMoveOut, deleteListing } from "./actions";
  *    move-out so the room returns to occupied (only offered when a tenancy is
  *    actually scheduled to move out).
  *  - "Add a new tenant" — the room needs a replacement; queues it on the Add
- *    Tenant page to be filled in.
+ *    Tenant page and jumps there to fill it in.
+ *  - "Delete" — same queueing as "Add a new tenant", but stays on Inventory
+ *    so the operator can keep working through the table.
  */
 export function DeleteListingButton({
   roomId,
@@ -41,6 +43,14 @@ export function DeleteListingButton({
       await deleteListing(roomId);
       setOpen(false);
       router.push(`/tenants/new?room_id=${roomId}`);
+    });
+  }
+
+  function onDelete() {
+    startTransition(async () => {
+      await deleteListing(roomId);
+      setOpen(false);
+      router.refresh();
     });
   }
 
@@ -115,7 +125,19 @@ export function DeleteListingButton({
               >
                 Add a new tenant
                 <span className="mt-0.5 block text-xs font-normal text-white/70">
-                  Queue it on the Add Tenant page to be filled in.
+                  Queue it on the Add Tenant page and go fill it in now.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={pending}
+                className="rounded-lg bg-red-600 px-4 py-2.5 text-left text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                Delete
+                <span className="mt-0.5 block text-xs font-normal text-white/70">
+                  Queue it on the Add Tenant page, but stay here on Inventory.
                 </span>
               </button>
             </div>
