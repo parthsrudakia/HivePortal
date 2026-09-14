@@ -6,6 +6,7 @@ import {
   finalizeTurn,
   PAST_SEND_NOTE,
   ranOnlyReadTools,
+  SYSTEM_PROMPT,
   unsupportedUuids,
   UNVERIFIED_STAMP,
 } from "./assistant-core";
@@ -143,5 +144,14 @@ describe("finalizeTurn grounding guards", () => {
   it("does not stamp zero-tool replies without status language", () => {
     const turn = finalizeTurn(msg("Which unit is Aziz's — Apt 2 or Apt 3?"), []);
     expect(turn.ungroundedStatusClaim).toBe(false);
+  });
+});
+
+describe("SYSTEM_PROMPT id-trailer rule", () => {
+  it("restricts the parenthetical ID line to pending-write confirmations", () => {
+    // 9/14/26 regression: the widget appended "(tenancies: Name id, ...)" to
+    // every reply. The rule below is what stops that; keep it in the prompt.
+    expect(SYSTEM_PROMPT).toContain("Never append UUIDs to any other reply");
+    expect(SYSTEM_PROMPT).toContain("(tenancies: Name id, Name id, ...)");
   });
 });
