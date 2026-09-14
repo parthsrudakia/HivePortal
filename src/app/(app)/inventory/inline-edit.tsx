@@ -277,23 +277,43 @@ export function InlineAdEdit({
   );
 }
 
-// On/off pill for the "Facebook ads running?" flag on a listing.
+// On/off pill for the "Facebook ads running?" flag on a listing. Locked
+// (always Off) while the listing is marked Delete — the red row — since a
+// room coming off the market can't be advertising.
 export function InlineFacebookAdsToggle({
   roomId,
   on,
+  locked = false,
 }: {
   roomId: string;
   on: boolean;
+  locked?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
 
   const toggle = () => {
+    if (locked) return;
     startTransition(async () => {
       const res = await setRoomFacebookAds(roomId, !on);
       if ("error" in res)
         toast.error(`Couldn't update Facebook ads: ${res.error}`);
     });
   };
+
+  if (locked) {
+    return (
+      <span
+        role="switch"
+        aria-checked={false}
+        aria-disabled
+        aria-label="Facebook ads"
+        title="Off while the listing is marked Delete. Change the listing action to turn ads on."
+        className="inline-flex cursor-not-allowed items-center rounded-full border border-stone/60 bg-cream/40 px-2.5 py-0.5 text-xs font-medium text-muted/70"
+      >
+        Off
+      </span>
+    );
+  }
 
   return (
     <button

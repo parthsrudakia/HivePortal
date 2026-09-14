@@ -711,7 +711,11 @@ function InventoryRow({
         })()}
       </td>
       <td className="px-3 py-2.5 text-center align-middle">
-        <InlineFacebookAdsToggle roomId={room.id} on={room.facebook_ads} />
+        <InlineFacebookAdsToggle
+          roomId={room.id}
+          on={room.facebook_ads}
+          locked={room.listing_action === "delete_listing"}
+        />
       </td>
       <td className="px-3 py-2.5 text-center align-middle">
         {p ? (

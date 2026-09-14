@@ -64,15 +64,36 @@ export async function setListingAction(args: {
     | "priority";
 }) {
   const supabase = admin();
+  // Marking a room Delete turns its Facebook ads off (DB trigger enforces
+  // the same on every write path).
   const { error } = await updateRoomsWithNotification(supabase, args.room_id, {
     listing_action: args.action,
+    ...(args.action === "delete_listing" ? { facebook_ads: false } : {}),
   });
   if (error) throw new Error(error.message);
-  return { ok: true };
+  return {
+    ok: true,
+    ...(args.action === "delete_listing" ? { facebook_ads: false } : {}),
+  };
 }
 
 export async function setFacebookAds(args: { room_id: string; on: boolean }) {
   const supabase = admin();
+  if (args.on) {
+    const { data: room, error: readErr } = await supabase
+      .from("rooms")
+      .select("listing_action")
+      .eq("id", args.room_id)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (room?.listing_action === "delete_listing") {
+      return {
+        ok: false,
+        error:
+          "That listing is marked Delete, so Facebook ads stay off. Change the listing action first.",
+      };
+    }
+  }
   const { error } = await supabase
     .from("rooms")
     .update({ facebook_ads: args.on })

@@ -29,12 +29,19 @@ const VALID: Action[] = [
   "priority",
 ];
 
+/** Why the Facebook-ads switch is locked on a red (Delete) row. */
+const ADS_LOCKED_REASON =
+  "This listing is marked Delete, so Facebook ads stay off. Change the listing action first.";
+
 export async function setListingAction(roomId: string, action: Action) {
   if (!roomId || !VALID.includes(action)) return;
 
   const supabase = await createClient();
+  // A room marked Delete is coming off the market: its Facebook ads go off
+  // with it (a DB trigger enforces the same rule on every write path).
   await updateRoomsWithNotification(supabase, roomId, {
     listing_action: action,
+    ...(action === "delete_listing" ? { facebook_ads: false } : {}),
   });
 
   revalidatePath("/inventory");
@@ -222,6 +229,19 @@ export async function setRoomFacebookAds(
   on: boolean,
 ): Promise<{ ok: true } | { error: string }> {
   const supabase = await createClient();
+  if (on) {
+    // Ads stay off while the listing is marked Delete (red row). Refuse with
+    // a clear reason instead of letting the DB trigger silently undo it.
+    const { data: room, error: readErr } = await supabase
+      .from("rooms")
+      .select("listing_action")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (readErr) return { error: readErr.message };
+    if (room?.listing_action === "delete_listing") {
+      return { error: ADS_LOCKED_REASON };
+    }
+  }
   const { error } = await supabase
     .from("rooms")
     .update({ facebook_ads: on })
