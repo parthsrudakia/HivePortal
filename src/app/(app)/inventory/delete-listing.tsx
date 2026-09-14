@@ -133,10 +133,10 @@ export function DeleteListingButton({
                 type="button"
                 onClick={onDelete}
                 disabled={pending}
-                className="rounded-lg bg-red-600 px-4 py-2.5 text-left text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-red-700 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete
-                <span className="mt-0.5 block text-xs font-normal text-white/70">
+                <span className="mt-0.5 block text-xs font-normal text-muted">
                   Queue it on the Add Tenant page, but stay here on Inventory.
                 </span>
               </button>
