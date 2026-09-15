@@ -74,12 +74,16 @@ type Payment = {
 const MONEY_FMT = "$#,##0.00";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
   const supabase = await createClient();
   const today = todayISO();
+  // Bill links in the sheet must be absolute (Excel has no "current site"), so
+  // anchor them on the portal the file was downloaded from.
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || new URL(req.url).origin;
 
   // Ledger inputs are must-succeed reads: a failed query throws rather than
   // exporting a statement with charges or payments missing.
@@ -251,13 +255,21 @@ export async function GET(
     };
   });
   for (const e of entries) {
+    const description = e.unit ? `${e.description} (${e.unit})` : e.description;
     const r = ws.addRow([
       formatDate(e.date),
-      e.unit ? `${e.description} (${e.unit})` : e.description,
+      // Same as the portal ledger: a utility overcharge links to the bill
+      // behind it, so the statement in the spreadsheet is one click away.
+      e.billId
+        ? { text: description, hyperlink: `${origin}/utilities?bill=${e.billId}` }
+        : description,
       e.charge > 0 ? e.charge : null,
       e.payment > 0 ? e.payment : null,
       e.balance,
     ]);
+    if (e.billId) {
+      r.getCell(2).font = { color: { argb: "FF9A6F08" }, underline: true };
+    }
     r.getCell(3).numFmt = MONEY_FMT;
     r.getCell(4).numFmt = MONEY_FMT;
     r.getCell(5).numFmt = MONEY_FMT;
