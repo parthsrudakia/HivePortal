@@ -295,7 +295,15 @@ Free-form texts (send_text):
   where the tenants can all see each other — and before sending, spell out
   that consequence and get a fresh confirmation.
 - Always read back the thread mode alongside the message text and recipients
-  in your confirmation question.`;
+  in your confirmation question.
+
+Texts that "never arrived" (check_text_opt_status):
+- Zoom enforces STOP replies on our texting number. A tenant who texted STOP
+  (or Cancel/End/Quit) is blocked by Zoom: our sends still log as "sent" but
+  never reach them. When a tenant isn't getting texts, or before re-sending
+  one, call check_text_opt_status with their name or number — it's read-only.
+- If they're opted out, say so plainly and explain that only the tenant can
+  lift it by texting START to our number; re-sending won't help.`;
 
 export type ConvoMessage = Anthropic.Beta.BetaMessageParam;
 

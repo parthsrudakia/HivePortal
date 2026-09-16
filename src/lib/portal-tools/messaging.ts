@@ -14,7 +14,8 @@ import {
   sendBalanceReminderGmail,
   balanceReminderText,
 } from "@/lib/email";
-import { sendSms } from "@/lib/sms";
+import { getSmsOptStatus, sendSms } from "@/lib/sms";
+import { resolveRecipientPhone } from "@/lib/sms-recipient";
 import { sendGmailMessage } from "@/lib/google-mail";
 import { buildInventorySheet } from "@/lib/inventory-sheet";
 import { sendDocument } from "@/lib/telegram";
@@ -223,32 +224,11 @@ export async function sendTextMessage(args: {
   const supabase = admin();
   const phones: string[] = [];
   for (const entry of args.recipients) {
-    const raw = entry.trim();
-    if (!raw) continue;
-    // Anything with enough digits is treated as a phone number directly.
-    if (raw.replace(/\D/g, "").length >= 10) {
-      phones.push(raw);
-      continue;
-    }
-    const { data: matches } = await supabase
-      .from("tenants")
-      .select("full_name, phone")
-      .ilike("full_name", `%${raw}%`);
-    if (!matches || matches.length === 0) {
-      return { ok: false, error: `No tenant found matching "${raw}".` };
-    }
-    if (matches.length > 1) {
-      return {
-        ok: false,
-        error: `"${raw}" matches ${matches.length} tenants (${matches
-          .map((m) => m.full_name)
-          .join(", ")}) — be more specific.`,
-      };
-    }
-    if (!matches[0].phone?.trim()) {
-      return { ok: false, error: `${matches[0].full_name} has no phone on file.` };
-    }
-    phones.push(matches[0].phone.trim());
+    if (!entry.trim()) continue;
+    // Phone numbers pass through; names must match exactly one tenant.
+    const resolved = await resolveRecipientPhone(supabase, entry);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    phones.push(resolved.phone);
   }
   let operator: string | null = null;
   if (args.include_operator) {
@@ -299,6 +279,27 @@ export async function sendTextMessage(args: {
     sent,
     failed,
     operator_included_in_each: operator !== null,
+  };
+}
+
+// Ask Zoom whether a recipient has opted out of our texts (replied STOP).
+// Zoom enforces STOP on the 10DLC campaign itself, so an opted-out tenant's
+// reminders still log as "sent" in the portal but never arrive — this is how
+// the operator finds that out.
+export async function checkTextOptStatus(args: { recipient: string }) {
+  const resolved = await resolveRecipientPhone(admin(), args.recipient);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  const res = await getSmsOptStatus(resolved.phone);
+  if (!res.ok) return { ok: false, tenant: resolved.tenantName, error: res.error };
+  return {
+    ok: true,
+    tenant: resolved.tenantName,
+    phone: res.phone,
+    status: res.status,
+    opted_out: res.optedOut,
+    explanation: res.optedOut
+      ? "This number replied STOP (or Cancel/End/Quit) to our texts. Zoom blocks our messages to it; portal sends will still log as sent but won't arrive. Only the tenant can lift this by texting START to our number."
+      : "This number is opted in — Zoom will deliver our texts to it.",
   };
 }
 
@@ -416,6 +417,25 @@ export const messagingTools = [
         ),
     }),
     run: async (args) => JSON.stringify(await sendTextMessage(args)),
+  }),
+  betaZodTool({
+    name: "check_text_opt_status",
+    description:
+      "Check with Zoom whether a phone number has opted OUT of our texts by " +
+      "replying STOP. Use this when a tenant says they aren't getting the rent " +
+      "reminder texts, or before re-sending a text that 'didn't arrive' — an " +
+      "opted-out number still shows as sent in the portal's text log, but Zoom " +
+      "never delivers it. Read-only; safe to call without confirmation. " +
+      "recipient can be a phone number or a tenant name (must match exactly one " +
+      "tenant with a phone on file). If opted out, tell the operator only the " +
+      "tenant can fix it by texting START to our number.",
+    inputSchema: z.object({
+      recipient: z
+        .string()
+        .min(1)
+        .describe("Phone number or tenant name to check."),
+    }),
+    run: async (args) => JSON.stringify(await checkTextOptStatus(args)),
   }),
   betaZodTool({
     name: "share_inventory_sheet",

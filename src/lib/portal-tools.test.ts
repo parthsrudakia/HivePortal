@@ -11,6 +11,7 @@ const EXPECTED_TOOL_NAMES = [
   "add_tenant",
   "assign_cleaner",
   "cancel_move_out",
+  "check_text_opt_status",
   "create_property",
   "delete_cleaning_record",
   "dismiss_moved_out_balance",

@@ -165,7 +165,7 @@ Every message picks its channel by a **New York vs. non-NY** rule (from the unit
 - **Outlook (work account)** — all non-NY tenant correspondence, as branded HTML cards. If Outlook is ever unconfigured, these fall back to Resend.
 - **Resend (info@hiveny.com)** — internal/operator mail, cleaner notices, utility notices, room-change alerts, board emails. Resend has a free-tier budget (**90/day, 3,000/month**); anything over budget parks in a queue that the daily cron drains oldest-first the next day, so nothing is lost — just delayed. Gmail and Outlook sends never count against this budget.
 
-Texts go out via Zoom Phone — **US/Canada numbers only**; foreign numbers are skipped, not failed. Every email and text is recorded in the Settings email/text logs. Bulk sends always use BCC — tenants never see each other's addresses.
+Texts go out via Zoom Phone — **US/Canada numbers only**; foreign numbers are skipped, not failed. Zoom handles STOP/START replies itself: a tenant who texts STOP is blocked by Zoom, and later texts to them still show as *sent* in our log but never arrive. The Text log has a **Check opt-out** lookup (by number or tenant name) that asks Zoom for a number's current status; only the tenant can lift a block, by texting START. Every email and text is recorded in the Settings email/text logs. Bulk sends always use BCC — tenants never see each other's addresses.
 
 ### The daily schedule (Eastern Time)
 | When | What runs |

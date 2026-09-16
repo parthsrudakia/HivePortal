@@ -23,6 +23,7 @@ import { logSms, type SmsType } from "./sms-log";
 
 const ZOOM_TOKEN_URL = "https://zoom.us/oauth/token";
 const ZOOM_SMS_URL = "https://api.zoom.us/v2/phone/sms/messages";
+const ZOOM_CAMPAIGNS_URL = "https://api.zoom.us/v2/phone/sms_campaigns";
 
 export type SmsResult =
   | { ok: true }
@@ -187,5 +188,140 @@ export async function sendSms(
     const error = e instanceof Error ? e.message : "Unknown SMS error";
     await log("failed", error);
     return { ok: false, error };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Opt-out lookup
+//
+// Zoom handles STOP/START replies on the 10DLC campaign itself: a tenant who
+// texts STOP is blocked by Zoom, and later portal sends to them still return
+// 2xx (and log as "sent") but never arrive. This asks Zoom whether a given
+// recipient is currently opted in or out for our campaign, so an operator can
+// find out why someone "isn't getting the texts".
+//
+// Endpoint: GET /phone/sms_campaigns/{campaignId}/phone_numbers/opt_status
+//   ?zoom_phone_user_numbers=<our sending number>&consumer_phone_number=<theirs>
+// Scopes: phone:read:list_sms_campaigns:admin,
+//         phone:read:sms_campaign_number_opt_status:admin
+// A number Zoom has never heard from comes back "opt_in" (the default).
+// ---------------------------------------------------------------------------
+
+export type SmsOptStatus = "opt_in" | "opt_out";
+
+export type SmsOptResult =
+  | {
+      ok: true;
+      /** The recipient, E.164. */
+      phone: string;
+      status: SmsOptStatus;
+      /** True when the recipient replied STOP (or a synonym) and Zoom blocks our texts to them. */
+      optedOut: boolean;
+      /** Our sending number, E.164. */
+      sender: string;
+      campaign: { id: string; name: string };
+    }
+  | { ok: false; skipped?: boolean; error: string };
+
+type ZoomCampaignList = {
+  sms_campaigns?: { id: string; status?: string; display_name?: string }[];
+};
+
+type ZoomOptStatusResponse = {
+  phone_number_campaign_opt_statuses?: {
+    consumer_phone_number?: string;
+    zoom_phone_user_number?: string;
+    opt_status?: string;
+  }[];
+};
+
+/**
+ * Pull the opt status for one sender/recipient pair out of Zoom's response.
+ * Exported for tests. Returns null when the pair isn't in the payload.
+ */
+export function parseOptStatus(
+  payload: ZoomOptStatusResponse,
+  sender: string,
+  recipient: string,
+): SmsOptStatus | null {
+  // Compare as E.164 so "6095549141", "+16095549141" and "16095549141" agree.
+  const norm = (v: string | undefined) => toE164(v) ?? (v ?? "").replace(/\D/g, "");
+  const row = (payload.phone_number_campaign_opt_statuses ?? []).find(
+    (r) =>
+      norm(r.zoom_phone_user_number) === norm(sender) &&
+      norm(r.consumer_phone_number) === norm(recipient),
+  );
+  if (!row) return null;
+  return row.opt_status === "opt_out" ? "opt_out" : "opt_in";
+}
+
+// The account has one 10DLC campaign; cache it for the life of the process.
+let cachedCampaign: { id: string; name: string } | null = null;
+
+async function activeCampaign(token: string): Promise<{ id: string; name: string }> {
+  if (cachedCampaign) return cachedCampaign;
+  const res = await fetch(ZOOM_CAMPAIGNS_URL, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Zoom campaign list failed (${res.status}): ${detail.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as ZoomCampaignList;
+  const campaigns = data.sms_campaigns ?? [];
+  const active = campaigns.find((c) => c.status === "active") ?? campaigns[0];
+  if (!active) throw new Error("No SMS campaign is registered on the Zoom account.");
+  cachedCampaign = { id: active.id, name: active.display_name ?? active.id };
+  return cachedCampaign;
+}
+
+/**
+ * Ask Zoom whether `raw` (any US/Canada phone format) has opted out of texts
+ * from our sending number. Never throws — returns { ok:false } with a reason.
+ */
+export async function getSmsOptStatus(raw: string): Promise<SmsOptResult> {
+  const cfg = config();
+  if (!cfg) return { ok: false, error: "SMS is not configured (missing ZOOM_* env)." };
+
+  const phone = toE164(raw);
+  if (!phone) {
+    return {
+      ok: false,
+      skipped: true,
+      error: `Not a US/Canada number: ${raw.trim() || "(empty)"} — Zoom only texts +1 numbers, so it has no opt status.`,
+    };
+  }
+  const sender = toE164(cfg.from) ?? cfg.from;
+
+  try {
+    const token = await accessToken();
+    const campaign = await activeCampaign(token);
+    const url = new URL(`${ZOOM_CAMPAIGNS_URL}/${encodeURIComponent(campaign.id)}/phone_numbers/opt_status`);
+    // Zoom wants bare digits with the country code here (the "+" is optional).
+    url.searchParams.set("zoom_phone_user_numbers", sender.replace(/\D/g, ""));
+    url.searchParams.set("consumer_phone_number", phone.replace(/\D/g, ""));
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return {
+        ok: false,
+        error: `Zoom opt-status lookup failed (${res.status}): ${detail.slice(0, 200)}`,
+      };
+    }
+    const payload = (await res.json()) as ZoomOptStatusResponse;
+    const status = parseOptStatus(payload, sender, phone);
+    if (!status) {
+      return { ok: false, error: `Zoom returned no opt status for ${phone}.` };
+    }
+    return {
+      ok: true,
+      phone,
+      status,
+      optedOut: status === "opt_out",
+      sender,
+      campaign,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Unknown Zoom error" };
   }
 }
