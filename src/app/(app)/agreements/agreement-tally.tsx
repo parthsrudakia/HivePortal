@@ -25,6 +25,10 @@ export type SigningRequestRow = {
   signedAt: string | null;
   signatureKind: "drawn" | "typed" | null;
   assignedTenancyId: string | null;
+  /** Tenant profile this request resolves to, or null when there is none. */
+  tenantId: string | null;
+  /** True when the profile's tenancies have all ended. */
+  tenantIsPast: boolean;
 };
 
 export type AssignOption = {
@@ -304,7 +308,25 @@ export function AgreementTally({
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-medium text-ink">{r.tenantName}</p>
+                  <p className="font-medium text-ink">
+                    {/* Names with a profile link to it (underlined); names
+                        without one stay plain, unclickable text. */}
+                    {r.tenantId ? (
+                      <Link
+                        href={`/tenants/${r.tenantId}`}
+                        className="underline decoration-stone underline-offset-4 transition hover:text-accent-text hover:decoration-accent"
+                      >
+                        {r.tenantName}
+                      </Link>
+                    ) : (
+                      r.tenantName
+                    )}
+                    {r.tenantIsPast && (
+                      <span className="ml-2 rounded-full bg-warm px-2 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-muted">
+                        Past
+                      </span>
+                    )}
+                  </p>
                   <p className="truncate text-xs text-muted">
                     {r.recipientEmail} · {r.propertyAddress} · sent{" "}
                     {fmtDate(r.sentAt)}

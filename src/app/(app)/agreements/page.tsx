@@ -65,6 +65,8 @@ export default async function AgreementsPage() {
     { data: signatureUrlData },
     { data: propertyRows },
     { data: addressRows },
+    { data: tenantRows },
+    { data: tenancyRows },
   ] = await Promise.all([
     supabase
       .from("tenancies")
@@ -95,6 +97,11 @@ export default async function AgreementsPage() {
       .order("street_address"),
     // Addresses confirmed on previously sent agreements win over composed ones.
     supabase.from("agreement_addresses").select("property_id, full_address"),
+    // Every tenant profile plus every tenancy (any status): the tally links a
+    // request's tenant name to their profile when one exists, and marks
+    // tenants whose tenancies have all ended as past.
+    supabase.from("tenants").select("id, full_name, email"),
+    supabase.from("tenancies").select("id, tenant_id, status"),
   ]);
 
   const prefills: TenancyPrefill[] = (data ?? []).flatMap((row) => {
@@ -146,18 +153,60 @@ export default async function AgreementsPage() {
     ];
   });
 
-  const requests: SigningRequestRow[] = (requestRows ?? []).map((r) => ({
-    id: r.id,
-    status: r.status as SigningRequestRow["status"],
-    tenantName: r.tenant_name,
-    recipientEmail: r.recipient_email,
-    propertyAddress: r.property_address,
-    sentAt: r.sent_at,
-    expiresAt: r.expires_at,
-    signedAt: r.signed_at,
-    signatureKind: r.tenant_signature_kind as SigningRequestRow["signatureKind"],
-    assignedTenancyId: r.assigned_tenancy_id,
-  }));
+  // Resolve each request to a tenant profile: the assigned tenancy wins,
+  // then the recipient email, then an unambiguous full-name match. Requests
+  // that resolve to nobody render as plain, unlinked text in the tally.
+  const tenantByTenancy = new Map<string, string>();
+  const tenantHasCurrent = new Map<string, boolean>();
+  for (const t of tenancyRows ?? []) {
+    tenantByTenancy.set(t.id, t.tenant_id);
+    tenantHasCurrent.set(
+      t.tenant_id,
+      (tenantHasCurrent.get(t.tenant_id) ?? false) || t.status !== "ended",
+    );
+  }
+  const tenantIdsByEmail = new Map<string, string[]>();
+  const tenantIdsByName = new Map<string, string[]>();
+  for (const t of tenantRows ?? []) {
+    const email = t.email?.trim().toLowerCase();
+    if (email) tenantIdsByEmail.set(email, [...(tenantIdsByEmail.get(email) ?? []), t.id]);
+    const name = t.full_name.trim().toLowerCase();
+    if (name) tenantIdsByName.set(name, [...(tenantIdsByName.get(name) ?? []), t.id]);
+  }
+  const uniqueMatch = (ids: string[] | undefined) =>
+    ids && ids.length === 1 ? ids[0] : null;
+  const resolveTenant = (r: {
+    assigned_tenancy_id: string | null;
+    recipient_email: string;
+    tenant_name: string;
+  }): string | null =>
+    (r.assigned_tenancy_id ? tenantByTenancy.get(r.assigned_tenancy_id) : null) ??
+    uniqueMatch(tenantIdsByEmail.get(r.recipient_email.trim().toLowerCase())) ??
+    uniqueMatch(tenantIdsByName.get(r.tenant_name.trim().toLowerCase()));
+
+  const requests: SigningRequestRow[] = (requestRows ?? []).map((r) => {
+    const tenantId = resolveTenant(r);
+    return {
+      id: r.id,
+      status: r.status as SigningRequestRow["status"],
+      tenantName: r.tenant_name,
+      recipientEmail: r.recipient_email,
+      propertyAddress: r.property_address,
+      sentAt: r.sent_at,
+      expiresAt: r.expires_at,
+      signedAt: r.signed_at,
+      signatureKind: r.tenant_signature_kind as SigningRequestRow["signatureKind"],
+      assignedTenancyId: r.assigned_tenancy_id,
+      tenantId,
+      // A profile whose tenancies have all ended is a past tenant. Profiles
+      // with no tenancy yet (e.g. just added from a signed agreement) count
+      // as current.
+      tenantIsPast:
+        tenantId !== null &&
+        tenantHasCurrent.has(tenantId) &&
+        !tenantHasCurrent.get(tenantId),
+    };
+  });
 
   const confirmedById = new Map(
     (addressRows ?? []).map((a) => [a.property_id, a.full_address]),
