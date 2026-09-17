@@ -9,7 +9,7 @@ export function LeaseDownload({ tenancyId }: { tenancyId: string }) {
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending} aria-busy={pending}
       onClick={async () => {
         setPending(true);
         const result = await getLeaseDownloadUrl(tenancyId);

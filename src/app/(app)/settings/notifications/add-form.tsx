@@ -71,7 +71,7 @@ export function AddRecipientForm({ users }: { users: string[] }) {
       </label>
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending} aria-busy={pending}
         className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
       >
         {pending ? "Adding…" : "Add recipient"}

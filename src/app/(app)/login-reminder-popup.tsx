@@ -41,7 +41,7 @@ export function LoginReminderPopup({
         <div className="mt-6 flex justify-end">
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() =>
               startTransition(async () => {
                 const res = await dismissLoginReminders(

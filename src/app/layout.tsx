@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Cormorant_Garamond } from "next/font/google";
 import { Toaster } from "sonner";
+import { ActivityIndicator } from "@/components/activity-indicator";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -43,6 +44,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         {children}
+        <ActivityIndicator />
         <Toaster
           position="bottom-right"
           toastOptions={{

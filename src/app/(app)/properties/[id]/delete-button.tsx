@@ -147,7 +147,7 @@ export function DeletePropertyButton({ id, label, activeTenants }: Props) {
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={busy}
+                  disabled={busy} aria-busy={busy}
                   className="rounded-full bg-red-700 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-red-800 disabled:opacity-50"
                 >
                   {busy ? "Working…" : "Yes, delete"}

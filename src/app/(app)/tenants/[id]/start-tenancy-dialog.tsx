@@ -160,7 +160,7 @@ export function StartTenancyDialog({
             </button>
             <button
               type="submit"
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-60"
             >
               {pending ? "Creating…" : "Create tenancy"}

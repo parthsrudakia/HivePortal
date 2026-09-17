@@ -51,7 +51,7 @@ export function RentReminderButton({
       <input type="hidden" name="channel" value={channel} />
       <button
         type="submit"
-        disabled={pending || n === 0}
+        disabled={pending || n === 0} aria-busy={pending}
         // Embedded card variant: a gold underlined text link (no filled box), so
         // the label sits flush-left with the card text. Reconciliation page keeps
         // the filled pill.

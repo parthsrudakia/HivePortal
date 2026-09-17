@@ -211,7 +211,7 @@ export function AssignDepositForm({
               setTenancyId("");
               setQuery("");
             }}
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             aria-label="Clear selection"
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
           >
@@ -253,7 +253,7 @@ export function AssignDepositForm({
       <button
         type="button"
         onClick={assign}
-        disabled={pending || !tenancyId}
+        disabled={pending || !tenancyId} aria-busy={pending}
         className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
       >
         {pending ? "Working…" : "Assign"}
@@ -263,7 +263,7 @@ export function AssignDepositForm({
           <button
             type="button"
             onClick={restore}
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             title="Bring this transaction back to the unassigned list"
             className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
           >
@@ -275,7 +275,7 @@ export function AssignDepositForm({
           <button
             type="button"
             onClick={dismiss}
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             title="Dismiss this transaction — it stays here under Dismissed, searchable and restorable"
             className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
           >
@@ -284,7 +284,7 @@ export function AssignDepositForm({
           <button
             type="button"
             onClick={ignore}
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             title="Not rent — hide every transaction from this payer (undo from the payer chips below)"
             className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
           >

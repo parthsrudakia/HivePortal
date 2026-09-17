@@ -121,7 +121,7 @@ export function TabNotepadEditor({
             )}
             <button
               type="button"
-              disabled={!dirty || pending}
+              disabled={!dirty || pending} aria-busy={pending}
               onClick={() =>
                 startTransition(async () => {
                   const result = await saveTabNote(tab, content);

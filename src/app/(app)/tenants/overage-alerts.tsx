@@ -114,7 +114,7 @@ export function OverageAlertsPopup({ alerts }: { alerts: OverageAlert[] }) {
         <div className="mt-5 flex justify-end">
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() => acknowledge(visible.map((a) => a.id))}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
           >

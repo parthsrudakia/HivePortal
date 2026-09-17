@@ -417,3 +417,60 @@ html:not(.dark) aside[data-collapsed] nav .sidebar-item svg {
 html:not(.dark) aside[data-collapsed] nav .sidebar-item:hover svg {
   color: var(--color-accent-text);
 }
+
+/* Activity feedback (activity-indicator.tsx + any button flagged busy).
+   The top-edge bar sweeps a honey highlight while a navigation or server
+   action is in flight; the `button[aria-busy="true"]` that was last clicked
+   (activity-indicator.tsx stamps data-activity-clicked) grows an inline
+   spinner in front of its label so the click visibly "took" even before the
+   global bar is noticed. Sibling buttons sharing the same pending flag only
+   dim. currentColor keeps it legible on honey, ink, and outline buttons. */
+@keyframes activity-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.activity-bar {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-accent) 35%,
+    var(--color-accent-dark) 50%,
+    var(--color-accent) 65%,
+    transparent 100%
+  );
+  animation: activity-sweep 1.1s ease-in-out infinite;
+}
+.activity-spinner,
+button[aria-busy="true"][data-activity-clicked]::before {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  vertical-align: -0.1em;
+  border-radius: 9999px;
+  border: 2px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: activity-spin 0.7s linear infinite;
+}
+button[aria-busy="true"][data-activity-clicked]::before {
+  margin-right: 0.45em;
+}
+.activity-spinner {
+  color: var(--color-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-bar {
+    animation: none;
+    background: var(--color-accent);
+  }
+}

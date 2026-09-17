@@ -88,7 +88,7 @@ export function ConfirmModal({
               ref={confirmRef}
               type="button"
               onClick={handleConfirm}
-              disabled={busy}
+              disabled={busy} aria-busy={busy}
               className={`rounded-full px-4 py-1.5 text-sm font-medium text-white shadow-sm transition disabled:opacity-50 ${
                 destructive
                   ? "bg-red-700 hover:bg-red-800"

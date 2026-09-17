@@ -38,7 +38,7 @@ export function ClearLogButton({
     <button
       type="button"
       onClick={onClick}
-      disabled={pending}
+      disabled={pending} aria-busy={pending}
       className="shrink-0 rounded-full border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50"
     >
       {pending ? "Clearing…" : "Clear log"}

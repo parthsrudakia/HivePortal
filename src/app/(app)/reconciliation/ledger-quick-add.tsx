@@ -174,7 +174,7 @@ export function LedgerQuickAdd({
               {error && <p className="text-xs text-red-700">{error}</p>}
               <button
                 type="submit"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-dark disabled:opacity-50"
               >
                 {paymentPending ? "Recording…" : "Record payment"}
@@ -229,7 +229,7 @@ export function LedgerQuickAdd({
               {error && <p className="text-xs text-red-700">{error}</p>}
               <button
                 type="submit"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-dark disabled:opacity-50"
               >
                 {chargePending ? "Adding…" : "Add charge"}

@@ -300,7 +300,7 @@ function SignModal({
         <button
           type="button"
           onClick={submit}
-          disabled={!ready || submitting}
+          disabled={!ready || submitting} aria-busy={submitting}
           className={`mt-5 w-full rounded-full px-6 py-3 text-sm font-medium uppercase tracking-wide text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${
             branded
               ? "bg-accent hover:bg-accent-dark"

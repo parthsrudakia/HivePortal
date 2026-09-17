@@ -486,7 +486,7 @@ function TaskCard({
         {nudgeable && (
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={(e) => {
               e.stopPropagation();
               startTransition(async () => report(await sendNudge(task.id)));
@@ -577,7 +577,7 @@ function OverviewView({
             {filter === "completed" && tasks.some((t) => t.status === "completed") && (
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() => {
                   if (confirm("Delete ALL completed projects? This cannot be undone."))
                     startTransition(async () => report(await clearCompleted()));
@@ -796,7 +796,7 @@ function ReviewFooter({
             <>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() =>
                   startTransition(async () => report(await approveTask(task.id)))
                 }
@@ -822,7 +822,7 @@ function ReviewFooter({
               />
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() =>
                   startTransition(async () => {
                     report(await rejectTask(task.id, reason));
@@ -868,7 +868,7 @@ function AttentionView({
         {tasks.length > 1 && (
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() =>
               startTransition(async () => {
                 for (const t of tasks) await toggleAttention(t.id, false);
@@ -898,7 +898,7 @@ function AttentionView({
                 <span className="text-amber-800">🔔 Flagged for your attention</span>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   onClick={() =>
                     startTransition(async () =>
                       report(await toggleAttention(t.id, false)),
@@ -941,7 +941,7 @@ function CompletedView({
         {admin && tasks.length > 0 && (
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() => {
               if (confirm("Delete ALL completed projects? This cannot be undone."))
                 startTransition(async () => report(await clearCompleted()));
@@ -1265,7 +1265,7 @@ function TaskModal({
               <>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   onClick={() =>
                     startTransition(async () => {
                       report(await deleteTask(task.id));
@@ -1315,7 +1315,7 @@ function TaskModal({
                 />
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   onClick={() =>
                     startTransition(async () => {
                       report(await updateDeadline(task.id, deadlineVal || null));
@@ -1368,7 +1368,7 @@ function TaskModal({
                   <button
                     key={s.value}
                     type="button"
-                    disabled={pending || task.status === "pending_review"}
+                    disabled={pending || task.status === "pending_review"} aria-busy={pending}
                     onClick={() =>
                       startTransition(async () =>
                         report(await updateStatus(task.id, s.value)),
@@ -1424,7 +1424,7 @@ function TaskModal({
             </span>
             <button
               type="button"
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               onClick={() =>
                 startTransition(async () =>
                   report(await toggleAttention(task.id, false)),
@@ -1446,7 +1446,7 @@ function TaskModal({
         {admin && task.status !== "completed" && task.status !== "pending_review" && (
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() =>
               startTransition(async () => report(await sendNudge(task.id)))
             }
@@ -1506,7 +1506,7 @@ function TaskModal({
             />
             <button
               type="button"
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               onClick={submitComment}
               className="self-end rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
             >
@@ -1697,7 +1697,7 @@ function CreateModal({
         <div className="mt-6 flex items-center gap-3">
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={submit}
             className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-accent-dark disabled:opacity-50"
           >

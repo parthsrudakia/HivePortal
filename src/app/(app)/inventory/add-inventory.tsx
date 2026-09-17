@@ -305,7 +305,7 @@ export function AddInventory({
                 <button
                   type="button"
                   onClick={submit}
-                  disabled={pending || !selected}
+                  disabled={pending || !selected} aria-busy={pending}
                   className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
                 >
                   {pending

@@ -12,7 +12,7 @@ export function RestoreListingButton({ roomId }: { roomId: string }) {
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending} aria-busy={pending}
       onClick={() =>
         startTransition(async () => {
           await restoreListing(roomId);

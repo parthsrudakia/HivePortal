@@ -335,7 +335,7 @@ export function AssistantWidget() {
               <button
                 type="button"
                 onClick={send}
-                disabled={pending || input.trim().length === 0}
+                disabled={pending || input.trim().length === 0} aria-busy={pending}
                 className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-50"
               >
                 Send

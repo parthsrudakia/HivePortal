@@ -47,7 +47,7 @@ export function LineItemForm({ year }: { year: number }) {
       />
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending} aria-busy={pending}
         className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
       >
         {pending ? "Adding…" : "Add line item"}

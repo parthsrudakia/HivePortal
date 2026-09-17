@@ -76,7 +76,7 @@ export function ReversalAlerts({ alerts }: { alerts: ReversalAlert[] }) {
             {a.suspect && (
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() => resolve(a.id, "refund")}
                 className="shrink-0 rounded-full bg-red-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-red-800 disabled:opacity-50"
               >
@@ -85,7 +85,7 @@ export function ReversalAlerts({ alerts }: { alerts: ReversalAlert[] }) {
             )}
             <button
               type="button"
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               onClick={() => resolve(a.id, "dismiss")}
               className="shrink-0 rounded-full border border-stone bg-white px-3 py-1.5 text-xs font-medium text-muted shadow-sm transition hover:bg-warm hover:text-ink disabled:opacity-50"
             >

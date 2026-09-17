@@ -150,7 +150,7 @@ export default function AcceptInvitePage() {
           {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
           <button
             type="submit"
-            disabled={phase === "saving"}
+            disabled={phase === "saving"} aria-busy={phase === "saving"}
             className="mt-5 w-full rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
           >
             {phase === "saving" ? "Saving…" : "Set password & continue"}

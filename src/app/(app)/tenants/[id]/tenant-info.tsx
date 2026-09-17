@@ -232,7 +232,7 @@ export function TenantInfo(props: Props) {
         <div className="mt-2 flex items-center gap-3">
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
           >
             {pending ? "Saving…" : "Save"}

@@ -80,7 +80,11 @@ export function AgreementTally({
     const outstanding = requests.filter((r) => r.status === "pending").length;
     const signed = requests.filter((r) => r.status === "signed").length;
     const dismissed = requests.filter((r) => r.status === "dismissed").length;
-    return { outstanding, signed, dismissed };
+    // Only assigned signed entries are clearable — see clearRequests.
+    const clearable = requests.filter(
+      (r) => r.status === "signed" && r.assignedTenancyId !== null,
+    ).length;
+    return { outstanding, signed, dismissed, clearable };
   }, [requests]);
 
   // A typed search looks across every status — whoever is searching for an
@@ -249,32 +253,36 @@ export function AgreementTally({
       </div>
 
       {tokens.length === 0 &&
-        ((filter === "signed" && counts.signed > 0) ||
+        ((filter === "signed" && counts.clearable > 0) ||
           (filter === "dismissed" && counts.dismissed > 0)) && (
         <div className="mt-3 flex justify-end">
           <ConfirmModal
             trigger={
               <button
                 type="button"
-                disabled={busy === "clear"}
+                disabled={busy === "clear"} aria-busy={busy === "clear"}
                 className="text-xs font-medium text-red-700 hover:underline disabled:opacity-40"
               >
-                Clear this list
+                {filter === "signed" ? "Clear assigned" : "Clear this list"}
               </button>
             }
-            title={`Clear all ${filter} agreements?`}
+            title={
+              filter === "signed"
+                ? "Clear assigned agreements?"
+                : "Clear all dismissed agreements?"
+            }
             message={
               filter === "signed"
-                ? `All ${counts.signed} signed ${counts.signed === 1 ? "entry" : "entries"} and their stored PDFs will be permanently deleted. Agreements already assigned to a tenant keep the copy on the tenant's profile — anything unassigned loses its signed PDF for good.`
+                ? `The ${counts.clearable} signed ${counts.clearable === 1 ? "entry" : "entries"} already saved to a tenant's profile will leave the tally and their tally copies will be deleted — the copy on each tenant's profile stays. ${counts.signed - counts.clearable > 0 ? `The ${counts.signed - counts.clearable} still awaiting assignment ${counts.signed - counts.clearable === 1 ? "stays" : "stay"} put.` : ""}`
                 : `All ${counts.dismissed} dismissed ${counts.dismissed === 1 ? "entry" : "entries"} and their stored PDFs will be permanently deleted.`
             }
-            confirmLabel="Clear list"
+            confirmLabel={filter === "signed" ? "Clear assigned" : "Clear list"}
             destructive
             onConfirm={() =>
               run(
                 "clear",
                 () => clearRequests(filter as "signed" | "dismissed"),
-                "List cleared.",
+                filter === "signed" ? "Assigned agreements cleared." : "List cleared.",
               )
             }
           />
@@ -338,7 +346,7 @@ export function AgreementTally({
                       the sent one until then) — viewable in any status. */}
                   <button
                     type="button"
-                    disabled={busy === r.id}
+                    disabled={busy === r.id} aria-busy={busy === r.id}
                     onClick={() => viewPdf(r.id)}
                     className={actionBtn}
                   >
@@ -348,7 +356,7 @@ export function AgreementTally({
                     <>
                       <button
                         type="button"
-                        disabled={busy === r.id}
+                        disabled={busy === r.id} aria-busy={busy === r.id}
                         onClick={() =>
                           run(
                             r.id,
@@ -362,7 +370,7 @@ export function AgreementTally({
                       </button>
                       <ConfirmModal
                         trigger={
-                          <button type="button" disabled={busy === r.id} className={actionBtn}>
+                          <button type="button" disabled={busy === r.id} aria-busy={busy === r.id} className={actionBtn}>
                             Dismiss
                           </button>
                         }
@@ -379,7 +387,7 @@ export function AgreementTally({
                     <>
                       <ConfirmModal
                         trigger={
-                          <button type="button" disabled={busy === r.id} className={actionBtn}>
+                          <button type="button" disabled={busy === r.id} aria-busy={busy === r.id} className={actionBtn}>
                             Dismiss
                           </button>
                         }
@@ -395,7 +403,7 @@ export function AgreementTally({
                   {r.status === "dismissed" && (
                     <button
                       type="button"
-                      disabled={busy === r.id}
+                      disabled={busy === r.id} aria-busy={busy === r.id}
                       onClick={() =>
                         run(r.id, () => undismissRequest(r.id), "Back in the tally.")
                       }
@@ -432,7 +440,7 @@ export function AgreementTally({
                       </span>
                       <button
                         type="button"
-                        disabled={busy === r.id}
+                        disabled={busy === r.id} aria-busy={busy === r.id}
                         onClick={() => assign(r, true)}
                         className="rounded-full bg-ink px-3 py-1 text-xs font-medium text-white transition hover:bg-accent-dark disabled:opacity-40"
                       >
@@ -449,7 +457,7 @@ export function AgreementTally({
                   ) : (
                     <button
                       type="button"
-                      disabled={busy === r.id || !assignPick[r.id]}
+                      disabled={busy === r.id || !assignPick[r.id]} aria-busy={busy === r.id}
                       onClick={() => assign(r, false)}
                       className="rounded-full bg-accent px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-white transition hover:bg-accent-dark disabled:opacity-40"
                     >

@@ -287,7 +287,7 @@ export function ManualBillForm({ units }: { units: UnitOpt[] }) {
         <button
           type="submit"
           formAction={commitAction}
-          disabled={commitPending}
+          disabled={commitPending} aria-busy={commitPending}
           className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-60"
         >
           {commitPending

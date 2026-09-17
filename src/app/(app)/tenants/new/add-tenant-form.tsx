@@ -231,7 +231,7 @@ export function AddTenantForm({
       <div>
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending} aria-busy={pending}
           className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
         >
           {pending ? "Saving…" : "Save tenant"}

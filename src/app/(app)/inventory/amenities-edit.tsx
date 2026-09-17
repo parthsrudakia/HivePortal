@@ -154,7 +154,7 @@ export function InlineAmenitiesEdit({
                 <button
                   type="button"
                   onClick={save}
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   className="rounded-full bg-ink px-3 py-1 text-xs font-medium text-white shadow-sm hover:bg-accent-dark disabled:opacity-50"
                 >
                   {pending ? "Saving…" : "Save"}

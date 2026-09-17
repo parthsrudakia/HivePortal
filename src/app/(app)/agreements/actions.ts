@@ -174,9 +174,11 @@ export async function undismissRequest(requestId: string): Promise<ActionResult>
 }
 
 /**
- * Permanently clear a tally list: deletes every request with the given status
- * AND its stored PDFs from the agreements bucket. Copies already assigned to
- * a tenant live in the leases bucket and are untouched.
+ * Permanently clear a tally list: deletes the matching requests AND their
+ * stored PDFs from the agreements bucket. Dismissed clears everything
+ * dismissed; signed clears only entries already assigned to a tenant (their
+ * copy lives on in the leases bucket), so an unassigned signature can never
+ * be dropped from the portal.
  */
 export async function clearRequests(
   status: "signed" | "dismissed",
@@ -184,10 +186,15 @@ export async function clearRequests(
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: rows, error } = await supabase
+  // Signed entries are only cleared once their PDF has been saved to a
+  // tenant's profile — an unassigned signed copy is the sole copy of that
+  // signature in the portal, so it stays in the tally until it's assigned.
+  let query = supabase
     .from("agreement_requests")
     .select("id, unsigned_pdf_path, signed_pdf_path")
     .eq("status", status);
+  if (status === "signed") query = query.not("assigned_tenancy_id", "is", null);
+  const { data: rows, error } = await query;
   if (error) return { ok: false, error: error.message };
   if (!rows || rows.length === 0) return { ok: true, cleared: 0 };
 
@@ -204,7 +211,10 @@ export async function clearRequests(
   const { error: deleteError } = await supabase
     .from("agreement_requests")
     .delete()
-    .eq("status", status);
+    .in(
+      "id",
+      rows.map((r) => r.id),
+    );
   if (deleteError) return { ok: false, error: deleteError.message };
 
   revalidatePath("/agreements");

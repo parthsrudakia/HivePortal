@@ -405,7 +405,7 @@ function OverageFlags({
             <>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() => chargeAll(flagged.map((f) => f.id))}
                 className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white transition hover:bg-accent-dark disabled:opacity-50"
               >
@@ -424,7 +424,7 @@ function OverageFlags({
           ) : (
             <button
               type="button"
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               title="Split every flagged bill's overage among its unit's AC-room tenants and post the charges"
               onClick={() => setConfirmCharge("__all__")}
               className="rounded-full border border-stone bg-white px-3 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent-text disabled:opacity-50"
@@ -434,7 +434,7 @@ function OverageFlags({
           ))}
           <button
             type="button"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             onClick={() => hideRows(flagged)}
             className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
           >
@@ -491,7 +491,7 @@ function OverageFlags({
                   <td className="whitespace-nowrap px-4 py-2.5 text-right">
                     <button
                       type="button"
-                      disabled={pending}
+                      disabled={pending} aria-busy={pending}
                       title="Preview each tenant's per-day share of the overage, adjust if needed, then post"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -506,7 +506,7 @@ function OverageFlags({
                 <td className="px-2 py-2.5 text-center">
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending} aria-busy={pending}
                     aria-label={`Discard flag for ${f.unit}`}
                     title="Discard this row (the ⚡ Over $200 only filter brings it back)"
                     onClick={(e) => {
@@ -645,7 +645,7 @@ function ChargePreview({
           </button>
           <button
             type="button"
-            disabled={pending || invalid || !total}
+            disabled={pending || invalid || !total} aria-busy={pending}
             onClick={chargeAll}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
           >
@@ -983,7 +983,7 @@ function BillCard({
             {bill.statement_path && (
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 onClick={() =>
                   startTransition(async () => {
                     const r = await getStatementUrl(bill.id);
@@ -1002,7 +1002,7 @@ function BillCard({
                 <button
                   key={f.id}
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   title={f.file_name ?? undefined}
                   onClick={() =>
                     startTransition(async () => {
@@ -1054,7 +1054,7 @@ function BillCard({
               (!confirmingUnpost ? (
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   title="Remove the posted ledger charges and Rent Tracker alerts for this bill"
                   onClick={() => setConfirmingUnpost(true)}
                   className="rounded-full border border-stone bg-white px-3 py-1 font-medium uppercase tracking-wide text-muted hover:text-red-700"
@@ -1065,7 +1065,7 @@ function BillCard({
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending} aria-busy={pending}
                     onClick={() =>
                       startTransition(async () => {
                         const r = await unpostOverage(bill.id);
@@ -1099,7 +1099,7 @@ function BillCard({
               <span className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending} aria-busy={pending}
                   onClick={() =>
                     startTransition(async () => {
                       const r = await deleteBill(bill.id);

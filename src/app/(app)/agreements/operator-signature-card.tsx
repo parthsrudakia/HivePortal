@@ -84,7 +84,7 @@ export function OperatorSignatureCard({
             <button
               type="button"
               onClick={save}
-              disabled={!hasInk || saving}
+              disabled={!hasInk || saving} aria-busy={saving}
               className="rounded-full bg-accent px-5 py-2 text-xs font-medium uppercase tracking-wide text-white transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-40"
             >
               {saving ? "Saving…" : "Save signature"}

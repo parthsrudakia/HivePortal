@@ -150,7 +150,7 @@ export function RentAmountEdit({
           </button>
           <button
             type="button"
-            disabled={pending || !amount || !leaseStart || !leaseEnd}
+            disabled={pending || !amount || !leaseStart || !leaseEnd} aria-busy={pending}
             onClick={() => commit(amount, { start: leaseStart, end: leaseEnd })}
             className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white transition hover:bg-accent-dark disabled:opacity-50"
           >

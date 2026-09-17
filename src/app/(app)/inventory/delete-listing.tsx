@@ -59,7 +59,7 @@ export function DeleteListingButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        disabled={pending}
+        disabled={pending} aria-busy={pending}
         aria-label="Remove listing"
         title="Remove listing"
         className="rounded-md p-1.5 text-red-600 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
@@ -106,7 +106,7 @@ export function DeleteListingButton({
               <button
                 type="button"
                 onClick={onCancelMoveOut}
-                disabled={pending || !tenancyId}
+                disabled={pending || !tenancyId} aria-busy={pending}
                 className="rounded-lg border border-stone bg-white px-4 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-warm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel move-out
@@ -120,7 +120,7 @@ export function DeleteListingButton({
               <button
                 type="button"
                 onClick={onAddTenant}
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 className="rounded-lg bg-ink px-4 py-2.5 text-left text-sm font-medium text-white transition hover:bg-accent-dark disabled:opacity-50"
               >
                 Add a new tenant
@@ -132,7 +132,7 @@ export function DeleteListingButton({
               <button
                 type="button"
                 onClick={onDelete}
-                disabled={pending}
+                disabled={pending} aria-busy={pending}
                 className="rounded-lg border border-red-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-red-700 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete
@@ -145,7 +145,7 @@ export function DeleteListingButton({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              disabled={pending}
+              disabled={pending} aria-busy={pending}
               className="mt-4 w-full rounded-lg px-4 py-2 text-sm text-muted transition hover:text-ink disabled:opacity-50"
             >
               Never mind

@@ -58,7 +58,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending} aria-busy={pending}
             className="mt-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
           >
             {pending ? "Signing in…" : "Sign in"}

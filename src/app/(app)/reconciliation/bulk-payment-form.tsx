@@ -177,7 +177,7 @@ export function BulkPaymentForm({
             <button
               type="button"
               onClick={submit}
-              disabled={pending || filled === 0}
+              disabled={pending || filled === 0} aria-busy={pending}
               className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark disabled:opacity-50"
             >
               {pending
