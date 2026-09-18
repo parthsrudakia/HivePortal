@@ -471,7 +471,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                   dir={sortDir}
                   poster={posterFilter}
                 />
-                <th className="px-3 py-2 font-medium">Room</th>
+                <th className="px-3 py-2 font-medium">Room Type</th>
                 <SortHeader
                   label="Available"
                   sortKey="available"
