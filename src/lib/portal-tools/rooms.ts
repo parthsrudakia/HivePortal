@@ -14,9 +14,13 @@ export async function listInventory() {
       `id, room_number, total_rent, available_from, status, listing_action,
        has_private_bathroom, has_ac, facebook_ads,
        marketing_description, photos_url,
-       properties(id, building_name, street_address, unit_number, neighborhood)`,
+       properties!inner(id, building_name, street_address, unit_number, neighborhood)`,
     )
     .or(`status.eq.available,and(status.eq.occupied,available_from.gte.${today})`)
+    // Same rule as the Inventory page: skip rooms queued for a new tenant
+    // and rooms of retired properties (!inner so the filter drops the row).
+    .eq("pending_tenant", false)
+    .is("properties.archived_at", null)
     .order("available_from", { ascending: true, nullsFirst: true });
   if (error) throw new Error(error.message);
 

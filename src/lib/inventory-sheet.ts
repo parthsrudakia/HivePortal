@@ -89,7 +89,7 @@ export async function buildInventorySheet(
     .select(
       `id, room_number, status, available_from, base_rent, bundle_fee, total_rent,
        photos_url, has_private_bathroom, has_ac,
-       properties(cross_street, neighborhood, bedrooms, bathrooms,
+       properties!inner(cross_street, neighborhood, bedrooms, bathrooms,
                   building_name, street_address, unit_number,
                   unit_amenities, building_amenities)`,
     )
@@ -97,6 +97,9 @@ export async function buildInventorySheet(
       `status.eq.available,and(status.eq.occupied,available_from.gte.${today})`,
     )
     .eq("pending_tenant", false)
+    // Same rule as the Inventory page: rooms of retired properties are not
+    // for rent (!inner so the filter drops the room row itself).
+    .is("properties.archived_at", null)
     .returns<Omit<Row, "ads">[]>();
 
   // Attach each room's ad posters for the poster filter. Only fetched when a

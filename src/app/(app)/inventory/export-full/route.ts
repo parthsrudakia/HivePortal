@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     .select(
       `id, room_number, status, available_from, base_rent, bundle_fee, total_rent,
        photos_url, has_private_bathroom, has_ac, facebook_ads, listing_action,
-       properties(building_name, street_address, unit_number, neighborhood,
+       properties!inner(building_name, street_address, unit_number, neighborhood,
                   unit_amenities, building_amenities),
        tenancies(status, start_date, move_out_date, tenants(full_name))`,
     )
@@ -95,6 +95,9 @@ export async function GET(request: Request) {
       `status.eq.available,and(status.eq.occupied,available_from.gte.${today})`,
     )
     .eq("pending_tenant", false)
+    // Same rule as the Inventory page: rooms of retired properties are not
+    // for rent (!inner so the filter drops the room row itself).
+    .is("properties.archived_at", null)
     .returns<Omit<Row, "ads">[]>();
 
   // Attach each room's ads.

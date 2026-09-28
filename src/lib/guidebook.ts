@@ -122,7 +122,7 @@ Residents widget (name, room, age, profession, social links), rooms with Add ten
     title: "Inventory & listings",
     body: `
 ### What counts as listable
-A room is on Inventory when it is **Available**, or **Occupied with an availability date today or later**, and it is not queued for a new tenant and its property is not archived. Reserved, Maintenance and filled rooms are off the list. The dashboard's Inventory card and the Inventory API use the same rule.
+A room is on Inventory when it is **Available**, or **Occupied with an availability date today or later**, and it is not queued for a new tenant and its property is not archived. Reserved, Maintenance and filled rooms are off the list. The dashboard's Inventory card, both downloadable sheets, the assistant's inventory list and the Inventory API all use this same rule.
 
 ### The table
 Columns: Unit (links to the vacancy page), Neighborhood, Room Type (the room's name), Available, Rent, Services, Total, Amenities, Photos, Tenant (the mover-out, else the previous tenant), Listing action, Ad, Ad Posted, FB Ads, Roommates (jumps to the property's residents), Copy listing. Available, Rent, Services, Amenities, Photos, Ads and FB Ads are editable inline. The header is sticky and the left columns are frozen.
