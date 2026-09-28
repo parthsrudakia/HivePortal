@@ -19,7 +19,7 @@ type RoomRow = {
   status: "available" | "occupied" | "reserved" | "maintenance";
   available_from: string | null;
   properties: PropertyRel | PropertyRel[] | null;
-  tenancies: { status: string }[];
+  tenancies: { status: string; move_out_date: string | null }[];
 };
 
 type PageProps = {
@@ -75,12 +75,15 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
   const [rooms, { data: pendingData }] = await Promise.all([
     fetchAssignableRooms(supabase, { includeRoomId: defaultRoomId }),
     // Listings the admin pulled off Inventory ("delete listing") that are
-    // waiting to be filled with a tenant. A room whose tenant is already in
-    // place (active/upcoming tenancy) is filled even if the flag went stale.
+    // waiting to be filled with a tenant. A room whose replacement tenant is
+    // already in place (an upcoming tenancy, or an active one with no move-out
+    // date) is filled even if the flag went stale. An active tenancy that has
+    // a move-out date is the outgoing tenant, so the listing still needs
+    // filling and stays in the list.
     supabase
       .from("rooms")
       .select(
-        "id, room_number, total_rent, properties(building_name, street_address, unit_number), tenancies(status)",
+        "id, room_number, total_rent, properties(building_name, street_address, unit_number), tenancies(status, move_out_date)",
       )
       .eq("pending_tenant", true)
       .order("room_number", { ascending: true })
@@ -91,7 +94,9 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
     .filter(
       (r) =>
         !r.tenancies.some(
-          (tn) => tn.status === "active" || tn.status === "upcoming",
+          (tn) =>
+            tn.status === "upcoming" ||
+            (tn.status === "active" && !tn.move_out_date),
         ),
     )
     .map((r) => {
