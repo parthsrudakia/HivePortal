@@ -40,10 +40,10 @@ All money and admin surfaces:
 - Creating, editing, pausing, archiving and restoring **properties** (staff can view them but not change them; rooms themselves can be edited by anyone).
 - Utilities: uploading statements, assigning, charging and unposting bills.
 - Balance reminders (email/text), the **in-portal assistant** and the Telegram bot, the **Developers** page.
-- Settings: Notification settings, Audit log, Email log, Text log, Telegram bot log (reachable by URL), and the Guidebook PDF.
+- Settings: Notification settings, Audit log, Email log, Text log, and the Telegram bot log (reachable by URL).
 
 ### Everyone else (staff)
-The rest of the portal: tenants and their rent status (Due and running Balance per tenant, but no Paid column and no aggregate totals), properties (view only), inventory and listings, cleaning, utilities log (view only), agreements, credentials (non-secret fields only), the Projects board as a member, and the shared tab notepads. Staff can record ordinary payments, including back-dated ones, but can never record a refund, attach a bank reference, or tie a payment to a reconciliation run.
+The rest of the portal: tenants and their rent status (Due and running Balance per tenant, but no Paid column and no aggregate totals), properties (view only), inventory and listings, cleaning, utilities log (view only), agreements, credentials (non-secret fields only), the Projects board as a member, the shared tab notepads, and this guidebook. Staff can record ordinary payments, including back-dated ones, but can never record a refund, attach a bank reference, or tie a payment to a reconciliation run.
 
 Some staff-visible controls (contact Edit, Lease End Date) are refused by the server; they simply do nothing for a non-operator.
 `,
@@ -503,7 +503,7 @@ Reports uses **calendar months**: expected is the first-month amount in the star
 ### Cards
 | Card | Who | What |
 |---|---|---|
-| Portal guidebook | operators | This document as a PDF (non-operators get a 404) |
+| Portal guidebook | everyone | This document as a PDF |
 | Reports | master | Portfolio collections |
 | Users | master | Invite by email (the invitee gets a Supabase invite link), see invite/last-sign-in dates, remove anyone other than yourself and the master. An invited account is ordinary staff; operator or master rights require a code change |
 | Notification settings | operators | Who gets room-change emails: add an existing portal user by email and name, toggle, remove |

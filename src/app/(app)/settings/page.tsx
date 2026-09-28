@@ -22,7 +22,6 @@ const ADMIN_LINKS: AdminLink[] = [
     title: "Portal guidebook",
     description:
       "How everything works: emails and when they send, late-fee rules, KPI math, ledgers, reconciliation, cleaning, and more (PDF).",
-    operatorOnly: true,
   },
   {
     href: "/reports",
