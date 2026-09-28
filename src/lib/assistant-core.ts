@@ -318,6 +318,7 @@ export const EMAIL_SEND_TOOLS = new Set([
   "send_agreement",
   "email_inventory_sheet",
   "send_balance_reminders",
+  "send_text",
 ]);
 
 // The model has been observed forging the turn marker inside its own reply

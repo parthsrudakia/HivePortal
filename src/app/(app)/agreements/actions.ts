@@ -66,6 +66,9 @@ export type SendToTenantPayload = {
   /** Property picked from the portal's list — the address must always resolve
    *  to an existing property; passing the id skips address re-matching. */
   propertyId?: string;
+  /** Optional extra paragraph in the cover email — send-time only, not
+   *  stored, not in the PDF, not repeated by a resend. */
+  note?: string;
 };
 
 const UUID_RE =
@@ -117,6 +120,10 @@ export async function sendAgreementToTenant(
   if (payload.propertyId && !UUID_RE.test(payload.propertyId)) {
     return { ok: false, error: "Invalid property id." };
   }
+  const note = payload.note?.trim() || undefined;
+  if (note && note.length > 1000) {
+    return { ok: false, error: "The cover-email note must be 1,000 characters or fewer." };
+  }
 
   const result = await sendAgreementRequest({
     tenantName: payload.tenantName.trim(),
@@ -131,6 +138,7 @@ export async function sendAgreementToTenant(
     recipientEmail: recipient,
     inNewYork: payload.inNewYork,
     propertyId: payload.propertyId || undefined,
+    note,
   });
   if (!result.ok) return { ok: false, error: result.error };
 

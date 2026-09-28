@@ -60,8 +60,8 @@ export default async function NotificationsPage() {
         </h1>
         <p className="mt-1 text-sm text-muted">
           Email recipients for room status &amp; listing-action changes. Only
-          people with a portal account can be added. Anyone on this list is also
-          re-pinged 24 hours after a change.
+          people with a portal account can be added. Each change sends one
+          email the moment it happens.
         </p>
       </header>
 

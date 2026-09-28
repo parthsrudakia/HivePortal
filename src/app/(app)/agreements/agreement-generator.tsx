@@ -83,6 +83,7 @@ export function AgreementGenerator({
   const [showCalculator, setShowCalculator] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [inNewYork, setInNewYork] = useState(false);
+  const [coverNote, setCoverNote] = useState("");
   const [sending, setSending] = useState(false);
   // Set only by picking from the property dropdown (or a prefill); cleared as
   // soon as the address text is hand-edited so the server re-matches it.
@@ -193,6 +194,7 @@ export function AgreementGenerator({
         recipientEmail: recipientEmail.trim(),
         inNewYork,
         propertyId: propertyId || undefined,
+        note: coverNote.trim() || undefined,
       });
       if (res.ok) {
         toast.success(
@@ -510,6 +512,21 @@ export function AgreementGenerator({
               {sending ? "Sending…" : "Send to tenant"}
             </button>
           </div>
+          <label className="mt-4 flex flex-col gap-1.5">
+            <span className={fieldLabel}>Note in the cover email (optional)</span>
+            <textarea
+              value={coverNote}
+              onChange={(e) => setCoverNote(e.target.value)}
+              maxLength={1000}
+              rows={2}
+              placeholder="e.g. The earlier agreement was sent by mistake — this one replaces it."
+              className={fieldInput}
+            />
+            <span className="text-xs text-muted">
+              Email only — not stored, not in the PDF, and not repeated if you
+              resend.
+            </span>
+          </label>
           <p className="mt-3 text-xs text-muted">
             {hasOperatorSignature ? (
               inNewYork ? (

@@ -137,7 +137,7 @@ export async function GET(
     ledgerRows("charges", () =>
       supabase
         .from("tenancy_charges")
-        .select("id, kind, amount, charged_on, note, tenancy_id")
+        .select("id, kind, amount, charged_on, note, bill_id, tenancy_id")
         .in("tenancy_id", ids)
         .order("charged_on", { ascending: false }),
     ),

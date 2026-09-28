@@ -59,8 +59,9 @@ export function StartTenancyDialog({
           <span className="font-display text-accent-text">{tenantName}</span>
         </h3>
         <p className="mt-1 text-xs text-muted">
-          Fresh terms — nothing from their previous stay is back-billed, and
-          the old ledger stays closed in history.
+          Fresh terms — the months in between are never back-billed. Any
+          balance or credit left from their previous stay carries forward,
+          since each tenant has one running ledger.
         </p>
         <form action={formAction} className="mt-4 flex flex-col gap-3 text-sm">
           <input type="hidden" name="tenant_id" value={tenantId} />

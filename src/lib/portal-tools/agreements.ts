@@ -22,6 +22,7 @@ export async function sendAgreement(args: {
   agreement_date?: string;
   confirm_mailbox_mismatch?: boolean;
   property_id?: string;
+  note?: string;
 }) {
   // Validate everything up front: a lease PDF with a malformed date or amount,
   // or sent to a mistyped address, is worse than an error the operator can fix.
@@ -116,6 +117,7 @@ export async function sendAgreement(args: {
     recipientEmail: recipient,
     inNewYork: args.in_new_york,
     propertyId: args.property_id,
+    note: args.note?.trim() || undefined,
   });
 
   if (!result.ok) {
@@ -219,6 +221,16 @@ export const agreementsTools = [
           "UUID from resolve_property_address. Always pass it when known: on " +
             "a successful send the confirmed property_address is saved and " +
             "reused verbatim for future agreements at this property.",
+        ),
+      note: z
+        .string()
+        .max(1000)
+        .optional()
+        .describe(
+          "Optional extra paragraph for the cover email only (e.g. \"the " +
+            "earlier agreement was sent by mistake — this one replaces it\"). " +
+            "Not stored, not in the PDF, not repeated on resend. Read it back " +
+            "to the operator before sending.",
         ),
     }),
     run: async (args) => JSON.stringify(await sendAgreement(args)),
