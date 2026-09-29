@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  claimsActionDone,
   claimsMessageSent,
   conversationEvidenceText,
   finalizeTurn,
@@ -144,6 +145,88 @@ describe("finalizeTurn grounding guards", () => {
   it("does not stamp zero-tool replies without status language", () => {
     const turn = finalizeTurn(msg("Which unit is Aziz's — Apt 2 or Apt 3?"), []);
     expect(turn.ungroundedStatusClaim).toBe(false);
+  });
+});
+
+describe("claimsActionDone", () => {
+  it("flags a zero-tool 'Done' (9/29/26 Chris Kim regression)", () => {
+    expect(
+      claimsActionDone(
+        "Done — <b>Chris Kim</b>'s move-out is set for 10/31/26. Midwest Court Apt 205 Room 2 now shows \"Available from 11/01/26\" in inventory.",
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a lookup result asserted from memory (9/29/26 Imran regression)", () => {
+    expect(
+      claimsActionDone(
+        "No agreement for anyone named Imran. Searching agreement requests for \"imran\" / \"simran\" returns nothing — Simran Kadam has no agreement request on file either.",
+      ),
+    ).toBe(true);
+    expect(claimsActionDone("I checked — nothing under that name.")).toBe(true);
+    expect(claimsActionDone("Recorded ✅")).toBe(true);
+  });
+
+  it("ignores confirmation read-backs and future tense", () => {
+    expect(
+      claimsActionDone(
+        "Set <b>Bijo Nakountala</b>'s last day at 9 Homestead Pl Apt 2314 Room 1 to <b>09/30/26</b> — room will show \"Available from 10/01/26\". Confirm?",
+      ),
+    ).toBe(false);
+    expect(
+      claimsActionDone(
+        "Should I set his last day to 10/31/26 (available 11/01/26), same as the others — or a different date?",
+      ),
+    ).toBe(false);
+    expect(
+      claimsActionDone(
+        "What's his last day? I'll set the move-out to that date and the room will show \"Available from\" the next day.",
+      ),
+    ).toBe(false);
+    expect(claimsActionDone("Ready to send:\n\nTenant: Alok Sharma\nSend it?")).toBe(false);
+  });
+
+  it("ignores negated past-failure references", () => {
+    expect(
+      claimsActionDone("My earlier \"done\" never actually went through — sorry."),
+    ).toBe(false);
+    expect(claimsActionDone("That was not recorded yet.")).toBe(false);
+  });
+});
+
+describe("finalizeTurn action-claim guard", () => {
+  it("replaces a zero-tool 'Done' with a correction and records it in history", () => {
+    const turn = finalizeTurn(
+      msg("Done — Chris Kim's move-out is set for 10/31/26."),
+      [],
+      "",
+    );
+    expect(turn.ungroundedActionClaim).toBe(true);
+    expect(turn.ungroundedStatusClaim).toBe(false);
+    expect(turn.replyText).toContain("nothing was changed");
+    expect(turn.replyText).toContain("Original reply");
+    expect(JSON.stringify(turn.contentForHistory)).toContain("still pending");
+    expect(JSON.stringify(turn.contentForHistory)).not.toContain("move-out is set");
+  });
+
+  it("passes the same 'Done' through when the write tool actually ran", () => {
+    const turn = finalizeTurn(
+      msg("Done — Chris Kim's move-out is set for 10/31/26."),
+      [{ name: "end_tenancy", ok: true }],
+      "",
+    );
+    expect(turn.ungroundedActionClaim).toBe(false);
+    expect(turn.replyText).toBe("Done — Chris Kim's move-out is set for 10/31/26.");
+  });
+
+  it("does not flag a zero-tool confirmation question", () => {
+    const turn = finalizeTurn(
+      msg("Should I set his last day to 10/31/26 — or a different date?"),
+      [],
+      "",
+    );
+    expect(turn.ungroundedActionClaim).toBe(false);
+    expect(turn.replyText).toContain("Should I set");
   });
 });
 

@@ -41,6 +41,12 @@ Style:
   set_cleaner_enabled, assign_cleaner, add_tenant, create_property,
   send_balance_reminders, settle_moved_out_balance, dismiss_moved_out_balance),
   confirm the action in your reply ("Recorded $2,000 payment for John on 5/13/26.").
+- The operator's "yes" / "go ahead" / a date answering your confirmation
+  question is the trigger to CALL the write tool — never a cue to describe
+  the result. "Done", "is set", "scheduled", "updated" are only true if the
+  tool ran in THIS turn and returned ok: true. Likewise never report what a
+  search "returns" or that something is "not on file" unless you ran the
+  lookup in this turn — conversation memory is not a query result.
 - If a user asks for something that requires destructive action but is ambiguous,
   briefly summarize what you're about to do and ask for confirmation before
   calling the write tool.
@@ -474,6 +480,67 @@ export const STATUS_GROUNDING_REMINDER =
   "the relevant tool NOW and answer only from its result. If you cannot " +
   "verify, say plainly that you could not check.</system-reminder>";
 
+/**
+ * Completion / lookup claims that are only true if a tool ran: "Done — the
+ * move-out is set", "Searching agreement requests … returns nothing", "no
+ * agreement on file". A zero-tool reply matching this fabricated the action
+ * (9/29/26: "Done — Chris Kim's move-out is set for 10/31/26" with no
+ * end_tenancy call; "Searching agreement requests for 'imran' returns nothing"
+ * with no query — the signed agreement existed). Confirmation read-backs
+ * ("Set his last day to 10/31? Confirm?", "I'll set the move-out …") and
+ * past-failure references ("never actually went through") must not trip it.
+ */
+const ACTION_VERBS =
+  "set|scheduled|updated|recorded|cancell?ed|removed|added|marked|ended|" +
+  "logged|saved|changed|cleared|paused|resumed|assigned|reassigned|" +
+  "dismissed|settled|created|deleted";
+const LOOKUP_VERBS =
+  "searched|searching|checked|checking|queried|querying|looked up|" +
+  "looking up|pulled|ran";
+export const ACTION_CLAIM_RE = new RegExp(
+  [
+    "✅",
+    "^\\s*(?:done|all set)\\b",
+    "\\bdone\\s*[—–-]",
+    `\\b(?:is|are|has been|have been|was|were|got)\\s+(?:now\\s+)?(?:${ACTION_VERBS})\\b`,
+    "\\bnow\\s+shows?\\b",
+    `\\b(?:I(?:'ve| have| just)?|just)\\s+(?:${ACTION_VERBS}|${LOOKUP_VERBS})\\b`,
+    `\\b(?:${LOOKUP_VERBS})\\b[^.\\n]{0,80}\\b(?:returns?|returned|shows?|showed|found|finds|turns? up|came back)\\b`,
+    "\\b(?:no|nothing|not|none)\\b[^.\\n]{0,40}\\b(?:on file|on record|in the portal|in the system|in the database)\\b",
+  ].join("|"),
+  "im",
+);
+
+export function claimsActionDone(text: string): boolean {
+  const t = text
+    // Questions are read-backs / confirmation asks, never completion claims.
+    .replace(/[^.!\n]*\?/g, "")
+    // Negated phrasings describe a failure, not a completed action.
+    .replace(
+      /\b(?:never|not|wasn'?t|didn'?t|hasn'?t|haven'?t|couldn'?t)(?:\s+\w+){0,3}\s+(?:set|scheduled|updated|recorded|done|run|ran|checked|searched|went through|go through)\b/gi,
+      "",
+    );
+  return ACTION_CLAIM_RE.test(t);
+}
+
+export const ACTION_GROUNDING_REMINDER =
+  "<system-reminder>Your previous reply said an action was completed or a " +
+  "lookup was performed, but NO tool ran this turn — nothing was changed and " +
+  "nothing was searched. If the operator confirmed an action, call the write " +
+  "tool NOW with the confirmed details and report its actual result. If you " +
+  "were answering a question, run query_database or the relevant lookup tool " +
+  "NOW and answer only from its result. Never say \"Done\", \"is set\" or " +
+  "\"nothing on file\" unless the tool ran in THIS turn.</system-reminder>";
+
+export function falseActionCorrection(original: string): string {
+  return (
+    "⚠️ Correction: my reply below said something was done or looked up, but " +
+    "no portal tool actually ran in this turn — nothing was changed and " +
+    "nothing was checked. Please re-send that instruction or question.\n\n" +
+    `Original reply:\n${original}`
+  );
+}
+
 /** Concat an assistant message's text blocks, stripping any forged markers. */
 export function messageText(m: Anthropic.Beta.BetaMessage): string {
   return m.content
@@ -525,7 +592,7 @@ export async function runAssistantTurn(
   calledTools: { name: string; ok: boolean }[],
   onFalseSendRetry?: (flaggedReply: string) => Promise<void> | void,
   onGroundingRetry?: (
-    kind: "fabricated_ids" | "ungrounded_status",
+    kind: "fabricated_ids" | "ungrounded_status" | "ungrounded_action",
     flaggedReply: string,
   ) => Promise<void> | void,
 ): Promise<Anthropic.Beta.BetaMessage> {
@@ -581,7 +648,15 @@ export async function runAssistantTurn(
   // Ungrounded-status retry: a signing/payment/balance claim with zero tool
   // calls is stale memory, not knowledge. One corrective chance; finalizeTurn
   // stamps the reply unverified if the model still won't run a tool.
-  if (calledTools.length === 0 && STATUS_CLAIM_RE.test(messageText(message))) {
+  // Same for a completion/lookup claim ("Done — move-out is set", "search
+  // returns nothing") with zero tool calls: the action never happened.
+  if (calledTools.length === 0 && claimsActionDone(messageText(message))) {
+    await onGroundingRetry?.("ungrounded_action", messageText(message));
+    message = await retryWith(message, ACTION_GROUNDING_REMINDER);
+  } else if (
+    calledTools.length === 0 &&
+    STATUS_CLAIM_RE.test(messageText(message))
+  ) {
     await onGroundingRetry?.("ungrounded_status", messageText(message));
     message = await retryWith(message, STATUS_GROUNDING_REMINDER);
   }
@@ -608,6 +683,8 @@ export type FinalizedTurn = {
   fabricatedIds: string[];
   /** True when a status claim survived with zero tool calls — reply stamped. */
   ungroundedStatusClaim: boolean;
+  /** True when a "Done"/lookup claim survived with zero tool calls — reply replaced. */
+  ungroundedActionClaim: boolean;
 };
 
 /**
@@ -638,8 +715,12 @@ export function finalizeTurn(
   // one chance to fix each of these; what's left is enforced, not requested.
   const fabricatedIds =
     evidenceText != null ? unsupportedUuids(text, evidenceText) : [];
+  const ungroundedActionClaim =
+    calledTools.length === 0 && claimsActionDone(text);
   const ungroundedStatusClaim =
-    calledTools.length === 0 && STATUS_CLAIM_RE.test(text);
+    calledTools.length === 0 &&
+    !ungroundedActionClaim &&
+    STATUS_CLAIM_RE.test(text);
 
   const replyText =
     fabricatedIds.length > 0
@@ -648,11 +729,13 @@ export function finalizeTurn(
         "than risk fabricated data. Please re-ask, and I'll look it up properly."
       : falseSendClaim
         ? falseSendCorrection(text)
-        : groundedPastSend
-          ? `${text}\n\n${PAST_SEND_NOTE}`
-          : ungroundedStatusClaim
-            ? `${UNVERIFIED_STAMP}\n\n${text}`
-            : text;
+        : ungroundedActionClaim
+          ? falseActionCorrection(text)
+          : groundedPastSend
+            ? `${text}\n\n${PAST_SEND_NOTE}`
+            : ungroundedStatusClaim
+              ? `${UNVERIFIED_STAMP}\n\n${text}`
+              : text;
 
   const toolMarker: Anthropic.Beta.BetaTextBlockParam = {
     type: "text",
@@ -686,6 +769,14 @@ export function finalizeTurn(
             },
             toolMarker,
           ]
+        : ungroundedActionClaim
+          ? [
+              {
+                type: "text",
+                text: "⚠️ I claimed an action was completed or a lookup was performed, but no tool ran this turn — nothing was changed and nothing was checked. The request is still pending.",
+              },
+              toolMarker,
+            ]
         : ungroundedStatusClaim
           ? [
               { type: "text", text: UNVERIFIED_STAMP },
@@ -712,5 +803,6 @@ export function finalizeTurn(
     falseSendClaim,
     fabricatedIds,
     ungroundedStatusClaim,
+    ungroundedActionClaim,
   };
 }

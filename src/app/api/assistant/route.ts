@@ -173,7 +173,9 @@ export async function POST(req: Request) {
               error:
                 kind === "fabricated_ids"
                   ? "reply cited IDs with no tool-result source — retrying with grounding reminder"
-                  : "reply stated status with zero tool calls — retrying with grounding reminder",
+                  : kind === "ungrounded_action"
+                    ? "reply claimed an action/lookup with zero tool calls — retrying with grounding reminder"
+                    : "reply stated status with zero tool calls — retrying with grounding reminder",
               text: flagged,
               detail: { calledTools: [...calledTools] },
             });
@@ -210,13 +212,19 @@ export async function POST(req: Request) {
     falseSendClaim,
     fabricatedIds,
     ungroundedStatusClaim,
+    ungroundedActionClaim,
   } = finalizeTurn(
     finalMessage,
     calledTools,
     conversationEvidenceText(messages) + "\n" + toolEvidence.join("\n"),
   );
 
-  if (falseSendClaim || fabricatedIds.length > 0 || ungroundedStatusClaim) {
+  if (
+    falseSendClaim ||
+    fabricatedIds.length > 0 ||
+    ungroundedStatusClaim ||
+    ungroundedActionClaim
+  ) {
     await logTelegramEvent({
       ...actor,
       kind: "agent_error",
@@ -226,7 +234,9 @@ export async function POST(req: Request) {
           ? `reply blocked — fabricated ID(s) survived the retry: ${fabricatedIds.join(", ")}`
           : falseSendClaim
             ? "reply claimed an email was sent but no send tool ran this turn"
-            : "reply stamped unverified — status claim with zero tool calls survived the retry",
+            : ungroundedActionClaim
+              ? "reply replaced — action/lookup claim with zero tool calls survived the retry"
+              : "reply stamped unverified — status claim with zero tool calls survived the retry",
       text,
       detail: { calledTools },
     });
