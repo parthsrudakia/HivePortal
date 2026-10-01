@@ -55,6 +55,11 @@ export type SendToTenantPayload = {
   tenantName: string;
   sublessorName: string;
   propertyAddress: string;
+  /** Mandatory — the room within the unit; must be one of the property's
+   *  rooms in the portal. */
+  roomNumber: string;
+  /** Room picked from the property's room list; skips room-number matching. */
+  roomId?: string;
   rent: string;
   securityDeposit: string;
   leaseStartDate: string;
@@ -97,6 +102,7 @@ export async function sendAgreementToTenant(
   if (!payload.tenantName.trim()) return { ok: false, error: "Tenant name is required." };
   if (!payload.sublessorName.trim()) return { ok: false, error: "Sublessor name is required." };
   if (!payload.propertyAddress.trim()) return { ok: false, error: "Property address is required." };
+  if (!payload.roomNumber?.trim()) return { ok: false, error: "Room number is required." };
   const rent = cleanMoney(payload.rent);
   if (!rent) return { ok: false, error: `Rent "${payload.rent}" is not a valid amount.` };
   const deposit = cleanMoney(payload.securityDeposit);
@@ -120,6 +126,9 @@ export async function sendAgreementToTenant(
   if (payload.propertyId && !UUID_RE.test(payload.propertyId)) {
     return { ok: false, error: "Invalid property id." };
   }
+  if (payload.roomId && !UUID_RE.test(payload.roomId)) {
+    return { ok: false, error: "Invalid room id." };
+  }
   const note = payload.note?.trim() || undefined;
   if (note && note.length > 1000) {
     return { ok: false, error: "The cover-email note must be 1,000 characters or fewer." };
@@ -129,6 +138,7 @@ export async function sendAgreementToTenant(
     tenantName: payload.tenantName.trim(),
     sublessorName: payload.sublessorName.trim(),
     propertyAddress: payload.propertyAddress.trim(),
+    roomNumber: payload.roomNumber.trim(),
     rent,
     securityDeposit: deposit,
     leaseStartDate: payload.leaseStartDate,
@@ -138,6 +148,7 @@ export async function sendAgreementToTenant(
     recipientEmail: recipient,
     inNewYork: payload.inNewYork,
     propertyId: payload.propertyId || undefined,
+    roomId: payload.roomId || undefined,
     note,
   });
   if (!result.ok) return { ok: false, error: result.error };

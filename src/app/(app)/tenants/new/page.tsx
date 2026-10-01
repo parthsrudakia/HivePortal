@@ -48,13 +48,18 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
   // Coming from the signing tally's "Add a tenant" button: prefill the form
   // from the signed agreement and attach its PDF on save.
   let agreementPrefill = null;
+  // The room the agreement was sent for (set on every agreement sent since
+  // the room became mandatory) preselects the room picker unless ?room_id=
+  // was given explicitly.
+  let agreementRoomId = "";
   if (agreementId) {
     const { data: request } = await supabase
       .from("agreement_requests")
-      .select("id, status, tenant_name, recipient_email, signed_pdf_path, input")
+      .select("id, status, tenant_name, recipient_email, signed_pdf_path, room_id, input")
       .eq("id", agreementId)
       .maybeSingle();
     if (request?.status === "signed" && request.signed_pdf_path) {
+      agreementRoomId = request.room_id ?? "";
       const input = (request.input ?? {}) as AgreementInputSnapshot;
       agreementPrefill = {
         agreementRequestId: request.id,
@@ -73,7 +78,9 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
   // room-options.ts, shared with the tenant-detail transfer/reactivate
   // dialogs. ?room_id= keeps the requested room even if it doesn't match.
   const [rooms, { data: pendingData }] = await Promise.all([
-    fetchAssignableRooms(supabase, { includeRoomId: defaultRoomId }),
+    fetchAssignableRooms(supabase, {
+      includeRoomId: defaultRoomId || agreementRoomId,
+    }),
     // Listings the admin pulled off Inventory ("delete listing") that are
     // waiting to be filled with a tenant. A room whose replacement tenant is
     // already in place (an upcoming tenancy, or an active one with no move-out
@@ -166,9 +173,9 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
 
       <div id="add-tenant" className="mt-8 scroll-mt-6">
         <AddTenantForm
-          key={`${agreementPrefill?.agreementRequestId ?? "none"}:${defaultRoomId || "blank"}`}
+          key={`${agreementPrefill?.agreementRequestId ?? "none"}:${defaultRoomId || agreementRoomId || "blank"}`}
           rooms={rooms}
-          defaultRoomId={defaultRoomId}
+          defaultRoomId={defaultRoomId || agreementRoomId}
           agreementPrefill={agreementPrefill}
         />
       </div>

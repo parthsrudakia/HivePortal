@@ -12,6 +12,7 @@ export async function sendAgreement(args: {
   tenant_name: string;
   recipient_email: string;
   property_address: string;
+  room_number: string;
   rent: string;
   security_deposit: string;
   lease_start_date: string;
@@ -22,6 +23,7 @@ export async function sendAgreement(args: {
   agreement_date?: string;
   confirm_mailbox_mismatch?: boolean;
   property_id?: string;
+  room_id?: string;
   note?: string;
 }) {
   // Validate everything up front: a lease PDF with a malformed date or amount,
@@ -31,6 +33,15 @@ export async function sendAgreement(args: {
     return {
       ok: false,
       error: `"${args.recipient_email}" is not a valid single email address — double-check it with the operator.`,
+    };
+  }
+  if (!args.room_number?.trim()) {
+    return {
+      ok: false,
+      error:
+        "room_number is required — every agreement names the specific room. " +
+        "Ask the operator which room (resolve_property_address lists the " +
+        "property's rooms).",
     };
   }
   const rent = normalizeMoney(args.rent);
@@ -108,6 +119,7 @@ export async function sendAgreement(args: {
     tenantName: args.tenant_name,
     sublessorName: args.sublessor_name?.trim() || "Vineet Dutta",
     propertyAddress: args.property_address,
+    roomNumber: args.room_number.trim(),
     rent,
     securityDeposit: deposit,
     leaseStartDate: args.lease_start_date,
@@ -117,6 +129,7 @@ export async function sendAgreement(args: {
     recipientEmail: recipient,
     inNewYork: args.in_new_york,
     propertyId: args.property_id,
+    roomId: args.room_id?.trim() || undefined,
     note: args.note?.trim() || undefined,
   });
 
@@ -173,7 +186,9 @@ export const agreementsTools = [
       "exist in the portal: resolve the address with resolve_property_address and " +
       "pass its property_id. A free-typed address that matches no portal property " +
       "is refused — if the unit isn't in the system yet, tell the operator to add " +
-      "it on /properties first.",
+      "it on /properties first. The ROOM is mandatory too: room_number must be " +
+      "one of that property's rooms (resolve_property_address returns them as " +
+      "rooms[]); pass the matching room_id. Never guess the room — ask.",
     inputSchema: z.object({
       tenant_name: z.string().describe("Tenant's full name"),
       recipient_email: z.string().describe("Tenant email address to send the agreement to"),
@@ -183,6 +198,20 @@ export const agreementsTools = [
           "Full property address (include city/state for non-NY units). Must " +
             "belong to a property that already exists in the portal — use " +
             "resolve_property_address; arbitrary addresses are refused.",
+        ),
+      room_number: z
+        .string()
+        .describe(
+          'Room within the unit, e.g. "3" or "B" — MANDATORY. Must be one of ' +
+            "the property's rooms from resolve_property_address (rooms[]); " +
+            "the send is refused otherwise. Ask the operator if not given.",
+        ),
+      room_id: z
+        .string()
+        .optional()
+        .describe(
+          "UUID of the room from resolve_property_address rooms[]. Pass it " +
+            "when known so the room is matched exactly.",
         ),
       rent: z.string().describe('Monthly rent, e.g. "1650"'),
       security_deposit: z.string().describe("Security deposit amount"),

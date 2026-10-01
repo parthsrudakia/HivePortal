@@ -54,6 +54,10 @@ const NY_SIGN_ORIGIN_ERROR =
   "link until a neutral (non-Hive) domain is set, because the portal's own " +
   'domain contains "hive-portal". Set SIGN_ORIGIN and retry.';
 
+const ROOM_REQUIRED_ERROR =
+  "Room number is required — every agreement names the specific room being " +
+  "subleased. Pick one of the property's rooms.";
+
 function normalizeAddress(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -162,6 +166,62 @@ async function resolveKnownProperty(
   };
 }
 
+function normalizeRoom(s: string): string {
+  return s.trim().toLowerCase().replace(/^room\s+/, "").replace(/\s+/g, "");
+}
+
+/**
+ * The room is mandatory and must be one of the property's rooms in the
+ * portal — a lease naming a room the unit doesn't have is worse than an
+ * error the operator can fix. Matches by room id when given, else by room
+ * number (case/whitespace-insensitive, a leading "Room" ignored). Returns the
+ * room's id and its number exactly as the portal stores it.
+ */
+async function resolveKnownRoom(
+  supabase: SupabaseClient,
+  propertyId: string,
+  roomNumber: string,
+  roomId?: string,
+): Promise<{ roomId: string; roomNumber: string } | { error: string }> {
+  const { data: rooms } = await supabase
+    .from("rooms")
+    .select("id, room_number")
+    .eq("property_id", propertyId)
+    .order("room_number");
+  const list = rooms ?? [];
+  const numbered = list.filter(
+    (r): r is { id: string; room_number: string } =>
+      r.room_number != null && r.room_number.trim() !== "",
+  );
+  const available =
+    numbered.length > 0
+      ? `This property's rooms in the portal: ${numbered
+          .map((r) => `Room ${r.room_number} (room id ${r.id})`)
+          .join(", ")}.`
+      : "This property has no numbered rooms in the portal yet — number its rooms on /properties first.";
+
+  if (roomId) {
+    const hit = numbered.find((r) => r.id === roomId);
+    if (hit) return { roomId: hit.id, roomNumber: hit.room_number };
+    return {
+      error: `Room id ${roomId} is not a numbered room of this property. ${available}`,
+    };
+  }
+  const wanted = normalizeRoom(roomNumber);
+  const hits = numbered.filter((r) => normalizeRoom(r.room_number) === wanted);
+  if (hits.length === 1) {
+    return { roomId: hits[0].id, roomNumber: hits[0].room_number };
+  }
+  if (hits.length > 1) {
+    return {
+      error: `Room "${roomNumber}" matches ${hits.length} rooms at this property — pass the room's id to pick one. ${available}`,
+    };
+  }
+  return {
+    error: `Room "${roomNumber}" doesn't exist at this property in the portal. Agreements name a specific room, so pick one of the property's rooms. ${available}`,
+  };
+}
+
 /** The operator's signature PNG as a data URL, or null if never captured. */
 export async function loadOperatorSignature(
   supabase: SupabaseClient,
@@ -179,6 +239,9 @@ export type AgreementSendInput = AgreementInput & {
   /** Picks the mailbox and branding: NY → plain Gmail, else branded Outlook. */
   inNewYork: boolean;
   propertyId?: string;
+  /** Room picked from the portal's list (skips room-number matching); must
+   *  belong to the resolved property. */
+  roomId?: string;
   /** Optional extra paragraph in the cover email (send-time only — not stored,
    *  not in the PDF, and not repeated by a resend). */
   note?: string;
@@ -195,6 +258,7 @@ type RequestRow = {
   tenant_name: string;
   recipient_email: string;
   property_address: string;
+  room_number: string | null;
   include_letterhead: boolean;
   channel: "gmail" | "outlook";
   input: AgreementInput;
@@ -202,11 +266,22 @@ type RequestRow = {
   expires_at: string;
 };
 
+/** "Room 3 · <address>" for logs and alerts; just the address when a legacy
+ *  request has no room. */
+export function premisesLabel(
+  roomNumber: string | null | undefined,
+  propertyAddress: string,
+): string {
+  const room = roomNumber?.trim();
+  return room ? `Room ${room} · ${propertyAddress}` : propertyAddress;
+}
+
 async function deliverAgreementEmail(opts: {
   channel: "gmail" | "outlook";
   recipient: string;
   tenantName: string;
   propertyAddress: string;
+  roomNumber: string | null;
   attachment: { filename: string; base64: string; mimeType: string };
   signUrl: string;
   note?: string;
@@ -253,7 +328,7 @@ async function deliverAgreementEmail(opts: {
     type: "agreement",
     recipient: opts.recipient,
     subject,
-    context: `${opts.tenantName} · ${opts.propertyAddress}`,
+    context: `${opts.tenantName} · ${premisesLabel(opts.roomNumber, opts.propertyAddress)}`,
     channel: opts.channel,
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
@@ -280,11 +355,17 @@ export async function sendAgreementRequest(
       type: "agreement",
       recipient: input.recipientEmail,
       subject: "Sublease agreement (send failed before email)",
-      context: `${input.tenantName} · ${input.propertyAddress}`,
+      context: `${input.tenantName} · ${premisesLabel(input.roomNumber, input.propertyAddress)}`,
       channel: input.inNewYork ? "gmail" : "outlook",
       status: "failed",
       error,
     });
+
+  // The room is mandatory on every agreement, from every caller.
+  if (!input.roomNumber?.trim()) {
+    await logPreEmailFailure(ROOM_REQUIRED_ERROR);
+    return { ok: false, error: ROOM_REQUIRED_ERROR };
+  }
 
   // NY correspondence must stay free of Hive branding, including the link's
   // domain — refuse rather than fall back to the hive-portal URL.
@@ -303,6 +384,17 @@ export async function sendAgreementRequest(
     return { ok: false, error: known.error };
   }
 
+  const room = await resolveKnownRoom(
+    supabase,
+    known.propertyId,
+    input.roomNumber,
+    input.roomId,
+  );
+  if ("error" in room) {
+    await logPreEmailFailure(room.error);
+    return { ok: false, error: room.error };
+  }
+
   const sublessorSignature = await loadOperatorSignature(supabase);
   if (!sublessorSignature) {
     const error =
@@ -315,6 +407,8 @@ export async function sendAgreementRequest(
     tenantName: input.tenantName,
     sublessorName: input.sublessorName,
     propertyAddress: input.propertyAddress,
+    // The portal's own label for the room, not the caller's spelling.
+    roomNumber: room.roomNumber,
     rent: input.rent,
     securityDeposit: input.securityDeposit,
     leaseStartDate: input.leaseStartDate,
@@ -359,6 +453,8 @@ export async function sendAgreementRequest(
     recipient_email: input.recipientEmail,
     property_address: input.propertyAddress,
     property_id: known.propertyId,
+    room_id: room.roomId,
+    room_number: room.roomNumber,
     include_letterhead: !input.inNewYork,
     channel,
     input: agreementInput,
@@ -377,6 +473,7 @@ export async function sendAgreementRequest(
     recipient: input.recipientEmail,
     tenantName: input.tenantName,
     propertyAddress: input.propertyAddress,
+    roomNumber: room.roomNumber,
     attachment: {
       filename: pdf.filename,
       base64: pdf.base64,
@@ -459,6 +556,7 @@ export async function resendAgreementRequest(
     recipient: row.recipient_email,
     tenantName: row.tenant_name,
     propertyAddress: row.property_address,
+    roomNumber: row.room_number,
     attachment: {
       filename: agreementPdfFilename(row.tenant_name),
       base64,

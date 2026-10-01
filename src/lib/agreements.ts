@@ -17,6 +17,8 @@ export type AgreementInput = {
   tenantName: string;
   sublessorName: string;
   propertyAddress: string;
+  /** Room within the unit, e.g. "3" or "B" — mandatory on every agreement. */
+  roomNumber: string;
   rent: string;
   securityDeposit: string;
   leaseStartDate: string; // "YYYY-MM-DD"
@@ -59,6 +61,7 @@ export async function generateAgreementPdf(
     tenantName: input.tenantName,
     sublessorName: input.sublessorName,
     propertyAddress: input.propertyAddress,
+    roomNumber: input.roomNumber,
     rent: input.rent,
     securityDeposit: input.securityDeposit,
     leaseStartDate: input.leaseStartDate,

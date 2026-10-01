@@ -402,6 +402,8 @@ An optional **note** (up to 1,000 characters) can be added to the cover email �
 
 **Only known properties can be sent to.** The address is resolved to an existing property (by the picker, the property's saved agreement address, or street number + name + unit); anything else is refused with suggestions. The address used is saved as that property's canonical agreement address.
 
+**The room is mandatory.** Every agreement names the specific room ("Room 3, 123 Main St, Apt 4B …" in the PDF's opening paragraph), from the form, the assistant, and any script alike. The room must be one of that property's numbered rooms in the portal — the form offers them as a picker once a property is chosen, the assistant gets them from the address lookup, and a room the unit doesn't have is refused with the list of rooms it does have. A property with no numbered rooms can't be sent to until its rooms are numbered on the property page. The room shows in the signing tally and in the signed-agreement alert, and Add Tenant from a signed agreement preselects it.
+
 The channel follows the NY rule:
 
 - **New York** — plain-text "Agreement" email from the personal Gmail, no letterhead, no Hive branding anywhere, and the send is only reported successful after the message is verified in the Gmail Sent folder.
@@ -432,7 +434,7 @@ The same Claude-powered assistant is available as the **in-portal chat widget** 
 - **Properties** — list, look up, resolve an address, and **create a unit** (asks for every mandatory field in one message, reads it back, refuses duplicates, creates Room 1…N).
 - **Inventory** — list, set listing action, **Facebook ads on/off** (refused while the listing is marked Delete), set room status, update room rent.
 - **Tenants & tenancies** — list active tenants, add, update, edit a tenancy, move out, cancel a move-out.
-- **Agreements** — send one (same rules as the portal), fetch a lease link.
+- **Agreements** — send one (same rules as the portal, including the mandatory room), fetch a lease link.
 - **Money** — record a payment or charge, list/settle/dismiss moved-out balances.
 - **Messaging** — balance reminders (must ask email/text/both and confirm), **free-form texts** ("send_text": to one or many tenants, individual threads or one shared thread, optionally including the operator; it must read back the exact text, recipients and thread mode before sending — "group text with me in it" means individual threads that include you), text opt-out lookup, and sharing/emailing the inventory sheet.
 - **Cleaning** — overdue list, log a cleaning, list/update/delete records, manage and assign cleaners.

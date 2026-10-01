@@ -15,6 +15,8 @@ export type TenancyPrefill = {
   tenantEmail: string;
   propertyId: string;
   propertyAddress: string;
+  roomId: string;
+  roomNumber: string;
   rent: string;
   securityDeposit: string;
   leaseStartDate: string;
@@ -28,6 +30,8 @@ export type PropertyOption = {
   label: string;
   address: string;
   isNewYork: boolean;
+  /** The property's numbered rooms — the agreement must name one of them. */
+  rooms: { id: string; roomNumber: string }[];
 };
 
 const fieldLabel = "text-xs font-medium uppercase tracking-wide text-muted";
@@ -38,6 +42,7 @@ type FormState = {
   tenantName: string;
   sublessorName: string;
   propertyAddress: string;
+  roomNumber: string;
   rent: string;
   proRateRent: string;
   securityDeposit: string;
@@ -72,6 +77,7 @@ export function AgreementGenerator({
     tenantName: "",
     sublessorName: "Vineet Dutta",
     propertyAddress: "",
+    roomNumber: "",
     rent: "",
     proRateRent: "",
     securityDeposit: "",
@@ -88,6 +94,9 @@ export function AgreementGenerator({
   // Set only by picking from the property dropdown (or a prefill); cleared as
   // soon as the address text is hand-edited so the server re-matches it.
   const [propertyId, setPropertyId] = useState("");
+  // Set when the room is picked from the property's room list; cleared when
+  // the room is typed or the property changes so the server re-matches it.
+  const [roomId, setRoomId] = useState("");
   const [showProperties, setShowProperties] = useState(false);
 
   const set = (field: keyof FormState) => (value: string) =>
@@ -107,11 +116,30 @@ export function AgreementGenerator({
     });
   }, [form.propertyAddress, propertyOptions]);
 
+  // Rooms offered for the picked property; empty when the address was typed
+  // by hand (the server then matches the typed room number itself).
+  const roomOptions = useMemo(
+    () => propertyOptions.find((p) => p.id === propertyId)?.rooms ?? [],
+    [propertyId, propertyOptions],
+  );
+
   const pickProperty = (p: PropertyOption) => {
-    setForm((prev) => ({ ...prev, propertyAddress: p.address }));
+    // A different unit has different rooms — never carry a room across.
+    setForm((prev) => ({
+      ...prev,
+      propertyAddress: p.address,
+      roomNumber: p.rooms.length === 1 ? p.rooms[0].roomNumber : "",
+    }));
     setPropertyId(p.id);
+    setRoomId(p.rooms.length === 1 ? p.rooms[0].id : "");
     setInNewYork(p.isNewYork);
     setShowProperties(false);
+  };
+
+  const pickRoom = (id: string) => {
+    const room = roomOptions.find((r) => r.id === id);
+    setRoomId(room?.id ?? "");
+    setForm((prev) => ({ ...prev, roomNumber: room?.roomNumber ?? "" }));
   };
 
   const applyPrefill = (id: string) => {
@@ -123,12 +151,14 @@ export function AgreementGenerator({
       ...prev,
       tenantName: p.tenantName,
       propertyAddress: option?.address ?? p.propertyAddress,
+      roomNumber: p.roomNumber,
       rent: p.rent,
       securityDeposit: p.securityDeposit,
       leaseStartDate: p.leaseStartDate,
       leaseEndDate: p.leaseEndDate,
     }));
     setPropertyId(p.propertyId);
+    setRoomId(p.roomId);
     setRecipientEmail(p.tenantEmail);
     setInNewYork(p.isNewYork);
   };
@@ -152,6 +182,7 @@ export function AgreementGenerator({
     if (!form.tenantName.trim()) return "tenant name";
     if (!form.sublessorName.trim()) return "sublessor name";
     if (!form.propertyAddress.trim()) return "property address";
+    if (!form.roomNumber.trim()) return "room number";
     if (!form.rent.trim()) return "monthly rent";
     if (!form.securityDeposit.trim()) return "security deposit";
     if (!form.leaseStartDate) return "lease start date";
@@ -185,6 +216,8 @@ export function AgreementGenerator({
         tenantName: form.tenantName.trim(),
         sublessorName: form.sublessorName.trim(),
         propertyAddress: form.propertyAddress.trim(),
+        roomNumber: form.roomNumber.trim(),
+        roomId: roomId || undefined,
         rent: form.rent.trim(),
         securityDeposit: form.securityDeposit.trim(),
         leaseStartDate: form.leaseStartDate,
@@ -215,6 +248,7 @@ export function AgreementGenerator({
         tenantName: form.tenantName.trim(),
         sublessorName: form.sublessorName.trim(),
         propertyAddress: form.propertyAddress.trim(),
+        roomNumber: form.roomNumber.trim(),
         rent: form.rent.trim(),
         securityDeposit: form.securityDeposit.trim(),
         leaseStartDate: form.leaseStartDate,
@@ -300,6 +334,7 @@ export function AgreementGenerator({
               onChange={(e) => {
                 set("propertyAddress")(e.target.value);
                 setPropertyId("");
+                setRoomId("");
                 setShowProperties(true);
               }}
               onFocus={() => setShowProperties(true)}
@@ -333,6 +368,39 @@ export function AgreementGenerator({
               pick one from the list.
             </span>
           </div>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>Room *</span>
+            {propertyId && roomOptions.length > 0 ? (
+              <select
+                value={roomId}
+                onChange={(e) => pickRoom(e.target.value)}
+                className={fieldInput}
+              >
+                <option value="">Pick a room…</option>
+                {roomOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Room {r.roomNumber}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={form.roomNumber}
+                onChange={(e) => {
+                  set("roomNumber")(e.target.value);
+                  setRoomId("");
+                }}
+                placeholder="e.g. 3"
+                className={fieldInput}
+              />
+            )}
+            <span className="text-[11px] text-muted">
+              {propertyId && roomOptions.length === 0
+                ? "This property has no numbered rooms yet — number them on the property page first."
+                : "The agreement names this room; it must be one of the property's rooms."}
+            </span>
+          </label>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">

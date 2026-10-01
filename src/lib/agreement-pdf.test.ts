@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { buildAgreementPdf } from "./agreement-pdf";
+import { buildAgreementPdf, agreementPremises } from "./agreement-pdf";
 
 // A signature roughly like what the signing pad produces: transparent 4:1 RGBA
 // PNG with a dark stroke across it.
@@ -17,6 +17,7 @@ const baseInput = {
   tenantName: "Test Tenant",
   sublessorName: "Vineet Dutta",
   propertyAddress: "161 Van Wagenen Ave, Jersey City, NJ 07306",
+  roomNumber: "3",
   rent: "1650",
   securityDeposit: "1650",
   leaseStartDate: "2026-08-01",
@@ -24,6 +25,20 @@ const baseInput = {
   agreementDate: "2026-07-20",
   includeLetterhead: true,
 };
+
+describe("agreementPremises", () => {
+  it("prints the room ahead of the address", () => {
+    expect(agreementPremises(baseInput)).toBe(
+      "Room 3, 161 Van Wagenen Ave, Jersey City, NJ 07306",
+    );
+  });
+
+  it("falls back to the bare address for legacy inputs without a room", () => {
+    expect(
+      agreementPremises({ ...baseInput, roomNumber: undefined }),
+    ).toBe(baseInput.propertyAddress);
+  });
+});
 
 describe("buildAgreementPdf", () => {
   it("renders without signatures on one page", () => {

@@ -33,6 +33,7 @@ type PropertyRel = {
   is_new_york: boolean;
 };
 type RoomRel = {
+  id: string;
   room_number: string | null;
   properties: PropertyRel | PropertyRel[] | null;
 };
@@ -67,13 +68,14 @@ export default async function AgreementsPage() {
     { data: addressRows },
     { data: tenantRows },
     { data: tenancyRows },
+    { data: roomRows },
   ] = await Promise.all([
     supabase
       .from("tenancies")
       .select(
         `id, status, tenant_id, monthly_rent, security_deposit, start_date, lease_start_date, lease_end_date, lease_pdf_path,
            tenants(full_name, email),
-           rooms(room_number, properties(id, building_name, street_address, unit_number, is_new_york))`,
+           rooms(id, room_number, properties(id, building_name, street_address, unit_number, is_new_york))`,
       )
       .in("status", ["active", "upcoming"])
       .order("start_date", { ascending: false })
@@ -81,7 +83,7 @@ export default async function AgreementsPage() {
     supabase
       .from("agreement_requests")
       .select(
-        "id, status, tenant_name, recipient_email, property_address, sent_at, expires_at, signed_at, tenant_signature_kind, assigned_tenancy_id",
+        "id, status, tenant_name, recipient_email, property_address, room_number, sent_at, expires_at, signed_at, tenant_signature_kind, assigned_tenancy_id",
       )
       .order("sent_at", { ascending: false }),
     supabase.storage
@@ -102,6 +104,13 @@ export default async function AgreementsPage() {
     // tenants whose tenancies have all ended as past.
     supabase.from("tenants").select("id, full_name, email"),
     supabase.from("tenancies").select("id, tenant_id, status"),
+    // The room is mandatory on every agreement and must be one of the
+    // property's rooms — the form offers them as a picker per property.
+    supabase
+      .from("rooms")
+      .select("id, property_id, room_number")
+      .not("room_number", "is", null)
+      .order("room_number"),
   ]);
 
   const prefills: TenancyPrefill[] = (data ?? []).flatMap((row) => {
@@ -125,6 +134,8 @@ export default async function AgreementsPage() {
         label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}${upcomingTag}`,
         propertyId: property?.id ?? "",
         propertyAddress: address,
+        roomId: room?.id ?? "",
+        roomNumber: room?.room_number ?? "",
         rent: String(row.monthly_rent),
         securityDeposit: row.security_deposit != null ? String(row.security_deposit) : "",
         leaseStartDate: row.lease_start_date ?? row.start_date,
@@ -192,6 +203,7 @@ export default async function AgreementsPage() {
       tenantName: r.tenant_name,
       recipientEmail: r.recipient_email,
       propertyAddress: r.property_address,
+      roomNumber: r.room_number,
       sentAt: r.sent_at,
       expiresAt: r.expires_at,
       signedAt: r.signed_at,
@@ -211,11 +223,21 @@ export default async function AgreementsPage() {
   const confirmedById = new Map(
     (addressRows ?? []).map((a) => [a.property_id, a.full_address]),
   );
+  const roomsByProperty = new Map<string, { id: string; roomNumber: string }[]>();
+  for (const r of roomRows ?? []) {
+    const number = r.room_number?.trim();
+    if (!number) continue;
+    roomsByProperty.set(r.property_id, [
+      ...(roomsByProperty.get(r.property_id) ?? []),
+      { id: r.id, roomNumber: number },
+    ]);
+  }
   const propertyOptions: PropertyOption[] = (propertyRows ?? []).map((p) => ({
     id: p.id,
     label: `${p.building_name?.trim() || p.street_address} · Apt ${p.unit_number}`,
     address: confirmedById.get(p.id) ?? composeFullAddress(p).full_address,
     isNewYork: p.is_new_york,
+    rooms: roomsByProperty.get(p.id) ?? [],
   }));
 
   const operatorSignatureUrl = signatureUrlData?.signedUrl ?? null;

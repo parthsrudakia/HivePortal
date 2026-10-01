@@ -9,6 +9,7 @@
  * never races an in-flight signing into a duplicate alert.
  */
 
+import { premisesLabel } from "@/lib/agreement-send";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyOperators } from "@/lib/telegram";
 
@@ -18,6 +19,7 @@ type SignedRow = {
   id: string;
   tenant_name: string;
   property_address: string;
+  room_number: string | null;
   recipient_email: string;
   signed_at: string | null;
 };
@@ -28,7 +30,7 @@ export async function retrySignedAgreementAlerts(
   const cutoff = new Date(Date.now() - IN_FLIGHT_GRACE_MS).toISOString();
   const { data: rows, error } = await supabase
     .from("agreement_requests")
-    .select("id, tenant_name, property_address, recipient_email, signed_at")
+    .select("id, tenant_name, property_address, room_number, recipient_email, signed_at")
     .eq("status", "signed")
     .is("operator_notified_at", null)
     .lt("signed_at", cutoff)
@@ -49,7 +51,7 @@ export async function retrySignedAgreementAlerts(
     const ok = await notifyOperators(
       [
         `✍️ ${row.tenant_name} signed their agreement (delayed alert — signed ${signedAt})`,
-        row.property_address,
+        premisesLabel(row.room_number, row.property_address),
         `Signed copy went to ${row.recipient_email} — check the email log if in doubt.`,
       ].join("\n"),
     );

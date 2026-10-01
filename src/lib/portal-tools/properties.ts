@@ -110,17 +110,33 @@ export async function getProperty(id: string) {
 // ready for send_agreement.
 export async function resolvePropertyAddress(args: { query: string }) {
   const supabase = admin();
-  const [{ data: props, error }, { data: saved }] = await Promise.all([
-    supabase
-      .from("properties")
-      .select(
-        "id, building_name, street_address, unit_number, neighborhood, is_new_york",
-      ),
-    // Addresses the operator has already confirmed on a sent agreement —
-    // these are exact and win over anything we could compose.
-    supabase.from("agreement_addresses").select("property_id, full_address"),
-  ]);
+  const [{ data: props, error }, { data: saved }, { data: rooms }] =
+    await Promise.all([
+      supabase
+        .from("properties")
+        .select(
+          "id, building_name, street_address, unit_number, neighborhood, is_new_york",
+        ),
+      // Addresses the operator has already confirmed on a sent agreement —
+      // these are exact and win over anything we could compose.
+      supabase.from("agreement_addresses").select("property_id, full_address"),
+      // send_agreement needs a room that exists at the property — list them
+      // so the bot can offer / validate the room alongside the address.
+      supabase
+        .from("rooms")
+        .select("id, property_id, room_number")
+        .not("room_number", "is", null)
+        .order("room_number"),
+    ]);
   if (error) throw new Error(error.message);
+  const roomsByProperty = new Map<string, { room_id: string; room_number: string }[]>();
+  for (const r of rooms ?? []) {
+    if (!r.room_number?.trim()) continue;
+    roomsByProperty.set(r.property_id, [
+      ...(roomsByProperty.get(r.property_id) ?? []),
+      { room_id: r.id, room_number: r.room_number.trim() },
+    ]);
+  }
   const confirmedById = new Map(
     (saved ?? []).map((s) => [s.property_id as string, s.full_address as string]),
   );
@@ -161,6 +177,8 @@ export async function resolvePropertyAddress(args: { query: string }) {
       neighborhood: p.neighborhood,
       is_new_york: p.is_new_york,
       matched_all_terms: hits === tokens.length,
+      // Rooms at this unit — send_agreement's room_number must be one of them.
+      rooms: roomsByProperty.get(p.id) ?? [],
       ...(confirmed
         ? {
             full_address: confirmed,
@@ -437,8 +455,9 @@ export const propertiesTools = [
       "Autocomplete a full property address from a fragment the operator " +
       "gave (building name, street, unit, or neighborhood — e.g. '3516 jfk " +
       "203' or 'normandie 32F'). Returns up to 5 matching units, each with a " +
-      "full_address ready for send_agreement plus the property's is_new_york " +
-      "flag. When operator_confirmed is true the address was used on a " +
+      "full_address ready for send_agreement, the property's is_new_york " +
+      "flag, and its rooms[] (room_id + room_number — send_agreement's " +
+      "mandatory room must be one of these). When operator_confirmed is true the address was used on a " +
       "previously sent agreement — it is exact; use it verbatim. Otherwise " +
       "full_address is composed from portal data: auto-correct it to the " +
       "exact postal address (expand abbreviated street names, add the ZIP " +

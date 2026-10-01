@@ -20,6 +20,8 @@ export type SigningRequestRow = {
   tenantName: string;
   recipientEmail: string;
   propertyAddress: string;
+  /** Null only on requests sent before the room became mandatory. */
+  roomNumber: string | null;
   sentAt: string;
   expiresAt: string;
   signedAt: string | null;
@@ -93,7 +95,7 @@ export function AgreementTally({
   const visible = requests.filter((r) => {
     if (tokens.length > 0) {
       const hay =
-        `${r.tenantName} ${r.recipientEmail} ${r.propertyAddress}`.toLowerCase();
+        `${r.tenantName} ${r.recipientEmail} ${r.roomNumber ? `room ${r.roomNumber}` : ""} ${r.propertyAddress}`.toLowerCase();
       return tokens.every((t) => hay.includes(t));
     }
     if (filter === "all") return true;
@@ -238,7 +240,7 @@ export function AgreementTally({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search agreements by tenant, email, or address…"
+          placeholder="Search agreements by tenant, email, room, or address…"
           className="w-full rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
         {query && (
@@ -336,7 +338,9 @@ export function AgreementTally({
                     )}
                   </p>
                   <p className="truncate text-xs text-muted">
-                    {r.recipientEmail} · {r.propertyAddress} · sent{" "}
+                    {r.recipientEmail} ·{" "}
+                    {r.roomNumber ? `Room ${r.roomNumber}, ` : ""}
+                    {r.propertyAddress} · sent{" "}
                     {fmtDate(r.sentAt)}
                   </p>
                 </div>

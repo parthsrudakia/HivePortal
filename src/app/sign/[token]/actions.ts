@@ -11,6 +11,7 @@ import {
   AGREEMENTS_BUCKET,
   agreementsAdmin,
   loadOperatorSignature,
+  premisesLabel,
 } from "@/lib/agreement-send";
 import { sendGmailMessage } from "@/lib/google-mail";
 import { sendOutlookMessage } from "@/lib/graph-mail";
@@ -30,7 +31,10 @@ type RequestRow = {
   tenant_name: string;
   recipient_email: string;
   property_address: string;
+  room_number: string | null;
   channel: "gmail" | "outlook";
+  /** Snapshot the sent PDF was rendered from. Requests sent before the room
+   *  became mandatory have no roomNumber in here; the builder tolerates it. */
   input: AgreementInput;
 };
 
@@ -54,7 +58,7 @@ export async function submitSignature(
   // Fresh token lookup — never trust the page render that got the tenant here.
   const { data: request } = await supabase
     .from("agreement_requests")
-    .select("id, tenant_name, recipient_email, property_address, channel, input")
+    .select("id, tenant_name, recipient_email, property_address, room_number, channel, input")
     .eq("token", token)
     .eq("status", "pending")
     .gt("expires_at", new Date().toISOString())
@@ -181,7 +185,7 @@ export async function submitSignature(
     type: "agreement_signed",
     recipient: request.recipient_email,
     subject,
-    context: `${request.tenant_name} · ${request.property_address}`,
+    context: `${request.tenant_name} · ${premisesLabel(request.room_number, request.property_address)}`,
     channel: request.channel,
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
@@ -194,7 +198,7 @@ export async function submitSignature(
   const notified = await notifyOperators(
     [
       `✍️ ${request.tenant_name} just signed their agreement`,
-      request.property_address,
+      premisesLabel(request.room_number, request.property_address),
       result.ok
         ? `Signed copy emailed to ${request.recipient_email}.`
         : `⚠️ Emailing the signed copy failed — re-send it from the portal.`,

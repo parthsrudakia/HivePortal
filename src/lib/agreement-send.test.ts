@@ -14,6 +14,7 @@ const nyInput = {
   tenantName: "Test Tenant",
   sublessorName: "Vineet Dutta",
   propertyAddress: "123 E 54th St, New York, NY 10022",
+  roomNumber: "2",
   rent: "1650",
   securityDeposit: "1650",
   leaseStartDate: "2026-08-01",
@@ -45,5 +46,17 @@ describe("signing-link origin", () => {
     const result = await sendAgreementRequest(nyInput);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("SIGN_ORIGIN");
+  });
+});
+
+describe("mandatory room", () => {
+  beforeEach(() => {
+    process.env.SIGN_ORIGIN = "https://neutral.example";
+  });
+
+  it("refuses a send with no room number before touching the property", async () => {
+    const result = await sendAgreementRequest({ ...nyInput, roomNumber: "  " });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/room number is required/i);
   });
 });

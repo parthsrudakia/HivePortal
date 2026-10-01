@@ -20,6 +20,10 @@ export type AgreementPdfData = {
   tenantName: string;
   sublessorName: string;
   propertyAddress: string;
+  /** Room within the unit — printed with the address ("Room 3, 123 Main
+   *  St, Apt 4B …"). Required on every new agreement; optional here only so
+   *  requests stored before the field existed still re-render at sign time. */
+  roomNumber?: string;
   rent: string;
   securityDeposit: string;
   /** "YYYY-MM-DD" */
@@ -178,6 +182,16 @@ function writeWithBold(
   return y;
 }
 
+/** The premises as printed in the agreement: "Room 3, <address>", or just
+ *  the address for legacy inputs stored before the room was mandatory. */
+export function agreementPremises(data: {
+  roomNumber?: string;
+  propertyAddress: string;
+}): string {
+  const room = data.roomNumber?.trim();
+  return room ? `Room ${room}, ${data.propertyAddress}` : data.propertyAddress;
+}
+
 export function agreementFilename(tenantName: string): string {
   return `${tenantName} Agreement.pdf`;
 }
@@ -259,11 +273,12 @@ function buildAtScale(data: AgreementPdfData, s: number): jsPDF {
   // Clause 11 refers to the sublessor by first name; bold that too.
   const namesAndFirsts = [...names, data.sublessorName.split(" ")[0]];
 
-  // Introduction paragraph with bold names and address
-  const intro = `This agreement is made between ${data.tenantName} and ${data.sublessorName} for the period beginning ${formatShortDate(data.leaseStartDate)}, and ending ${formatShortDate(data.leaseEndDate)}, and will convert to a month-to-month at ${data.propertyAddress}.`;
+  // Introduction paragraph with bold names and premises (room + address)
+  const premises = agreementPremises(data);
+  const intro = `This agreement is made between ${data.tenantName} and ${data.sublessorName} for the period beginning ${formatShortDate(data.leaseStartDate)}, and ending ${formatShortDate(data.leaseEndDate)}, and will convert to a month-to-month at ${premises}.`;
   yPos = writeWithBold(layout, intro, margin, yPos, contentWidth, [
     ...names,
-    data.propertyAddress,
+    premises,
   ]);
   yPos += 3.5 * s;
 

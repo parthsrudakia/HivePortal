@@ -72,7 +72,7 @@ export const queryTools = [
       "cleaning_records(property_id, cleaner_id, cleaned_on); cleaners(id, name)\n" +
       "email_log / sms_log(channel, status, created_at); rent_reminder_batches\n" +
       "reconciliation_deposits(payer_key, amount, payment_id) / _statements / _reversals\n" +
-      "agreement_requests(status, tenant_name, recipient_email) — no token column\n" +
+      "agreement_requests(status, tenant_name, recipient_email, property_address, room_number, room_id) — no token column\n" +
       "For any table's full column list, query information_schema.columns " +
       "(it only lists tables you can read).",
     inputSchema: z.object({
