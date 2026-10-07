@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import {
   deleteTenant,
+  type DeleteTenantState,
   endTenancy,
   deletePayment,
   deleteCharge,
@@ -103,24 +104,35 @@ export function ReactivateTenancyButton({
 }
 
 export function DeleteTenantButton({ id, name }: { id: string; name: string }) {
+  const [state, action, pending] = useActionState<DeleteTenantState, FormData>(
+    deleteTenant,
+    undefined,
+  );
   return (
-    <form action={deleteTenant}>
+    <form action={action} className="flex flex-col items-end gap-1">
       <input type="hidden" name="id" value={id} />
       <button
         type="submit"
-        className="text-xs uppercase tracking-wide text-muted hover:text-red-700"
+        disabled={pending}
+        aria-busy={pending}
+        className="text-xs uppercase tracking-wide text-muted hover:text-red-700 disabled:opacity-50"
         onClick={(e) => {
           if (
             !confirm(
-              `Delete tenant "${name}"? All their tenancies and payment history will be deleted. This cannot be undone.`,
+              `Delete tenant "${name}"? Their tenancies will be deleted and their rooms freed. Any signed agreement stays on the Agreements page. This cannot be undone.`,
             )
           ) {
             e.preventDefault();
           }
         }}
       >
-        Delete tenant
+        {pending ? "Deleting…" : "Delete tenant"}
       </button>
+      {state?.error && (
+        <p role="alert" className="max-w-xs text-right text-xs text-red-700">
+          {state.error}
+        </p>
+      )}
     </form>
   );
 }

@@ -1123,46 +1123,90 @@ export async function transferTenancy(
 
 // ----- Delete tenant (and their tenancies + payments via cascades) -----
 
-export async function deleteTenant(formData: FormData) {
+export type DeleteTenantState = { error: string } | undefined;
+
+export async function deleteTenant(
+  _prev: DeleteTenantState,
+  formData: FormData,
+): Promise<DeleteTenantState> {
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  if (!id) return { error: "Missing tenant id." };
 
   const supabase = await createClient();
   // Deleting a tenant is operator-only; payment history blocks it entirely
   // (payments are on delete RESTRICT — the books outlive the tenant).
-  if (await requireLedgerAdmin()) return;
-  if (!isValid(zUuid, id)) return;
+  const denied = await requireLedgerAdmin();
+  if (denied) return { error: denied };
+  if (!isValid(zUuid, id)) return { error: "Invalid tenant id." };
 
-  // Free up any rooms that were occupied by this tenant
-  const { data: rooms } = await supabase
+  const { data: tenancies, error: tErr } = await supabase
     .from("tenancies")
-    .select("room_id")
-    .eq("tenant_id", id)
-    .eq("status", "active");
+    .select("id, room_id, status")
+    .eq("tenant_id", id);
+  if (tErr) return { error: tErr.message };
+  const tenancyIds = (tenancies ?? []).map((t) => t.id);
 
-  const { error } = await supabase.from("tenants").delete().eq("id", id);
-  if (error) {
-    // 23503 = the payments FK (on delete restrict): financial history is
-    // never deleted with its tenant.
-    throw new Error(
-      error.code === "23503"
-        ? "This tenant has payment history, which can't be deleted. Move them out instead — the tenancy ends but the books keep their record."
-        : `Failed to delete tenant: ${error.message}`,
-    );
+  if (tenancyIds.length > 0) {
+    const { count: paymentCount, error: pErr } = await supabase
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .in("tenancy_id", tenancyIds);
+    if (pErr) return { error: pErr.message };
+    if ((paymentCount ?? 0) > 0)
+      return {
+        error:
+          "This tenant has payment history, which can't be deleted. Move them out instead — the tenancy ends but the books keep their record.",
+      };
+    const { count: allocCount, error: aErr } = await supabase
+      .from("credit_allocations")
+      .select("id", { count: "exact", head: true })
+      .in("tenancy_id", tenancyIds);
+    if (aErr) return { error: aErr.message };
+    if ((allocCount ?? 0) > 0)
+      return {
+        error:
+          "This tenant has credit allocations on their ledger, which can't be deleted. Move them out instead.",
+      };
+
+    // Charges and rent history are ON DELETE RESTRICT against the tenancy, so
+    // the tenant→tenancy cascade can't clear them. Every tenancy starts with
+    // the auto-posted deposit charge, which is why deletion used to fail for
+    // anyone who had ever moved in. With no payments on the books these rows
+    // carry no money, so they go first — same order as cancelUpcomingTenancy.
+    const { error: cErr } = await supabase
+      .from("tenancy_charges")
+      .delete()
+      .in("tenancy_id", tenancyIds);
+    if (cErr) return { error: `Couldn't clear the tenant's charges: ${cErr.message}` };
+    const { error: hErr } = await supabase
+      .from("tenancy_rent_history")
+      .delete()
+      .in("tenancy_id", tenancyIds);
+    if (hErr) return { error: `Couldn't clear the tenant's rent history: ${hErr.message}` };
   }
 
-  if (rooms && rooms.length > 0) {
-    const roomIds = rooms.map((r) => r.room_id).filter(Boolean) as string[];
-    if (roomIds.length > 0) {
-      await updateRoomsWithNotification(supabase, roomIds, {
-        status: "available",
-      });
-    }
+  // Tenancies cascade with the tenant; a signed agreement assigned to one of
+  // them is unassigned (FK set null) and stays on /agreements.
+  const { error } = await supabase.from("tenants").delete().eq("id", id);
+  if (error) return { error: `Failed to delete tenant: ${error.message}` };
+
+  // Free the rooms this tenant was holding (occupied or reserved).
+  const roomIds = (tenancies ?? [])
+    .filter((t) => t.status === "active" || t.status === "upcoming")
+    .map((t) => t.room_id)
+    .filter(Boolean);
+  if (roomIds.length > 0) {
+    await updateRoomsWithNotification(supabase, roomIds, {
+      status: "available",
+      pending_tenant: false,
+    });
   }
 
   revalidatePath("/tenants");
   revalidatePath("/inventory");
   revalidatePath("/tenants/new");
+  revalidatePath("/agreements");
+  revalidatePath("/properties");
   redirect("/tenants");
 }
 
