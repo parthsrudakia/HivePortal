@@ -10,6 +10,7 @@
 
 import { jsPDF } from "jspdf";
 import { drawHiveLetterhead, LETTERHEAD_GOLD } from "./agreement-logo";
+import { roomLabel } from "./room-label";
 
 /** A signature captured as a PNG data URL ("data:image/png;base64,…").
  *  Rendered into a 48×12mm box, so capture on a 4:1 canvas to avoid
@@ -188,8 +189,8 @@ export function agreementPremises(data: {
   roomNumber?: string;
   propertyAddress: string;
 }): string {
-  const room = data.roomNumber?.trim();
-  return room ? `Room ${room}, ${data.propertyAddress}` : data.propertyAddress;
+  const room = roomLabel(data.roomNumber);
+  return room ? `${room}, ${data.propertyAddress}` : data.propertyAddress;
 }
 
 export function agreementFilename(tenantName: string): string {

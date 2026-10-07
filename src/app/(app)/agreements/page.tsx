@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
+import { roomLabel } from "@/lib/room-label";
 import { unitLabel } from "@/lib/unit-label";
 import { formatDate, todayISO } from "@/lib/date";
 import {
@@ -131,7 +132,7 @@ export default async function AgreementsPage() {
         id: row.id,
         tenantName: tenant.full_name,
         tenantEmail: tenant.email ?? "",
-        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}${upcomingTag}`,
+        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${roomLabel(room?.room_number) ? ` · ${roomLabel(room?.room_number)}` : ""}${upcomingTag}`,
         propertyId: property?.id ?? "",
         propertyAddress: address,
         roomId: room?.id ?? "",
@@ -158,7 +159,7 @@ export default async function AgreementsPage() {
     return [
       {
         tenancyId: row.id,
-        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${room?.room_number ? ` · Room ${room.room_number}` : ""}${upcomingTag}`,
+        label: `${tenant.full_name}${place ? ` — ${place}` : ""}${roomLabel(room?.room_number) ? ` · ${roomLabel(room?.room_number)}` : ""}${upcomingTag}`,
         hasLease: row.lease_pdf_path != null,
       },
     ];

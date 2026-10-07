@@ -19,6 +19,7 @@ import { sendOutlookMessage } from "@/lib/graph-mail";
 import { agreementEmailTemplate, gmailAgreementBody } from "@/lib/email";
 import { logEmail } from "@/lib/email-log";
 import { composeFullAddress } from "@/lib/agreement-address";
+import { roomLabel } from "@/lib/room-label";
 
 export const AGREEMENTS_BUCKET = "agreements";
 export const OPERATOR_SIGNATURE_PATH = "operator/signature.png";
@@ -196,7 +197,7 @@ async function resolveKnownRoom(
   const available =
     numbered.length > 0
       ? `This property's rooms in the portal: ${numbered
-          .map((r) => `Room ${r.room_number} (room id ${r.id})`)
+          .map((r) => `${roomLabel(r.room_number)} (room id ${r.id})`)
           .join(", ")}.`
       : "This property has no numbered rooms in the portal yet — number its rooms on /properties first.";
 
@@ -272,8 +273,8 @@ export function premisesLabel(
   roomNumber: string | null | undefined,
   propertyAddress: string,
 ): string {
-  const room = roomNumber?.trim();
-  return room ? `Room ${room} · ${propertyAddress}` : propertyAddress;
+  const room = roomLabel(roomNumber);
+  return room ? `${room} · ${propertyAddress}` : propertyAddress;
 }
 
 async function deliverAgreementEmail(opts: {

@@ -33,6 +33,12 @@ describe("agreementPremises", () => {
     );
   });
 
+  it("does not double the word when the stored number is already 'Room 3'", () => {
+    expect(agreementPremises({ ...baseInput, roomNumber: "Room 3" })).toBe(
+      "Room 3, 161 Van Wagenen Ave, Jersey City, NJ 07306",
+    );
+  });
+
   it("falls back to the bare address for legacy inputs without a room", () => {
     expect(
       agreementPremises({ ...baseInput, roomNumber: undefined }),
