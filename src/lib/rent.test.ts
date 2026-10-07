@@ -375,6 +375,59 @@ describe("tenant-wide ledger (one ledger per tenant across rooms)", () => {
     expect(orphaned.at(-1)?.balance).toBe(200);
   });
 
+  it("carries a credit as a negative adjustment on the old room", () => {
+    // Tenant overpaid the old room by $500 (both halves must be adjustments:
+    // the DB only allows a negative amount on an adjustment, never a settlement).
+    const carried = {
+      ...oldRoom,
+      payments: [
+        ...oldRoom.payments,
+        {
+          id: "p-extra",
+          payment_type: "rent",
+          amount: 500,
+          paid_on: "2026-08-20",
+          notes: null,
+        },
+      ],
+      charges: [
+        ...oldRoom.charges,
+        {
+          id: "a0",
+          kind: "adjustment",
+          amount: -500,
+          charged_on: "2026-08-31",
+          note: "Balance carried to Singh Tower Apt 506 · Room 1",
+        },
+      ],
+    };
+    const receiving = {
+      ...newRoom,
+      charges: [
+        ...newRoom.charges,
+        {
+          id: "a1",
+          kind: "adjustment",
+          amount: 500,
+          charged_on: "2026-09-01",
+          note: "Balance carried from Newark Apt 202 · Room 2",
+        },
+      ],
+    };
+    // Old room settles to exactly $0; the credit lands on the new room.
+    expect(
+      computeLedger(carried.tenancy, carried.payments, carried.charges, [], "2026-09-06")
+        .netBalance,
+    ).toBe(0);
+    expect(
+      computeLedger(receiving.tenancy, receiving.payments, receiving.charges, [], "2026-09-06")
+        .netBalance,
+    ).toBe(-300);
+    const entries = buildTenantLedgerEntries([carried, receiving], "2026-09-06");
+    expect(entries.some((e) => e.description.includes("carried"))).toBe(false);
+    expect(entries.at(-1)?.balance).toBe(-300);
+  });
+
   it("leaves lines untagged for a single-room tenant", () => {
     const entries = buildTenantLedgerEntries([newRoom], "2026-09-06");
     expect(entries.every((e) => e.unit === undefined)).toBe(true);

@@ -8,6 +8,7 @@ import { isValid, zUuid, zUuidArray } from "@/lib/validation";
 import { getSessionUser } from "@/lib/session";
 import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
+import { roomLabel } from "@/lib/room-label";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 import {
   sendBalanceReminderOutlook,
@@ -1075,11 +1076,16 @@ export async function transferTenancy(
     const carryFailed = (detail: string): TransferFormState => ({
       warning: `Transferred, but the balance carry failed (${detail}). Post a settlement on the old ledger and a matching adjustment on the new one manually.`,
     });
+    // A debt leaves the old room as a 'settlement' (write-off, not money
+    // received). A CREDIT can't: the tenancy_charges check only allows a
+    // negative amount on an 'adjustment', and a negative adjustment is the
+    // designed debit line that absorbs credit — so the credit case posts
+    // that instead. The receiving side is an adjustment either way.
     const { data: settlement, error: settleErr } = await supabase
       .from("tenancy_charges")
       .insert({
         tenancy_id,
-        kind: "settlement",
+        kind: netBalance > 0 ? "settlement" : "adjustment",
         amount: netBalance,
         charged_on: transfer_date,
         note: `Balance carried to ${transferRoomLabel(destRoom)}`,
@@ -1457,7 +1463,7 @@ async function notifyOtherCharge(
   const prop = one(room?.properties ?? null);
   const unitLabel = prop
     ? `${prop.building_name?.trim() || prop.street_address} Apt ${prop.unit_number}${
-        room?.room_number ? ` · Room ${room.room_number}` : ""
+        roomLabel(room?.room_number) ? ` · ${roomLabel(room?.room_number)}` : ""
       }`
     : "your unit";
   const isNewYork = prop?.is_new_york ?? false;
