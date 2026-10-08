@@ -25,6 +25,7 @@ export function TransferDialog({
   tenantName,
   currentRoomLabel,
   netBalance,
+  currentDeposit,
   rooms,
 }: {
   tenancyId: string;
@@ -33,6 +34,8 @@ export function TransferDialog({
   currentRoomLabel: string;
   /** The current ledger balance shown in the carry preview (+ owed, − credit). */
   netBalance: number;
+  /** Deposit held on the current room; it carries over, only a change posts. */
+  currentDeposit: number | null;
   rooms: RoomOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -47,6 +50,15 @@ export function TransferDialog({
 
   const [transferDate, setTransferDate] = useState(todayISO());
   const [rent, setRent] = useState("");
+  const [deposit, setDeposit] = useState(
+    currentDeposit !== null ? String(currentDeposit) : "",
+  );
+  const depositDelta = useMemo(() => {
+    if (deposit.trim() === "") return 0;
+    const next = Number(deposit);
+    if (!Number.isFinite(next) || next < 0) return 0;
+    return Math.round((next - (currentDeposit ?? 0)) * 100) / 100;
+  }, [deposit, currentDeposit]);
 
   const newStartDate = useMemo(
     () => (transferDate ? addDaysISO(transferDate, 1) : ""),
@@ -130,7 +142,7 @@ export function TransferDialog({
                 className="rounded-lg border border-stone bg-white px-3 py-2 text-ink focus:border-accent focus:outline-none"
               />
             </label>
-            <label className="col-span-2 flex flex-col gap-1">
+            <label className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wide text-muted">
                 First month in the new room
               </span>
@@ -143,6 +155,25 @@ export function TransferDialog({
                   proratedHint !== null
                     ? `${proratedHint.toFixed(2)} (prorated from ${newStartDate})`
                     : "full month"
+                }
+                className="rounded-lg border border-stone bg-white px-3 py-2 text-ink focus:border-accent focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wide text-muted">
+                Deposit in the new room
+              </span>
+              <input
+                type="number"
+                name="new_security_deposit"
+                min="0"
+                step="0.01"
+                value={deposit}
+                onChange={(e) => setDeposit(e.target.value)}
+                placeholder={
+                  currentDeposit !== null
+                    ? `${currentDeposit.toFixed(2)} (unchanged)`
+                    : "0.00"
                 }
                 className="rounded-lg border border-stone bg-white px-3 py-2 text-ink focus:border-accent focus:outline-none"
               />
@@ -167,6 +198,15 @@ export function TransferDialog({
                     ? `${money(netBalance)} currently owed will carry to the new room.`
                     : `A credit of ${money(netBalance)} will carry to the new room.`
                   : "Nothing to carry — the ledger is settled."}
+              </li>
+              <li>
+                {Math.abs(depositDelta) > 0.005
+                  ? depositDelta > 0
+                    ? `The ${money(currentDeposit ?? 0)} deposit carries over; a ${money(depositDelta)} top-up is charged on the new room.`
+                    : `The ${money(currentDeposit ?? 0)} deposit carries over; ${money(depositDelta)} is credited back on the new room.`
+                  : currentDeposit
+                    ? `The ${money(currentDeposit)} deposit carries over — nothing new is charged.`
+                    : "No deposit on file to carry."}
               </li>
             </ul>
           </div>

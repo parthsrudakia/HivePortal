@@ -231,7 +231,10 @@ export function computeLedger(
   };
 
   // The security deposit is now an ad-hoc charge (kind 'security_deposit') like
-  // late fees, so the tenancy's deposit field is purely informational.
+  // late fees, so the tenancy's deposit field is purely informational. A
+  // NEGATIVE deposit charge is a reduction (deposit applied to rent, or a
+  // transfer to a room with a smaller deposit): it lowers `owed` so the bucket
+  // always reads as the deposit actually held, and credits the balance.
   const deposit = bucket(chargedOf("security_deposit"), "security_deposit");
   const lateFee = bucket(chargedOf("late_fee"), "late_fee");
   // Utility overcharges (the over-$200 electric/gas split) ride in the
@@ -440,6 +443,21 @@ export function buildLedgerEntries(
           ids: [c.id],
         });
       }
+      continue;
+    }
+    // A deposit reduction is a credit line: the money already held covers it,
+    // so it posts on the payment side like a settlement does.
+    if (c.kind === "security_deposit" && num(c.amount) < 0) {
+      rows.push({
+        id: c.id,
+        date: c.charged_on,
+        description:
+          "Security Deposit Applied" + (c.note ? ` · ${c.note}` : ""),
+        charge: 0,
+        payment: -num(c.amount),
+        deletable: "charge",
+        refIds: [c.id],
+      });
       continue;
     }
     rows.push({

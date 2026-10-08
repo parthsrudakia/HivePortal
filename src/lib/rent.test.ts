@@ -333,6 +333,32 @@ describe("tenant-wide ledger (one ledger per tenant across rooms)", () => {
     );
   });
 
+  it("a negative deposit charge shrinks the deposit held and credits the balance", () => {
+    // Moved to a cheaper room: $1,500 held, new deposit $1,200 → $300 of the
+    // held money is applied to the balance and the deposit total drops.
+    const cheaper = {
+      ...newRoom,
+      charges: [
+        {
+          id: "c3",
+          kind: "security_deposit",
+          amount: -300,
+          charged_on: "2026-09-01",
+          note: "Deposit reduced to $1,200.00",
+        },
+      ],
+    };
+    const ledger = computeTenantLedger([cheaper, oldRoom], "2026-09-06");
+    expect(ledger.deposit.owed).toBe(1_200);
+    expect(ledger.deposit.paid).toBe(1_500);
+    // $50 short on September rent − $300 deposit credit.
+    expect(ledger.netBalance).toBe(-250);
+    const entries = buildTenantLedgerEntries([cheaper, oldRoom], "2026-09-06");
+    const applied = entries.find((e) => e.description.startsWith("Security Deposit Applied"));
+    expect(applied).toMatchObject({ charge: 0, payment: 300 });
+    expect(entries.at(-1)?.balance).toBe(-250);
+  });
+
   it("hides a transfer's offsetting carry pair, keeps an orphaned half", () => {
     const carried = {
       ...oldRoom,

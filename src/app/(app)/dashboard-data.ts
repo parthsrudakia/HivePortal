@@ -173,7 +173,14 @@ export const getPaymentsThisCycle = cache(async () => {
   let collectedThisMonth = 0;
   for (const [tenancyId, paid] of rentPaidByTenancy) {
     const depositCharged = (charges.get(tenancyId) ?? [])
-      .filter((c) => c.kind === "security_deposit" && inCycle(c.charged_on))
+      // Positive charges only — a negative one is a deposit reduction, not
+      // deposit money arriving this cycle.
+      .filter(
+        (c) =>
+          c.kind === "security_deposit" &&
+          Number(c.amount) > 0 &&
+          inCycle(c.charged_on),
+      )
       .reduce((s, c) => s + Number(c.amount), 0);
     collectedThisMonth += Math.max(0, paid - depositCharged);
   }

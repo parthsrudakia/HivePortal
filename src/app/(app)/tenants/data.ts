@@ -230,8 +230,15 @@ export const getRowsWithStatus = cache(async () => {
     );
     const inCycle = (d: string | null | undefined) =>
       !!d && d >= monthStart && d <= monthEnd && d <= today;
+    // Only positive deposit charges mark money arriving; a negative one is a
+    // deposit reduction (already-held money applied), not cash this cycle.
     const depositChargedThisMonth = (charges.get(row.id) ?? [])
-      .filter((c) => c.kind === "security_deposit" && inCycle(c.charged_on))
+      .filter(
+        (c) =>
+          c.kind === "security_deposit" &&
+          Number(c.amount) > 0 &&
+          inCycle(c.charged_on),
+      )
       .reduce((s, c) => s + Number(c.amount), 0);
     const depositPaidThisMonth = (row.payments ?? [])
       .filter((p) => p.payment_type === "security_deposit" && inCycle(p.paid_on))

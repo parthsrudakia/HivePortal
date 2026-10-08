@@ -253,10 +253,26 @@ export default async function TenantDetailPage({
   const ledgerEntries = ledgerTenancy
     ? buildTenantLedgerEntries(ledgerInputs, today)
     : [];
+  // Each summary row shows the bucket's charges with the payments typed to
+  // that bucket beneath, so the deposit line reads as "what was charged, what
+  // was paid toward it", not a bare total. (A deposit that arrived via Zelle
+  // is typed 'rent' by recon, so "paid" only counts explicit deposit payments
+  // and credit directed to the deposit.)
   const summaryRows = ledger
     ? [
-        { label: "Security deposit", amount: ledger.deposit.owed },
-        { label: "Late fees", amount: ledger.lateFee.owed },
+        {
+          label: "Security deposit",
+          amount: ledger.deposit.owed,
+          detail: `${fmtMoney(ledger.deposit.owed)} charged · ${fmtMoney(ledger.deposit.paid)} paid`,
+        },
+        {
+          label: "Late fees",
+          amount: ledger.lateFee.owed,
+          detail:
+            ledger.lateFee.owed > 0
+              ? `${fmtMoney(ledger.lateFee.owed)} charged · ${fmtMoney(ledger.lateFee.paid)} paid`
+              : null,
+        },
       ]
     : [];
 
@@ -455,6 +471,11 @@ export default async function TenantDetailPage({
                         // Carry preview only — the server recomputes the
                         // exact balance at transfer time.
                         netBalance={ledger?.netBalance ?? 0}
+                        currentDeposit={
+                          active.security_deposit !== null
+                            ? Number(active.security_deposit)
+                            : null
+                        }
                         rooms={assignableRooms}
                       />
                     </>
@@ -567,6 +588,11 @@ export default async function TenantDetailPage({
                     <td className="px-5 py-3 text-muted">{r.label}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-ink">
                       {fmtMoney(r.amount)}
+                      {r.detail && (
+                        <span className="block text-xs text-muted">
+                          {r.detail}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

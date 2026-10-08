@@ -944,6 +944,9 @@ type TransferRoomRel = {
     | null;
 };
 
+const fmtUsd = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function transferRoomLabel(room: TransferRoomRel | null): string {
   if (!room) return "previous room";
   const p = one(room.properties);
@@ -965,6 +968,9 @@ export async function transferTenancy(
   const new_rent_str = String(formData.get("new_monthly_rent") ?? "").trim();
   const first_month_rent_str = String(
     formData.get("first_month_rent") ?? "",
+  ).trim();
+  const new_deposit_str = String(
+    formData.get("new_security_deposit") ?? "",
   ).trim();
 
   const supabase = await createClient();
@@ -996,6 +1002,15 @@ export async function transferTenancy(
     (!Number.isFinite(first_month_rent) || first_month_rent < 0)
   )
     return { error: "First month rent must be a non-negative number." };
+  // Blank = the deposit stays what it was in the old room.
+  const new_security_deposit = new_deposit_str
+    ? Number(new_deposit_str)
+    : null;
+  if (
+    new_security_deposit !== null &&
+    (!Number.isFinite(new_security_deposit) || new_security_deposit < 0)
+  )
+    return { error: "Security deposit must be a non-negative number." };
 
   // The active + no-move-out requirement doubles as the double-submit guard:
   // a second submit finds the old tenancy already ending and aborts.
@@ -1031,9 +1046,16 @@ export async function transferTenancy(
     .maybeSingle();
   if (!destRoom) return { error: "Destination room not found." };
 
+  // The deposit already held carries over physically, so the new room never
+  // re-charges it in full: only the DIFFERENCE between the old and new deposit
+  // posts (a top-up charge when it goes up, a credit when it goes down).
+  const old_deposit = Number(old.security_deposit ?? 0);
+  const dest_deposit = new_security_deposit ?? old_deposit;
+  const deposit_delta = Math.round((dest_deposit - old_deposit) * 100) / 100;
+
   // 1) Create the new tenancy first: the worst partial state is a visible,
   //    deletable upcoming tenancy — never a tenant with no tenancy. The
-  //    deposit carries physically, so no new deposit charge is posted.
+  //    deposit carries physically, so no full deposit charge is posted.
   const created = await createTenancyForTenant(supabase, {
     tenant_id,
     room_id: dest_room_id,
@@ -1043,7 +1065,7 @@ export async function transferTenancy(
       first_month_rent === null && !new_start_date.endsWith("-01")
         ? proratedMonthRemainder(new_start_date, new_monthly_rent)
         : first_month_rent,
-    security_deposit: old.security_deposit,
+    security_deposit: dest_deposit,
     postDepositCharge: false,
   });
   if ("error" in created) return { error: created.error };
@@ -1110,6 +1132,31 @@ export async function transferTenancy(
           .eq("id", settlement.id);
       return carryFailed(adjErr.message);
     }
+  }
+
+  // 4) Deposit difference on the NEW ledger, as a 'security_deposit' charge
+  //    either way so the tenant-wide deposit bucket always sums to the deposit
+  //    actually held: positive tops it up, negative reduces it and credits the
+  //    balance. Posted after the carry so the carried balance reflects only
+  //    the old room.
+  if (Math.abs(deposit_delta) > 0.005) {
+    const oldLabel = transferRoomLabel(one(old.rooms));
+    const { error: depositErr } = await supabase
+      .from("tenancy_charges")
+      .insert({
+        tenancy_id: created.tenancy_id,
+        kind: "security_deposit",
+        amount: deposit_delta,
+        charged_on: new_start_date,
+        note:
+          deposit_delta > 0
+            ? `Deposit increase to ${fmtUsd(dest_deposit)} — ${fmtUsd(old_deposit)} carried from ${oldLabel}`
+            : `Deposit reduced to ${fmtUsd(dest_deposit)} — ${fmtUsd(old_deposit)} carried from ${oldLabel}`,
+      });
+    if (depositErr)
+      return {
+        warning: `Transferred, but the deposit difference of ${fmtUsd(Math.abs(deposit_delta))} did not post (${depositErr.message}). Post it on the new ledger manually.`,
+      };
   }
 
   revalidatePath("/tenants");
