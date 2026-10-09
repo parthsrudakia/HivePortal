@@ -1021,3 +1021,66 @@ Vinny`;
   });
   return result;
 }
+
+// ----------------------------------------------------------------------------
+// Emergency contact request: asks a tenant to fill in the public token form
+// (/emergency-contact/<token>). Branded, signed by Parth.
+// ----------------------------------------------------------------------------
+
+export type EmergencyContactRequest = {
+  firstName: string;
+  unitLabel: string; // e.g. "Singh Tower 606"
+  url: string;
+};
+
+export function emergencyContactRequestEmail(r: EmergencyContactRequest): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const subject = "Action needed: your emergency contact";
+  const text = `Hi ${r.firstName},
+
+For everyone's safety, we're collecting an emergency contact for each resident at ${r.unitLabel}.
+
+It takes about a minute. Please fill it out here:
+${r.url}
+
+We'll ask for your contact's name, their relationship to you, their email and their phone number. All fields are required. This information is only used in an emergency.
+
+Thanks,
+Parth`;
+  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
+    <div style="height:6px; background:#d4920b;"></div>
+    <div style="padding:24px 20px;">
+      <span style="display:inline-block; background:#fbeccc; color:#9a6f08; font-size:12px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; padding:4px 12px; border-radius:999px;">Action needed</span>
+      <h1 style="margin:14px 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">Your emergency contact</h1>
+      <p style="margin:0; font-size:15px; color:#8a8378;">${escapeHtml(r.unitLabel)}</p>
+      <p style="margin:20px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">Hi ${escapeHtml(r.firstName)},</p>
+      <p style="margin:12px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">For everyone&rsquo;s safety, we&rsquo;re collecting an emergency contact for each resident. It takes about a minute.</p>
+      <div style="margin:20px 0; background:#f5f2ed; border-radius:12px; padding:16px 18px;">
+        <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">We&rsquo;ll ask for your contact&rsquo;s</p>
+        <p style="margin:6px 0 0; font-size:15px; color:#1a1a18; line-height:1.6;">Name &middot; Relationship to you &middot; Email &middot; Phone number</p>
+        <p style="margin:6px 0 0; font-size:13px; color:#8a8378;">All fields are required.</p>
+      </div>
+      <p style="margin:0;">${ctaButton(r.url, "Add my emergency contact")}</p>
+      <p style="margin:20px 0 0; font-size:13px; color:#8a8378; line-height:1.5;">This information is only used in an emergency.</p>
+      <p style="margin:16px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">Thanks,<br>Parth</p>
+    </div>
+  </div>
+</div>`;
+  return { subject, text, html };
+}
+
+export async function sendEmergencyContactRequest(
+  to: string,
+  r: EmergencyContactRequest,
+  context: string,
+): Promise<SendResult> {
+  const { subject, text, html } = emergencyContactRequestEmail(r);
+  return sendViaResend(
+    { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
+    { type: "emergency_contact", context },
+  );
+}

@@ -180,6 +180,13 @@ export default async function TenantDetailPage({
 
   if (!tenant) notFound();
 
+  const { data: emergency, error: emergencyError } = await supabase
+    .from("emergency_contacts")
+    .select("contact_name, relationship, contact_email, contact_phone, requested_at, submitted_at")
+    .eq("tenant_id", id)
+    .maybeSingle();
+  if (emergencyError) throw emergencyError;
+
   // Ledger charges (add/delete) are operator-only; payments stay open to all.
   const ledgerAdmin = canEditLedger(user?.email);
 
@@ -509,6 +516,46 @@ export default async function TenantDetailPage({
             </>
           )}
         </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+          Emergency contact
+        </h2>
+        {emergency?.submitted_at ? (
+          <dl className="mt-4 grid grid-cols-1 gap-y-3 text-sm sm:grid-cols-4">
+            <div>
+              <dt className="text-muted">Name</dt>
+              <dd className="text-ink">{emergency.contact_name}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Relationship</dt>
+              <dd className="text-ink">{emergency.relationship}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Phone</dt>
+              <dd className="text-ink">
+                <a href={`tel:${emergency.contact_phone}`} className="hover:text-accent-text">
+                  {emergency.contact_phone}
+                </a>
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-muted">Email</dt>
+              <dd className="truncate text-ink">
+                <a href={`mailto:${emergency.contact_email}`} className="hover:text-accent-text">
+                  {emergency.contact_email}
+                </a>
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-3 text-sm text-muted">
+            {emergency?.requested_at
+              ? `Requested ${formatDate(emergency.requested_at.slice(0, 10))}, no response yet.`
+              : "Not collected yet."}
+          </p>
+        )}
       </div>
 
       {upcoming.length > 0 && (
