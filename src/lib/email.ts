@@ -1078,10 +1078,11 @@ export async function sendEmergencyContactRequest(
   to: string,
   r: EmergencyContactRequest,
   context: string,
+  scheduledAt?: string,
 ): Promise<SendResult> {
   const { subject, text, html } = emergencyContactRequestEmail(r);
   return sendViaResend(
-    { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
+    { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html, scheduledAt },
     { type: "emergency_contact", context },
   );
 }

@@ -33,6 +33,10 @@ export type ResendPayload = {
   subject: string;
   text: string;
   html?: string;
+  /** Deliver later via Resend's native scheduling (ISO 8601 with offset).
+   *  A scheduled email is never parked in email_queue — the queue can't hold
+   *  a delivery time — so over the cap it fails instead. */
+  scheduledAt?: string;
 };
 
 export type ResendLogMeta = {
@@ -172,6 +176,7 @@ async function dispatch(
     subject: payload.subject,
     text: payload.text,
     html: payload.html,
+    scheduledAt: payload.scheduledAt,
   });
 
   const result: DispatchResult = error
@@ -238,6 +243,10 @@ export async function sendViaResend(
 
   const usage = await resendUsage(sb);
   if (hasHeadroom(usage)) return dispatch(payload, meta);
+
+  if (payload.scheduledAt) {
+    return { ok: false, error: "Resend daily or monthly cap reached; scheduled email not sent" };
+  }
 
   await enqueue(sb, payload, meta);
   return { ok: true, queued: true };

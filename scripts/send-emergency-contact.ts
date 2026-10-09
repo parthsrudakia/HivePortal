@@ -1,6 +1,6 @@
 /**
  * Emergency-contact request emails for every active tenant in Singh Tower and
- * MetroVue. Each tenant gets their own form link (/emergency-contact/<token>);
+ * MetroVue. Each tenant gets their own form link (EMERGENCY_FORM_ORIGIN/<token>);
  * the emergency_contacts row is created on first run and reused after.
  *
  * Dry run (default): lists who would be emailed. Sends nothing.
@@ -16,6 +16,11 @@
  * Links are valid for 48 hours. Every send rotates the token, so an older link
  * dies the moment a new one goes out. To re-send tenants whose link expired
  * without a response, add --resend-expired to --send.
+ *
+ * Schedule the real send for later with --at <ISO 8601 with offset>, e.g.
+ *   --send --at 2026-10-09T08:00:00-04:00
+ * Resend holds and delivers each email at that time, and each link's 48 hours
+ * start then. Scheduled emails can be cancelled in Resend before they go out.
  */
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../src/lib/supabase/types";
@@ -34,6 +39,14 @@ const testTo = args.includes("--test") ? args[args.indexOf("--test") + 1] : null
 const realSend = args.includes("--send");
 const resetTest = args.includes("--reset-test");
 const resendExpired = args.includes("--resend-expired");
+const atArg = args.includes("--at") ? args[args.indexOf("--at") + 1] : null;
+const scheduledAt = atArg ? new Date(atArg) : null;
+if (scheduledAt && (Number.isNaN(scheduledAt.getTime()) || !/([+-]\d\d:\d\d|Z)$/.test(atArg!))) {
+  throw new Error(`--at needs an ISO 8601 time with an offset, got "${atArg}"`);
+}
+if (scheduledAt && scheduledAt.getTime() < Date.now() + 5 * 60 * 1000) {
+  throw new Error("--at must be at least 5 minutes in the future");
+}
 
 const sb = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,9 +108,12 @@ async function ensureRow(tenantId: string) {
 }
 
 /** Fresh token + 48h expiry; returns the new form URL. */
-async function issueLink(rowId: string): Promise<{ url: string; expiresAt: string }> {
+async function issueLink(
+  rowId: string,
+  sendAt = new Date(),
+): Promise<{ url: string; expiresAt: string }> {
   const token = randomUUID();
-  const expiresAt = linkExpiresAt();
+  const expiresAt = linkExpiresAt(sendAt);
   const { error } = await sb
     .from("emergency_contacts")
     .update({ token, expires_at: expiresAt, updated_at: new Date().toISOString() })
@@ -165,11 +181,12 @@ async function main() {
       skipped++;
       continue;
     }
-    const { url } = await issueLink(row.id);
+    const { url } = await issueLink(row.id, scheduledAt ?? new Date());
     const res = await sendEmergencyContactRequest(
       t.email,
       { firstName: firstName(t.name), unitLabel: unitLabel(t), url },
       `${unitLabel(t)} · ${t.name}`,
+      atArg ?? undefined,
     );
     if (!res.ok) {
       console.log(`FAILED     ${unitLabel(t)}  ${t.name}`, res);
@@ -178,10 +195,11 @@ async function main() {
     }
     const { error } = await sb
       .from("emergency_contacts")
-      .update({ requested_at: new Date().toISOString() })
+      .update({ requested_at: (scheduledAt ?? new Date()).toISOString() })
       .eq("id", row.id);
     if (error) throw error;
-    console.log(`${"queued" in res && res.queued ? "QUEUED" : "SENT"}       ${unitLabel(t)}  ${t.name}`);
+    const label = "queued" in res && res.queued ? "QUEUED" : scheduledAt ? "SCHEDULED" : "SENT";
+    console.log(`${label.padEnd(10)} ${unitLabel(t)}  ${t.name}${"id" in res ? `  ${res.id}` : ""}`);
     sent++;
   }
   console.log(`\n${list.length} tenants · ${realSend ? `${sent} sent · ` : "dry run · "}${skipped} skipped · ${failed} failed`);
