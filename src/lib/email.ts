@@ -1043,7 +1043,7 @@ export function emergencyContactRequestEmail(r: EmergencyContactRequest): {
 
 For everyone's safety, we're collecting an emergency contact for each resident at ${r.unitLabel}.
 
-It takes about a minute. Please fill it out here:
+It takes about a minute. Please fill it out here (the link is valid for 48 hours):
 ${r.url}
 
 We'll ask for your contact's name, their relationship to you, their email and their phone number. All fields are required. This information is only used in an emergency.
@@ -1065,6 +1065,7 @@ Parth`;
         <p style="margin:6px 0 0; font-size:13px; color:#8a8378;">All fields are required.</p>
       </div>
       <p style="margin:0;">${ctaButton(r.url, "Add my emergency contact")}</p>
+      <p style="margin:10px 0 0; font-size:13px; color:#8a8378;">This link is valid for 48 hours.</p>
       <p style="margin:20px 0 0; font-size:13px; color:#8a8378; line-height:1.5;">This information is only used in an emergency.</p>
       <p style="margin:16px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">Thanks,<br>Parth</p>
     </div>

@@ -12,11 +12,20 @@
  *
  * Real send: every tenant not yet emailed. Safe to rerun.
  *   npx tsx --env-file=.env.local scripts/send-emergency-contact.ts --send
+ *
+ * Links are valid for 48 hours. Every send rotates the token, so an older link
+ * dies the moment a new one goes out. To re-send tenants whose link expired
+ * without a response, add --resend-expired to --send.
  */
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../src/lib/supabase/types";
 import { sendEmergencyContactRequest } from "../src/lib/email";
-import { emergencyContactUrl } from "../src/lib/emergency-contact";
+import { randomUUID } from "node:crypto";
+import {
+  emergencyContactUrl,
+  linkActive,
+  linkExpiresAt,
+} from "../src/lib/emergency-contact";
 
 const BUILDINGS = /singh|metro/i;
 
@@ -24,6 +33,7 @@ const args = process.argv.slice(2);
 const testTo = args.includes("--test") ? args[args.indexOf("--test") + 1] : null;
 const realSend = args.includes("--send");
 const resetTest = args.includes("--reset-test");
+const resendExpired = args.includes("--resend-expired");
 
 const sb = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -77,11 +87,23 @@ async function ensureRow(tenantId: string) {
   if (error) throw error;
   const { data, error: e2 } = await sb
     .from("emergency_contacts")
-    .select("id, token, requested_at, submitted_at")
+    .select("id, token, requested_at, submitted_at, expires_at")
     .eq("tenant_id", tenantId)
     .single();
   if (e2) throw e2;
   return data;
+}
+
+/** Fresh token + 48h expiry; returns the new form URL. */
+async function issueLink(rowId: string): Promise<{ url: string; expiresAt: string }> {
+  const token = randomUUID();
+  const expiresAt = linkExpiresAt();
+  const { error } = await sb
+    .from("emergency_contacts")
+    .update({ token, expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .eq("id", rowId);
+  if (error) throw error;
+  return { url: emergencyContactUrl(token), expiresAt };
 }
 
 const firstName = (full: string) => full.trim().split(/\s+/)[0];
@@ -105,7 +127,7 @@ async function main() {
   if (testTo) {
     const t = list[0];
     const row = await ensureRow(t.tenantId);
-    const url = emergencyContactUrl(row.token);
+    const { url, expiresAt } = await issueLink(row.id);
     const res = await sendEmergencyContactRequest(
       testTo,
       { firstName: firstName(t.name), unitLabel: unitLabel(t), url },
@@ -113,6 +135,7 @@ async function main() {
     );
     console.log(`Test to ${testTo} (as ${t.name}, ${unitLabel(t)}):`, res);
     console.log("Form link:", url);
+    console.log("Expires:  ", new Date(expiresAt).toLocaleString("en-US", { timeZone: "America/New_York" }), "ET");
     return;
   }
 
@@ -128,14 +151,24 @@ async function main() {
       continue;
     }
     const row = await ensureRow(t.tenantId);
-    if (row.requested_at || row.submitted_at) {
-      console.log(`ALREADY    ${unitLabel(t)}  ${t.name}`);
+    if (row.submitted_at) {
+      console.log(`ANSWERED   ${unitLabel(t)}  ${t.name}`);
       skipped++;
       continue;
     }
+    if (row.requested_at && (linkActive(row.expires_at) || !resendExpired)) {
+      console.log(
+        linkActive(row.expires_at)
+          ? `PENDING    ${unitLabel(t)}  ${t.name} (link still valid)`
+          : `EXPIRED    ${unitLabel(t)}  ${t.name} (add --resend-expired to re-send)`,
+      );
+      skipped++;
+      continue;
+    }
+    const { url } = await issueLink(row.id);
     const res = await sendEmergencyContactRequest(
       t.email,
-      { firstName: firstName(t.name), unitLabel: unitLabel(t), url: emergencyContactUrl(row.token) },
+      { firstName: firstName(t.name), unitLabel: unitLabel(t), url },
       `${unitLabel(t)} · ${t.name}`,
     );
     if (!res.ok) {

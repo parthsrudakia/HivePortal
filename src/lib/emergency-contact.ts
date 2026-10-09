@@ -1,15 +1,56 @@
 import { z } from "zod";
 
-// Emergency contacts are collected from tenants through a public token form at
-// /emergency-contact/<token> (see the emergency_contacts migration). The
-// request email is sendEmergencyContactRequest in email.ts.
+// Emergency contacts are collected from tenants through a public token form
+// (see the emergency_contacts migrations). Tenants reach it only on the random
+// EMERGENCY_FORM_ORIGIN host as https://<host>/<token>; the proxy rewrites that
+// to /emergency-contact/<token> and 404s everything else on that host. Links
+// are valid for 48 hours from the send. The request email is
+// sendEmergencyContactRequest in email.ts.
 
-/** Public URL of a tenant's emergency-contact form. */
+/** How long a form link stays valid after it is sent. */
+export const LINK_TTL_MS = 48 * 60 * 60 * 1000;
+
+/** Expiry timestamp (ISO) for a link sent now. */
+export function linkExpiresAt(now = new Date()): string {
+  return new Date(now.getTime() + LINK_TTL_MS).toISOString();
+}
+
+/** A link is usable only once sent (expires_at set) and before it expires. */
+export function linkActive(expiresAt: string | null, now = Date.now()): boolean {
+  return expiresAt !== null && new Date(expiresAt).getTime() > now;
+}
+
+export const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The random form origin, or null when unconfigured. */
+export function emergencyFormOrigin(): string | null {
+  const raw = process.env.EMERGENCY_FORM_ORIGIN?.trim();
+  return raw ? raw.replace(/\/+$/, "") : null;
+}
+
+/** Host of the form origin (for the proxy), or null when unconfigured. */
+export function emergencyFormHost(): string | null {
+  const origin = emergencyFormOrigin();
+  if (!origin) return null;
+  try {
+    return new URL(origin).host;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public URL of a tenant's emergency-contact form. Throws when the random
+ * origin is unconfigured: links must never fall back to the portal's domain.
+ */
 export function emergencyContactUrl(token: string): string {
-  const base = (
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://hive-portal-1485.vercel.app"
-  ).replace(/\/+$/, "");
-  return `${base}/emergency-contact/${token}`;
+  const origin = emergencyFormOrigin();
+  if (!origin) {
+    throw new Error(
+      "EMERGENCY_FORM_ORIGIN is not configured, so emergency-contact links can't be built.",
+    );
+  }
+  return `${origin}/${token}`;
 }
 
 /** Digits only, so "+1 (617) 555-0100" and "617-555-0100" compare equal. */

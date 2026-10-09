@@ -30,8 +30,14 @@ import { pauseTenancy, resumeTenancy } from "../actions";
 import { fetchAssignableRooms, type RoomOption } from "../room-options";
 import { getSessionUser } from "@/lib/session";
 import { todayISO } from "@/lib/date";
+import { linkActive } from "@/lib/emergency-contact";
 
 export const dynamic = "force-dynamic";
+
+/** Calendar date (YYYY-MM-DD) of a timestamp in the server's zone (ET). */
+function etDate(ts: string): string {
+  return new Date(ts).toLocaleDateString("en-CA");
+}
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -182,10 +188,11 @@ export default async function TenantDetailPage({
 
   const { data: emergency, error: emergencyError } = await supabase
     .from("emergency_contacts")
-    .select("contact_name, relationship, contact_email, contact_phone, requested_at, submitted_at")
+    .select("contact_name, relationship, contact_email, contact_phone, requested_at, submitted_at, expires_at")
     .eq("tenant_id", id)
     .maybeSingle();
   if (emergencyError) throw emergencyError;
+  const emergencyLinkOpen = linkActive(emergency?.expires_at ?? null);
 
   // Ledger charges (add/delete) are operator-only; payments stay open to all.
   const ledgerAdmin = canEditLedger(user?.email);
@@ -551,9 +558,11 @@ export default async function TenantDetailPage({
           </dl>
         ) : (
           <p className="mt-3 text-sm text-muted">
-            {emergency?.requested_at
-              ? `Requested ${formatDate(emergency.requested_at.slice(0, 10))}, no response yet.`
-              : "Not collected yet."}
+            {!emergency?.requested_at
+              ? "Not collected yet."
+              : emergencyLinkOpen && emergency.expires_at
+                ? `Requested ${formatDate(etDate(emergency.requested_at))}, no response yet. The link expires ${formatDate(etDate(emergency.expires_at))}.`
+                : `Requested ${formatDate(etDate(emergency.requested_at))}. The link expired with no response.`}
           </p>
         )}
       </div>

@@ -696,6 +696,7 @@ export type Database = {
           contact_name: string | null
           contact_phone: string | null
           created_at: string
+          expires_at: string | null
           id: string
           relationship: string | null
           requested_at: string | null
@@ -709,6 +710,7 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          expires_at?: string | null
           id?: string
           relationship?: string | null
           requested_at?: string | null
@@ -722,6 +724,7 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          expires_at?: string | null
           id?: string
           relationship?: string | null
           requested_at?: string | null

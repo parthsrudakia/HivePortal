@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
+import { linkActive, TOKEN_PATTERN } from "@/lib/emergency-contact";
 import { EmergencyContactForm } from "./emergency-contact-form";
 
 export const dynamic = "force-dynamic";
@@ -25,17 +26,34 @@ type PageProps = { params: Promise<{ token: string }> };
 export default async function EmergencyContactPage({ params }: PageProps) {
   const { token } = await params;
   // Postgres rejects a malformed uuid with an error rather than no rows.
-  if (!/^[0-9a-f-]{36}$/i.test(token)) notFound();
+  if (!TOKEN_PATTERN.test(token)) notFound();
 
   const { data: row, error } = await admin()
     .from("emergency_contacts")
     .select(
-      "contact_name, relationship, contact_email, contact_phone, submitted_at, tenants(full_name)",
+      "contact_name, relationship, contact_email, contact_phone, submitted_at, expires_at, tenants(full_name)",
     )
     .eq("token", token)
     .maybeSingle();
   if (error) throw error;
   if (!row) notFound();
+
+  if (!linkActive(row.expires_at)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-cream px-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-accent-text">
+            Hive
+          </p>
+          <h1 className="text-xl font-medium text-ink">This link has expired</h1>
+          <p className="mt-3 text-sm leading-relaxed text-muted">
+            Emergency contact links are valid for 48 hours. Reply to the email
+            you received and we&rsquo;ll send you a fresh link.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   const fullName = one(row.tenants)?.full_name ?? "";
   const firstName = fullName.split(/\s+/)[0] || "there";

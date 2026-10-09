@@ -3,14 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // "/s" is the public cleaner schedule page (token in the path, no login);
 // "/sign" is the public tenant lease-signing page (token in the path);
-// "/emergency-contact" is the public tenant emergency-contact form (token);
 // "/docs" and "/developers" are public API documentation.
 const PUBLIC_PATHS = [
   "/login",
   "/auth",
   "/s",
   "/sign",
-  "/emergency-contact",
   "/docs",
   "/developers",
 ];
@@ -28,8 +26,34 @@ function signHost(): string | null {
   }
 }
 
+// Host of the random emergency-contact form domain (EMERGENCY_FORM_ORIGIN).
+// There, "/<token>" is rewritten to the form page and everything else 404s,
+// so the random domain never exposes the portal. The portal's own domain does
+// not serve the form to logged-out visitors at all.
+function emergencyFormHost(): string | null {
+  const raw = process.env.EMERGENCY_FORM_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).host;
+  } catch {
+    return null;
+  }
+}
+
+const FORM_TOKEN_PATH =
+  /^\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+
+  const formHost = emergencyFormHost();
+  if (formHost && request.headers.get("host") === formHost) {
+    const match = FORM_TOKEN_PATH.exec(request.nextUrl.pathname);
+    if (!match) return new NextResponse(null, { status: 404 });
+    const url = request.nextUrl.clone();
+    url.pathname = `/emergency-contact/${match[1]}`;
+    return NextResponse.rewrite(url);
+  }
 
   const requestHost = request.headers.get("host");
   const neutralHost = signHost();

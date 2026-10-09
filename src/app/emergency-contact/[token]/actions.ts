@@ -5,7 +5,9 @@ import type { Database } from "@/lib/supabase/types";
 import { one } from "@/lib/relations";
 import {
   emergencyContactSchema,
+  linkActive,
   selfContactError,
+  TOKEN_PATTERN,
 } from "@/lib/emergency-contact";
 
 function admin() {
@@ -34,19 +36,26 @@ export async function submitEmergencyContact(
     return { ok: false, error: "Please fix the highlighted fields.", fieldErrors };
   }
 
+  if (!TOKEN_PATTERN.test(token)) {
+    return { ok: false, error: "This link is no longer valid. Reply to the email you received for a new one." };
+  }
+
   const supabase = admin();
   // Fresh token lookup: never trust the page render that got the tenant here.
   const { data: row, error: readError } = await supabase
     .from("emergency_contacts")
-    .select("id, tenants(email, phone)")
+    .select("id, expires_at, tenants(email, phone)")
     .eq("token", token)
     .maybeSingle();
   if (readError) {
     console.error("[emergency-contact] lookup failed", readError);
     return { ok: false, error: "Something went wrong on our side. Please try again in a minute." };
   }
-  if (!row) {
-    return { ok: false, error: "This link is no longer valid. Reply to the email you received for a new one." };
+  if (!row || !linkActive(row.expires_at)) {
+    return {
+      ok: false,
+      error: "This link has expired. Links are valid for 48 hours. Reply to the email you received for a new one.",
+    };
   }
 
   const tenant = one(row.tenants);

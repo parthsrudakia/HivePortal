@@ -47,7 +47,7 @@ export function EmergencyContactForm({
         <h2 className="text-xl font-medium text-ink">Thank you!</h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">
           We&rsquo;ve saved {values.contactName} as your emergency contact. You
-          can come back to this link any time to update it.
+          can reopen this link to update it until it expires.
         </p>
         <button
           type="button"
