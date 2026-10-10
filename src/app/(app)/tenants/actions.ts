@@ -1787,7 +1787,7 @@ export async function sendBalanceReminders(
     if (doSms && phone) {
       const smsRes = await sendBalanceText(
         phone,
-        balanceReminderText(netBalance, monthLabel, lateFeeCharged),
+        balanceReminderText(netBalance, monthLabel, lateFeeCharged, tenant?.full_name),
         { type: "rent_balance", context: `${tenant?.full_name ?? "Tenant"} · ${monthLabel}` },
       );
       if (smsRes.ok) texted++;

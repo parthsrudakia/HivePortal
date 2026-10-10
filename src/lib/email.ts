@@ -89,20 +89,29 @@ Thanks`;
 // SMS channel so texts match emails. Once this month's late fee is already on
 // the account, "avoid a late fee" would be a false promise — the wording
 // flips to say the fee is included in the balance.
+/** "Hi Aviral," from a full name; plain "Hi," when there's no name. */
+export function greeting(fullName?: string | null): string {
+  const first = fullName?.trim().split(/\s+/)[0];
+  return first ? `Hi ${first},` : "Hi,";
+}
+
 export function balanceReminderText(
   amountDue: number,
   monthLabel: string,
   lateFeeCharged = false,
+  /** Texts greet the tenant by first name; the Gmail email passes none. */
+  tenantName?: string | null,
 ): string {
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const hi = greeting(tenantName);
   return lateFeeCharged
-    ? `Hi,
+    ? `${hi}
 
 My records show an outstanding rent balance of ${amount} for ${monthLabel}, which includes a $50 late fee that has been applied to your account. Please submit payment as soon as possible. If you've already paid, let me know.
 
 Thanks
 Vinny`
-    : `Hi,
+    : `${hi}
 
 My records show an outstanding rent balance of ${amount} for ${monthLabel}. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.
 
@@ -914,9 +923,9 @@ export async function sendBalanceReminderOutlook(
 // Gmail for NY. The SMS channel uses the short text version.
 // ----------------------------------------------------------------------------
 
-export function monthEndBalanceText(amountDue: number): string {
+export function monthEndBalanceText(amountDue: number, tenantName?: string | null): string {
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  return `Hi,
+  return `${greeting(tenantName)}
 
 This is a friendly reminder that your rent is due. Our records also show an outstanding balance of ${amount} on your account — please include it along with your rent payment by the 5th to avoid a $50 late fee.
 

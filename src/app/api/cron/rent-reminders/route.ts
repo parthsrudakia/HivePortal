@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
     .select(
       `id, tenant_id, start_date, move_out_date, paused_at, status,
        monthly_rent, first_month_rent, security_deposit,
-       tenants!inner(id, email, phone),
+       tenants!inner(id, full_name, email, phone),
        rooms!inner(properties!inner(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,
     )
@@ -197,8 +197,8 @@ export async function GET(req: NextRequest) {
     first_month_rent: number | string | null;
     security_deposit: number | string | null;
     tenants:
-      | { id: string; email: string | null; phone: string | null }
-      | { id: string; email: string | null; phone: string | null }[]
+      | { id: string; full_name: string; email: string | null; phone: string | null }
+      | { id: string; full_name: string; email: string | null; phone: string | null }[]
       | null;
     rooms: RoomRel | RoomRel[] | null;
     payments: {
@@ -234,6 +234,7 @@ export async function GET(req: NextRequest) {
     tenantId: string;
     email: string;
     phone: string | null;
+    name: string | null;
     isNY: boolean;
     balance: number;
     row: Row;
@@ -264,6 +265,7 @@ export async function GET(req: NextRequest) {
       tenantId: row.tenant_id,
       email,
       phone: tenant?.phone?.trim() || null,
+      name: tenant?.full_name ?? null,
       isNY: isNewYork(row),
       balance: netBalance,
       row,
@@ -454,7 +456,7 @@ export async function GET(req: NextRequest) {
     const smsMeta = { type: "rent_reminder" as const, context: e.email };
     const smsRes =
       balance !== undefined
-        ? await sendBalanceText(e.phone, monthEndBalanceText(balance), smsMeta)
+        ? await sendBalanceText(e.phone, monthEndBalanceText(balance, e.name), smsMeta)
         : await sendSms(e.phone, REMINDER_TEXT, smsMeta);
     if (smsRes.ok) {
       texted++;
