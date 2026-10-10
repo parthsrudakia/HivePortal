@@ -1767,6 +1767,7 @@ export async function sendBalanceReminders(
             monthLabel,
             detail,
             lateFeeCharged,
+            tenant?.full_name,
           )
         : await sendBalanceReminderOutlook(
             email,
@@ -1774,6 +1775,7 @@ export async function sendBalanceReminders(
             monthLabel,
             detail,
             lateFeeCharged,
+            tenant?.full_name,
           );
       if (res.ok) {
         if ("queued" in res) queued++;

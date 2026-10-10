@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { balanceReminderText, greeting, monthEndBalanceText } from "@/lib/email";
+import {
+  balanceReminderEmail,
+  balanceReminderGmailEmail,
+  balanceReminderText,
+  greeting,
+  monthEndBalanceEmail,
+  monthEndBalanceText,
+} from "@/lib/email";
 
 describe("balance text greeting", () => {
   it("greets by first name", () => {
@@ -20,7 +27,22 @@ describe("balance text greeting", () => {
     expect(monthEndBalanceText(850, "Aviral Bansal")).toMatch(/^Hi Aviral,\n\n.*\$850/);
   });
 
-  it("leaves the email copy (no name passed) unchanged", () => {
+  it("greets by first name in every balance email", () => {
+    const branded = balanceReminderEmail(850, "October 2026", undefined, false, "Aviral Bansal");
+    expect(branded.text).toMatch(/^Hi Aviral,\n/);
+    expect(branded.html).toContain(">Hi Aviral,</p>");
+    expect(balanceReminderGmailEmail(850, "October 2026", undefined, false, "Aviral Bansal").text).toMatch(/^Hi Aviral,\n/);
+    const monthEnd = monthEndBalanceEmail(850, "October 2026", "November", undefined, "Aviral Bansal");
+    expect(monthEnd.text).toMatch(/^Hi Aviral,\n/);
+    expect(monthEnd.html).toContain(">Hi Aviral,</p>");
+  });
+
+  it("escapes a name in the HTML card", () => {
+    expect(balanceReminderEmail(1, "Oct", undefined, false, "<b>X").html).toContain("Hi &lt;b&gt;X,");
+  });
+
+  it("falls back to Hi, when there is no name", () => {
     expect(balanceReminderText(850, "October 2026")).toMatch(/^Hi,\n/);
+    expect(balanceReminderEmail(850, "October 2026").html).toContain(">Hi,</p>");
   });
 });

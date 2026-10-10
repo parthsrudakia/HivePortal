@@ -539,6 +539,7 @@ export function balanceReminderGmailEmail(
   monthLabel: string,
   detail?: BalanceDetail,
   lateFeeCharged = false,
+  tenantName?: string | null,
 ): { subject: string; text: string } {
   const subject = `Rent balance due — ${monthLabel}`;
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -546,7 +547,7 @@ export function balanceReminderGmailEmail(
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let me know."
     : "Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.";
   const text = detail
-    ? `Hi,
+    ? `${greeting(tenantName)}
 
 My records show an outstanding balance of ${amount} as of ${monthLabel}.
 
@@ -556,7 +557,7 @@ ${closing}
 
 Thanks
 Vinny`
-    : balanceReminderText(amountDue, monthLabel, lateFeeCharged);
+    : balanceReminderText(amountDue, monthLabel, lateFeeCharged, tenantName);
   return { subject, text };
 }
 
@@ -566,12 +567,14 @@ export async function sendBalanceReminderGmail(
   monthLabel: string,
   detail?: BalanceDetail,
   lateFeeCharged = false,
+  tenantName?: string | null,
 ): Promise<SendResult> {
   const { subject, text } = balanceReminderGmailEmail(
     amountDue,
     monthLabel,
     detail,
     lateFeeCharged,
+    tenantName,
   );
   const result = await sendGmailMessage({ to, subject, text });
   await logEmail({
@@ -813,7 +816,9 @@ export function balanceReminderEmail(
   monthLabel: string,
   detail?: BalanceDetail,
   lateFeeCharged = false,
+  tenantName?: string | null,
 ): { subject: string; text: string; html: string } {
+  const hi = greeting(tenantName);
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent balance due — ${monthLabel}`;
   // Once this month's late fee is on the account, "avoid a late fee" is a
@@ -822,7 +827,7 @@ export function balanceReminderEmail(
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let us know."
     : "Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.";
   const text = detail
-    ? `Hi,
+    ? `${hi}
 
 Our records show an outstanding balance of ${amount} as of ${monthLabel}.
 
@@ -832,12 +837,12 @@ ${closingText}
 
 Thanks`
     : lateFeeCharged
-      ? `Hi,
+      ? `${hi}
 
 Our records show an outstanding rent balance of ${amount} for ${monthLabel}, which includes a $50 late fee that has been applied to your account. Please submit payment as soon as possible. If you've already paid, let us know.
 
 Thanks`
-      : `Hi,
+      : `${hi}
 
 Our records show an outstanding rent balance of ${amount} for ${monthLabel}. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.
 
@@ -852,7 +857,8 @@ Thanks`;
         <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Outstanding balance</p>
         <p style="margin:4px 0 0; font-size:24px; font-weight:600; color:#1a1a18;">${amount}</p>
       </div>${detail ? balanceBreakdownHtml(detail, amountDue) : ""}
-      <p style="margin:20px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${
+      <p style="margin:20px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${escapeHtml(hi)}</p>
+      <p style="margin:12px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${
         lateFeeCharged
           ? "A <strong>$50 late fee</strong> has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you&rsquo;ve already paid, let us know."
           : "Please submit payment as soon as possible to avoid a <strong>$50 late fee</strong>. If you&rsquo;ve already paid, let us know."
@@ -871,12 +877,14 @@ export async function sendBalanceReminder(
   monthLabel: string,
   detail?: BalanceDetail,
   lateFeeCharged = false,
+  tenantName?: string | null,
 ): Promise<SendResult> {
   const { subject, text, html } = balanceReminderEmail(
     amountDue,
     monthLabel,
     detail,
     lateFeeCharged,
+    tenantName,
   );
   return sendViaResend(
     { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
@@ -892,14 +900,16 @@ export async function sendBalanceReminderOutlook(
   monthLabel: string,
   detail?: BalanceDetail,
   lateFeeCharged = false,
+  tenantName?: string | null,
 ): Promise<SendResult> {
   if (!outlookConfigured())
-    return sendBalanceReminder(to, amountDue, monthLabel, detail, lateFeeCharged);
+    return sendBalanceReminder(to, amountDue, monthLabel, detail, lateFeeCharged, tenantName);
   const { subject, text, html } = balanceReminderEmail(
     amountDue,
     monthLabel,
     detail,
     lateFeeCharged,
+    tenantName,
   );
   const result = await sendOutlookMessage({ to, subject, text, html });
   await logEmail({
@@ -937,11 +947,13 @@ export function monthEndBalanceEmail(
   monthLabel: string,
   nextMonthLabel: string,
   detail?: BalanceDetail,
+  tenantName?: string | null,
 ): { subject: string; text: string; html: string } {
+  const hi = greeting(tenantName);
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent reminder — please include your ${amount} balance`;
   const breakdown = detail ? `\n${balanceBreakdownText(detail, amountDue)}\n` : "";
-  const text = `Hi,
+  const text = `${hi}
 
 This is a friendly reminder that your ${nextMonthLabel} rent is due. Our records also show an outstanding balance of ${amount} on your account as of ${monthLabel}.
 ${breakdown}
@@ -958,7 +970,8 @@ Thanks`;
         <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Outstanding balance</p>
         <p style="margin:4px 0 0; font-size:24px; font-weight:600; color:#1a1a18;">${amount}</p>
       </div>${detail ? balanceBreakdownHtml(detail, amountDue) : ""}
-      <p style="margin:20px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">Your <strong>${escapeHtml(nextMonthLabel)} rent</strong> is due — please include the balance above along with your rent payment, by the <strong>5th</strong>, to avoid a <strong>$50 late fee</strong>. If you&rsquo;ve already taken care of it, please disregard this message.</p>
+      <p style="margin:20px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${escapeHtml(hi)}</p>
+      <p style="margin:12px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">Your <strong>${escapeHtml(nextMonthLabel)} rent</strong> is due — please include the balance above along with your rent payment, by the <strong>5th</strong>, to avoid a <strong>$50 late fee</strong>. If you&rsquo;ve already taken care of it, please disregard this message.</p>
       <p style="margin:16px 0 0; font-size:15px; color:#1a1a18;">Thanks</p>
     </div>
   </div>
@@ -972,12 +985,14 @@ export async function sendMonthEndBalanceReminderOutlook(
   monthLabel: string,
   nextMonthLabel: string,
   detail?: BalanceDetail,
+  tenantName?: string | null,
 ): Promise<SendResult> {
   const { subject, text, html } = monthEndBalanceEmail(
     amountDue,
     monthLabel,
     nextMonthLabel,
     detail,
+    tenantName,
   );
   if (!outlookConfigured()) {
     return sendViaResend(
@@ -1005,11 +1020,12 @@ export async function sendMonthEndBalanceReminderGmail(
   monthLabel: string,
   nextMonthLabel: string,
   detail?: BalanceDetail,
+  tenantName?: string | null,
 ): Promise<SendResult> {
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent reminder — please include your ${amount} balance`;
   const breakdown = detail ? `\n${balanceBreakdownText(detail, amountDue)}\n` : "";
-  const text = `Hi,
+  const text = `${greeting(tenantName)}
 
 This is a friendly reminder that your ${nextMonthLabel} rent is due. My records also show an outstanding balance of ${amount} on your account as of ${monthLabel}.
 ${breakdown}

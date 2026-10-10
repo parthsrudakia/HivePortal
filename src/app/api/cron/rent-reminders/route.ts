@@ -411,6 +411,7 @@ export async function GET(req: NextRequest) {
           monthLabelStr,
           nextMonthStr,
           detail,
+          e.name,
         )
       : await sendMonthEndBalanceReminderOutlook(
           e.email,
@@ -418,6 +419,7 @@ export async function GET(req: NextRequest) {
           monthLabelStr,
           nextMonthStr,
           detail,
+          e.name,
         );
     if (r.ok && "queued" in r && r.queued) {
       queued++; // parked over the Resend cap (fallback path) — flush delivers
