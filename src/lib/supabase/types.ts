@@ -604,10 +604,14 @@ export type Database = {
           created_at: string
           error: string | null
           id: string
+          last_opened_at: string | null
+          open_count: number
+          opened_at: string | null
           recipient: string
           resend_id: string | null
           status: string
           subject: string | null
+          track_id: string | null
           type: string
         }
         Insert: {
@@ -616,10 +620,14 @@ export type Database = {
           created_at?: string
           error?: string | null
           id?: string
+          last_opened_at?: string | null
+          open_count?: number
+          opened_at?: string | null
           recipient: string
           resend_id?: string | null
           status: string
           subject?: string | null
+          track_id?: string | null
           type: string
         }
         Update: {
@@ -628,10 +636,14 @@ export type Database = {
           created_at?: string
           error?: string | null
           id?: string
+          last_opened_at?: string | null
+          open_count?: number
+          opened_at?: string | null
           recipient?: string
           resend_id?: string | null
           status?: string
           subject?: string | null
+          track_id?: string | null
           type?: string
         }
         Relationships: []
@@ -2371,6 +2383,7 @@ export type Database = {
         }
         Returns: string
       }
+      record_email_open: { Args: { p_track_id: string }; Returns: undefined }
       resolve_reconciliation_reversal: {
         Args: { p_mode: string; p_resolved_by: string; p_reversal_id: string }
         Returns: Json

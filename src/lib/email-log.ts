@@ -49,6 +49,8 @@ export async function logEmail(entry: {
   error?: string | null;
   context?: string | null;
   resend_id?: string | null;
+  /** Open-tracking pixel id embedded in the HTML (see email-tracking.ts). */
+  track_id?: string | null;
 }): Promise<void> {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -66,6 +68,7 @@ export async function logEmail(entry: {
       error: entry.error ?? null,
       context: entry.context ?? null,
       resend_id: entry.resend_id ?? null,
+      track_id: entry.track_id ?? null,
     });
   } catch {
     // Logging is best-effort and must never interfere with email delivery.

@@ -7,6 +7,7 @@
  * server actions, and the public signing page's follow-ups.
  */
 
+import { addTrackingPixel } from "@/lib/email-tracking";
 import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -292,6 +293,7 @@ async function deliverAgreementEmail(opts: {
 > {
   let result;
   let subject: string;
+  let trackId: string | null = null;
   if (opts.channel === "gmail") {
     // New York: plain, unbranded email from the personal Gmail.
     const body = gmailAgreementBody({
@@ -316,11 +318,13 @@ async function deliverAgreementEmail(opts: {
       note: opts.note,
     });
     subject = body.subject;
+    const tracked = addTrackingPixel(body.html);
+    trackId = tracked.trackId;
     result = await sendOutlookMessage({
       to: opts.recipient,
       subject: body.subject,
       text: body.text,
-      html: body.html,
+      html: tracked.html,
       attachment: opts.attachment,
     });
   }
@@ -334,6 +338,7 @@ async function deliverAgreementEmail(opts: {
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? trackId : null,
   });
   return result;
 }

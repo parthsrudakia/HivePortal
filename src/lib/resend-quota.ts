@@ -18,6 +18,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { logEmail, type EmailType } from "./email-log";
 import { todayISO } from "./date";
+import { addTrackingPixel } from "./email-tracking";
 import type { Database } from "./supabase/types";
 
 export const DAILY_CAP = Number(process.env.RESEND_DAILY_CAP) || 90;
@@ -167,6 +168,10 @@ async function dispatch(
     return { ok: false, error: "RESEND_API_KEY not set" };
   }
 
+  // Open tracking: a fresh pixel per actual send (the queue flush comes
+  // through here too, so a deferred email is tracked when it really goes out).
+  const { html, trackId } = addTrackingPixel(payload.html);
+
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
     from: payload.from,
@@ -175,7 +180,7 @@ async function dispatch(
     replyTo: payload.replyTo,
     subject: payload.subject,
     text: payload.text,
-    html: payload.html,
+    html,
     scheduledAt: payload.scheduledAt,
   });
 
@@ -194,6 +199,7 @@ async function dispatch(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id : null,
+    track_id: result.ok ? trackId : null,
   });
   return result;
 }

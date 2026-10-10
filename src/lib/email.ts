@@ -3,6 +3,7 @@ import { sendGmailMessage } from "./google-mail";
 import { outlookConfigured, sendOutlookMessage } from "./graph-mail";
 import { sendViaResend, type SendResult } from "./resend-quota";
 import { formatDate } from "./date";
+import { addTrackingPixel } from "./email-tracking";
 import type { CleanerCleaning } from "./cleaner-schedule";
 import type { BalanceDetail } from "./balance-detail";
 
@@ -369,12 +370,14 @@ export async function sendRentReminderOutlookBulk(
     errors: [],
   };
   for (const group of chunk(recipients, OUTLOOK_BCC_CHUNK)) {
+    // One BCC email per chunk: its opens can't say which recipient opened.
+    const tracked = addTrackingPixel(REMINDER_HTML_BRANDED);
     const result = await sendOutlookMessage({
       to: "",
       bcc: group,
       subject: REMINDER_SUBJECT,
       text: REMINDER_TEXT,
-      html: REMINDER_HTML_BRANDED,
+      html: tracked.html,
     });
     await logEmail({
       type: "rent_reminder",
@@ -385,6 +388,7 @@ export async function sendRentReminderOutlookBulk(
       status: result.ok ? "sent" : "failed",
       error: result.ok ? null : result.error,
       resend_id: null,
+      track_id: result.ok ? tracked.trackId : null,
     });
     if (!result.ok) {
       res.failed += group.length;
@@ -911,7 +915,8 @@ export async function sendBalanceReminderOutlook(
     lateFeeCharged,
     tenantName,
   );
-  const result = await sendOutlookMessage({ to, subject, text, html });
+  const tracked = addTrackingPixel(html);
+  const result = await sendOutlookMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "rent_balance",
     recipient: to,
@@ -921,6 +926,7 @@ export async function sendBalanceReminderOutlook(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }
@@ -1000,7 +1006,8 @@ export async function sendMonthEndBalanceReminderOutlook(
       { type: "rent_reminder", context: `${monthLabel} · month_end_balance` },
     );
   }
-  const result = await sendOutlookMessage({ to, subject, text, html });
+  const tracked = addTrackingPixel(html);
+  const result = await sendOutlookMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "rent_reminder",
     recipient: to,
@@ -1010,6 +1017,7 @@ export async function sendMonthEndBalanceReminderOutlook(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }

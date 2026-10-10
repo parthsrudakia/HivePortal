@@ -1,5 +1,6 @@
 "use server";
 
+import { addTrackingPixel } from "@/lib/email-tracking";
 import { headers } from "next/headers";
 import { todayISO } from "@/lib/date";
 import {
@@ -159,6 +160,7 @@ export async function submitSignature(
   };
   let result;
   let subject: string;
+  let trackId: string | null = null;
   if (request.channel === "gmail") {
     const body = gmailSignedAgreementBody({ tenantName: request.tenant_name });
     subject = body.subject;
@@ -172,11 +174,13 @@ export async function submitSignature(
   } else {
     const body = signedAgreementEmailTemplate({ tenantName: request.tenant_name });
     subject = body.subject;
+    const tracked = addTrackingPixel(body.html);
+    trackId = tracked.trackId;
     result = await sendOutlookMessage({
       to: request.recipient_email,
       subject: body.subject,
       text: body.text,
-      html: body.html,
+      html: tracked.html,
       attachment,
     });
   }
@@ -190,6 +194,7 @@ export async function submitSignature(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? trackId : null,
   });
 
   // Alert the operators on Telegram. On a confirmed send, stamp the row as

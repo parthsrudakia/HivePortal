@@ -19,6 +19,10 @@ type LogRow = {
   error: string | null;
   context: string | null;
   created_at: string;
+  track_id: string | null;
+  opened_at: string | null;
+  last_opened_at: string | null;
+  open_count: number;
 };
 
 const TYPES = Object.keys(EMAIL_TYPE_LABELS) as EmailType[];
@@ -70,7 +74,9 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
 
   let query = supabase
     .from("email_log")
-    .select("id, type, recipient, subject, status, error, context, created_at")
+    .select(
+      "id, type, recipient, subject, status, error, context, created_at, track_id, opened_at, last_opened_at, open_count",
+    )
     .order("created_at", { ascending: false })
     .limit(200);
   if (typeFilter) query = query.eq("type", typeFilter);
@@ -112,7 +118,9 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
             Email <span className="font-display text-accent-text">log</span>
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Every email the portal has sent, newest first (last 200).
+            Every email the portal has sent, newest first (last 200). Opens
+            are approximate: some mail apps load images automatically, others
+            block them, and plain-text emails can&apos;t be tracked.
           </p>
         </div>
         {master && <ClearLogButton onClear={clearEmailLog} label="email log" />}
@@ -201,6 +209,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                 <th className="px-4 py-2 font-medium">To</th>
                 <th className="px-4 py-2 font-medium">Subject</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Opened</th>
               </tr>
             </thead>
             <tbody>
@@ -231,6 +240,27 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                       >
                         Failed
                       </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-xs">
+                    {r.opened_at ? (
+                      <span
+                        className="text-ink"
+                        title={
+                          r.last_opened_at
+                            ? `Last opened ${fmtWhen(r.last_opened_at)}`
+                            : undefined
+                        }
+                      >
+                        {fmtWhen(r.opened_at)}
+                        {r.open_count > 1 && (
+                          <span className="text-muted"> · {r.open_count}×</span>
+                        )}
+                      </span>
+                    ) : r.track_id ? (
+                      <span className="text-muted">Not yet</span>
+                    ) : (
+                      <span className="text-muted/70">Not tracked</span>
                     )}
                   </td>
                 </tr>
