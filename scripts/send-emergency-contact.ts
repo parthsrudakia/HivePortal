@@ -21,6 +21,11 @@
  *   --send --at 2026-10-09T08:00:00-04:00
  * Resend holds and delivers each email at that time, and each link's 48 hours
  * start then. Scheduled emails can be cancelled in Resend before they go out.
+ *
+ * Reminder to everyone emailed who hasn't answered (dry run without --send):
+ *   --remind [--send] [--at <ISO>]
+ * Keeps each tenant's current link (so it never goes dead in between) and
+ * pushes its expiry to 48 hours after the reminder is delivered.
  */
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../src/lib/supabase/types";
@@ -39,6 +44,7 @@ const testTo = args.includes("--test") ? args[args.indexOf("--test") + 1] : null
 const realSend = args.includes("--send");
 const resetTest = args.includes("--reset-test");
 const resendExpired = args.includes("--resend-expired");
+const remind = args.includes("--remind");
 const atArg = args.includes("--at") ? args[args.indexOf("--at") + 1] : null;
 const scheduledAt = atArg ? new Date(atArg) : null;
 if (scheduledAt && (Number.isNaN(scheduledAt.getTime()) || !/([+-]\d\d:\d\d|Z)$/.test(atArg!))) {
@@ -152,6 +158,51 @@ async function main() {
     console.log(`Test to ${testTo} (as ${t.name}, ${unitLabel(t)}):`, res);
     console.log("Form link:", url);
     console.log("Expires:  ", new Date(expiresAt).toLocaleString("en-US", { timeZone: "America/New_York" }), "ET");
+    return;
+  }
+
+  if (remind) {
+    const sendAt = scheduledAt ?? new Date();
+    const expiresAt = linkExpiresAt(sendAt);
+    let n = 0, failedN = 0;
+    for (const t of list) {
+      const { data: row, error } = await sb
+        .from("emergency_contacts")
+        .select("id, token, requested_at, submitted_at")
+        .eq("tenant_id", t.tenantId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!row?.requested_at || row.submitted_at) continue;
+      if (!t.email) {
+        console.log(`NO EMAIL   ${unitLabel(t)}  ${t.name}`);
+        continue;
+      }
+      if (!realSend) {
+        console.log(`WOULD REMIND ${unitLabel(t)}  ${t.name} <${t.email}>`);
+        n++;
+        continue;
+      }
+      const { error: e2 } = await sb
+        .from("emergency_contacts")
+        .update({ expires_at: expiresAt, updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      if (e2) throw e2;
+      const res = await sendEmergencyContactRequest(
+        t.email,
+        { firstName: firstName(t.name), unitLabel: unitLabel(t), url: emergencyContactUrl(row.token), reminder: true },
+        `Reminder · ${unitLabel(t)} · ${t.name}`,
+        atArg ?? undefined,
+      );
+      if (!res.ok) {
+        console.log(`FAILED     ${unitLabel(t)}  ${t.name}`, res);
+        failedN++;
+        continue;
+      }
+      console.log(`${(scheduledAt ? "SCHEDULED" : "REMINDED").padEnd(10)} ${unitLabel(t)}  ${t.name}${"id" in res ? `  ${res.id}` : ""}`);
+      n++;
+    }
+    const when = (d: string | Date) => new Date(d).toLocaleString("en-US", { timeZone: "America/New_York" });
+    console.log(`\n${n} ${realSend ? "reminders" : "would be reminded"} · ${failedN} failed · deliver ${when(sendAt)} ET · links expire ${when(expiresAt)} ET`);
     return;
   }
 
