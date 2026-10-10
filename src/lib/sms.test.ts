@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseOptStatus, toE164 } from "@/lib/sms";
+import { afterEach, describe, expect, it } from "vitest";
+import { balanceTextRecipients, parseOptStatus, toE164 } from "@/lib/sms";
 
 describe("toE164", () => {
   it.each([
@@ -43,5 +43,34 @@ describe("parseOptStatus", () => {
   it("returns null when the pair is missing", () => {
     expect(parseOptStatus(payload, "+13322460817", "+12125550123")).toBeNull();
     expect(parseOptStatus({}, "+13322460817", "+16095549141")).toBeNull();
+  });
+});
+
+describe("balanceTextRecipients", () => {
+  const saved = process.env.OPERATOR_PHONE;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.OPERATOR_PHONE;
+    else process.env.OPERATOR_PHONE = saved;
+  });
+
+  it("puts the tenant and the operator in one thread", () => {
+    process.env.OPERATOR_PHONE = "+1 555 010 0000";
+    expect(balanceTextRecipients("609-554-9141")).toEqual({
+      ok: true,
+      to: ["609-554-9141", "+1 555 010 0000"],
+    });
+  });
+
+  it("refuses to send without the operator configured", () => {
+    delete process.env.OPERATOR_PHONE;
+    expect(balanceTextRecipients("609-554-9141").ok).toBe(false);
+  });
+
+  it("leaves a non-US tenant number alone so it is skipped as before", () => {
+    process.env.OPERATOR_PHONE = "+1 555 010 0000";
+    expect(balanceTextRecipients("+44 7901 106105")).toEqual({
+      ok: true,
+      to: "+44 7901 106105",
+    });
   });
 });

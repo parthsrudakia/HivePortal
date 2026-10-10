@@ -14,7 +14,7 @@ import {
   sendBalanceReminderGmail,
   balanceReminderText,
 } from "@/lib/email";
-import { getSmsOptStatus, sendSms } from "@/lib/sms";
+import { getSmsOptStatus, sendBalanceText, sendSms } from "@/lib/sms";
 import { resolveRecipientPhone } from "@/lib/sms-recipient";
 import { sendGmailMessage } from "@/lib/google-mail";
 import { buildInventorySheet } from "@/lib/inventory-sheet";
@@ -173,7 +173,7 @@ export async function sendBalanceReminders(args: {
       } else failed++;
     }
     if (doSms && phone) {
-      const res = await sendSms(phone, balanceReminderText(netBalance, monthLabel, lateFeeCharged), {
+      const res = await sendBalanceText(phone, balanceReminderText(netBalance, monthLabel, lateFeeCharged), {
         type: "rent_balance",
         context: `${name} · ${monthLabel}`,
       });
@@ -355,7 +355,8 @@ export const messagingTools = [
       "sends immediately. Omit tenancy_id to remind EVERY owing tenant; pass a " +
       "tenancy_id (find it via list_active_tenants) to remind just one tenant. " +
       "Texts go only to tenants with a phone on file and use the same wording as " +
-      "the emails. After it runs, report how many were emailed/texted (and note " +
+      "the emails; each text is a group thread with the tenant and the operator " +
+      "(Vineet), so the tenant sees the operator's number and replies reach both. After it runs, report how many were emailed/texted (and note " +
       "anyone owing who had no address/phone for the chosen channel).",
     inputSchema: z.object({
       channel: z

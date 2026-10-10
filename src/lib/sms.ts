@@ -325,3 +325,58 @@ export async function getSmsOptStatus(raw: string): Promise<SmsOptResult> {
     return { ok: false, error: e instanceof Error ? e.message : "Unknown Zoom error" };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Balance texts: a group thread with the operator
+//
+// Every balance-reminder text (Rent Tracker button, the bot's
+// send_balance_reminders, the month-end cron's owing-tenant texts) goes out as
+// ONE group thread: the Zoom sending number, the tenant, and the operator
+// (OPERATOR_PHONE, Vineet). The tenant sees the operator's number and every
+// reply is visible to all three.
+// ---------------------------------------------------------------------------
+
+/**
+ * Recipients for a balance text. A tenant number Zoom can't text (non-+1)
+ * stays a lone recipient so sendSms records it as skipped, the same as before.
+ * Returns an error when OPERATOR_PHONE is unset: a balance text must never go
+ * out quietly without the operator in the thread.
+ */
+export function balanceTextRecipients(
+  tenantPhone: string,
+): { ok: true; to: string | string[] } | { ok: false; error: string } {
+  if (!toE164(tenantPhone)) return { ok: true, to: tenantPhone };
+  const operator = process.env.OPERATOR_PHONE?.trim();
+  if (!operator) {
+    return {
+      ok: false,
+      error: "OPERATOR_PHONE is not configured, so the balance text can't include the operator.",
+    };
+  }
+  return { ok: true, to: [tenantPhone, operator] };
+}
+
+/** Send a balance text to the tenant + operator group thread. Never throws. */
+export async function sendBalanceText(
+  tenantPhone: string,
+  body: string,
+  meta: SmsMeta,
+): Promise<SmsResult> {
+  const r = balanceTextRecipients(tenantPhone);
+  if (!r.ok) {
+    await logSms({
+      type: meta.type ?? "rent_balance",
+      recipient: tenantPhone,
+      body,
+      status: "failed",
+      error: r.error,
+      context: meta.context ?? null,
+    });
+    return { ok: false, error: r.error };
+  }
+  const group = Array.isArray(r.to);
+  return sendSms(r.to, body, {
+    ...meta,
+    context: group ? `${meta.context ?? ""} · group thread + operator`.replace(/^ · /, "") : meta.context,
+  });
+}

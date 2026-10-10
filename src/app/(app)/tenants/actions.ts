@@ -17,7 +17,7 @@ import {
   sendOtherChargeNotice,
   sendOtherChargeNoticeGmail,
 } from "@/lib/email";
-import { sendSms } from "@/lib/sms";
+import { sendBalanceText } from "@/lib/sms";
 import { todayISO, addDaysISO, proratedMonthRemainder } from "@/lib/date";
 import { computeLedger, LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
 import {
@@ -1781,10 +1781,11 @@ export async function sendBalanceReminders(
       } else failed++;
     }
 
-    // Text uses the same wording as the email. A failed text never blocks.
+    // Text uses the same wording as the email, in a group thread with the
+    // operator (Vineet). A failed text never blocks.
     const phone = tenant?.phone?.trim();
     if (doSms && phone) {
-      const smsRes = await sendSms(
+      const smsRes = await sendBalanceText(
         phone,
         balanceReminderText(netBalance, monthLabel, lateFeeCharged),
         { type: "rent_balance", context: `${tenant?.full_name ?? "Tenant"} · ${monthLabel}` },

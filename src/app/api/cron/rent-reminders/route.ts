@@ -36,7 +36,7 @@ import {
   REMINDER_TEXT,
   type BulkSendResult,
 } from "@/lib/email";
-import { sendSms } from "@/lib/sms";
+import { sendBalanceText, sendSms } from "@/lib/sms";
 import { todayISO } from "@/lib/date";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
@@ -441,7 +441,8 @@ export async function GET(req: NextRequest) {
   // A text can't be BCC'd, so this stays serial and time-budgeted. Each success
   // sets sms_sent_at so a continuation never re-texts the same tenant; whoever's
   // left when the budget runs out is handed to a fresh invocation below.
-  // Owing tenants get the balance wording, matching their email.
+  // Owing tenants get the balance wording, matching their email, in a group
+  // thread with the operator (Vineet); everyone else gets a 1:1 reminder.
   const owingBalance = new Map(owing.map((e) => [e.tenancyId, e.balance]));
   for (const e of eligible) {
     if (!e.phone || alreadyTexted.has(e.tenancyId)) continue;
@@ -450,14 +451,11 @@ export async function GET(req: NextRequest) {
       continue;
     }
     const balance = owingBalance.get(e.tenancyId);
-    const smsRes = await sendSms(
-      e.phone,
-      balance !== undefined ? monthEndBalanceText(balance) : REMINDER_TEXT,
-      {
-        type: "rent_reminder",
-        context: e.email,
-      },
-    );
+    const smsMeta = { type: "rent_reminder" as const, context: e.email };
+    const smsRes =
+      balance !== undefined
+        ? await sendBalanceText(e.phone, monthEndBalanceText(balance), smsMeta)
+        : await sendSms(e.phone, REMINDER_TEXT, smsMeta);
     if (smsRes.ok) {
       texted++;
       await supabase
