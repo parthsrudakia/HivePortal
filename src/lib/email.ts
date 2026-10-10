@@ -3,7 +3,7 @@ import { sendGmailMessage } from "./google-mail";
 import { outlookConfigured, sendOutlookMessage } from "./graph-mail";
 import { sendViaResend, type SendResult } from "./resend-quota";
 import { formatDate } from "./date";
-import { addTrackingPixel } from "./email-tracking";
+import { addTrackingPixel, trackedPlainText } from "./email-tracking";
 import type { CleanerCleaning } from "./cleaner-schedule";
 import type { BalanceDetail } from "./balance-detail";
 
@@ -402,7 +402,9 @@ export async function sendRentReminderOutlookBulk(
 
 // ----- New York variants -----
 // New York tenants get personal, unbranded correspondence: sent from Vineet's
-// personal Gmail (From "Vineet", no Hive mention), plain text only — no HTML.
+// personal Gmail (From "Vineet", no Hive mention). They read as plain text:
+// the HTML part is the same text, unstyled, plus an open pixel served from the
+// neutral SIGN_ORIGIN host (see trackedPlainText in email-tracking.ts).
 // The reminder copy below is intentionally identical to the Resend versions,
 // which already carry no branding; only the channel and format differ.
 
@@ -419,11 +421,15 @@ export async function sendRentReminderGmailBulk(
     errors: [],
   };
   for (const group of chunk(recipients, GMAIL_BCC_CHUNK)) {
+    // Looks plain-text; the HTML twin carries the open pixel (one BCC email
+    // per chunk, so an open can't say which recipient opened).
+    const tracked = trackedPlainText(REMINDER_TEXT);
     const result = await sendGmailMessage({
       to: process.env.GMAIL_USER ?? "",
       bcc: group,
       subject: REMINDER_SUBJECT,
       text: REMINDER_TEXT,
+      html: tracked.html,
     });
     await logEmail({
       type: "rent_reminder",
@@ -434,6 +440,7 @@ export async function sendRentReminderGmailBulk(
       status: result.ok ? "sent" : "failed",
       error: result.ok ? null : result.error,
       resend_id: result.ok ? result.id || null : null,
+      track_id: result.ok ? tracked.trackId : null,
     });
     if (!result.ok) {
       res.failed += group.length;
@@ -580,7 +587,8 @@ export async function sendBalanceReminderGmail(
     lateFeeCharged,
     tenantName,
   );
-  const result = await sendGmailMessage({ to, subject, text });
+  const tracked = trackedPlainText(text);
+  const result = await sendGmailMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "rent_balance",
     recipient: to,
@@ -590,6 +598,7 @@ export async function sendBalanceReminderGmail(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }
@@ -664,7 +673,8 @@ export async function sendUtilityChargeNoticeGmail(
 ): Promise<SendResult> {
   const subject = `Utility charge — please include with your ${n.nextMonthLabel} rent`;
   const text = utilityChargeText(n, "Thanks\nVinny");
-  const result = await sendGmailMessage({ to, subject, text });
+  const tracked = trackedPlainText(text);
+  const result = await sendGmailMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "utility_charge",
     recipient: to,
@@ -674,6 +684,7 @@ export async function sendUtilityChargeNoticeGmail(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }
@@ -747,7 +758,8 @@ export async function sendOtherChargeNoticeGmail(
 ): Promise<SendResult> {
   const subject = `New charge on your account — please include with your ${n.rentMonthLabel} rent`;
   const text = otherChargeText(n, "Thanks\nVinny");
-  const result = await sendGmailMessage({ to, subject, text });
+  const tracked = trackedPlainText(text);
+  const result = await sendGmailMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "other_charge",
     recipient: to,
@@ -757,6 +769,7 @@ export async function sendOtherChargeNoticeGmail(
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }
@@ -1041,7 +1054,8 @@ Please include this balance along with your ${nextMonthLabel} rent payment, by t
 
 Thanks
 Vinny`;
-  const result = await sendGmailMessage({ to, subject, text });
+  const tracked = trackedPlainText(text);
+  const result = await sendGmailMessage({ to, subject, text, html: tracked.html });
   await logEmail({
     type: "rent_reminder",
     recipient: to,
@@ -1051,6 +1065,7 @@ Vinny`;
     status: result.ok ? "sent" : "failed",
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
+    track_id: result.ok ? tracked.trackId : null,
   });
   return result;
 }

@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { addTrackingPixel, TRANSPARENT_GIF } from "@/lib/email-tracking";
+import {
+  addTrackingPixel,
+  plainTextHtml,
+  trackedPlainText,
+  TRANSPARENT_GIF,
+} from "@/lib/email-tracking";
 
 const saved = process.env.EMAIL_TRACKING_ORIGIN;
+const savedSign = process.env.SIGN_ORIGIN;
 afterEach(() => {
   if (saved === undefined) delete process.env.EMAIL_TRACKING_ORIGIN;
   else process.env.EMAIL_TRACKING_ORIGIN = saved;
+  if (savedSign === undefined) delete process.env.SIGN_ORIGIN;
+  else process.env.SIGN_ORIGIN = savedSign;
 });
 
 describe("addTrackingPixel", () => {
@@ -37,5 +45,28 @@ describe("addTrackingPixel", () => {
 
   it("serves a real GIF", () => {
     expect(TRANSPARENT_GIF.subarray(0, 6).toString("ascii")).toBe("GIF89a");
+  });
+});
+
+describe("plain-text NY emails", () => {
+  it("renders the text unstyled with line breaks and clickable links", () => {
+    expect(plainTextHtml("Hi Aviral,\n\nSign here: https://sign.example.app/sign/abc-123.\n<Thanks> & bye")).toBe(
+      '<div>Hi Aviral,<br>\n<br>\nSign here: <a href="https://sign.example.app/sign/abc-123">https://sign.example.app/sign/abc-123</a>.<br>\n&lt;Thanks&gt; &amp; bye</div>',
+    );
+  });
+
+  it("serves the pixel from the neutral host, never the portal", () => {
+    process.env.EMAIL_TRACKING_ORIGIN = "https://portal.hiveny.com";
+    process.env.SIGN_ORIGIN = "https://sign-neutral.example.app";
+    const { html, trackId } = trackedPlainText("Hi");
+    expect(trackId).not.toBeNull();
+    expect(html).toContain(`https://sign-neutral.example.app/api/o/${trackId}`);
+    expect(html).not.toMatch(/hive/i);
+  });
+
+  it("stays text-only when there is no neutral host", () => {
+    process.env.EMAIL_TRACKING_ORIGIN = "https://portal.hiveny.com";
+    delete process.env.SIGN_ORIGIN;
+    expect(trackedPlainText("Hi")).toEqual({ html: undefined, trackId: null });
   });
 });

@@ -7,7 +7,7 @@
  * server actions, and the public signing page's follow-ups.
  */
 
-import { addTrackingPixel } from "@/lib/email-tracking";
+import { addTrackingPixel, trackedPlainText } from "@/lib/email-tracking";
 import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -302,10 +302,13 @@ async function deliverAgreementEmail(opts: {
       note: opts.note,
     });
     subject = body.subject;
+    const tracked = trackedPlainText(body.text);
+    trackId = tracked.trackId;
     result = await sendGmailMessage({
       to: opts.recipient,
       subject: body.subject,
       text: body.text,
+      html: tracked.html,
       attachment: opts.attachment,
       // Agreements are one-off and high-stakes: require the message to show
       // up in the Gmail Sent folder before reporting success.

@@ -1,6 +1,6 @@
 "use server";
 
-import { addTrackingPixel } from "@/lib/email-tracking";
+import { addTrackingPixel, trackedPlainText } from "@/lib/email-tracking";
 import { headers } from "next/headers";
 import { todayISO } from "@/lib/date";
 import {
@@ -164,10 +164,13 @@ export async function submitSignature(
   if (request.channel === "gmail") {
     const body = gmailSignedAgreementBody({ tenantName: request.tenant_name });
     subject = body.subject;
+    const tracked = trackedPlainText(body.text);
+    trackId = tracked.trackId;
     result = await sendGmailMessage({
       to: request.recipient_email,
       subject: body.subject,
       text: body.text,
+      html: tracked.html,
       attachment,
       verifySent: true,
     });
