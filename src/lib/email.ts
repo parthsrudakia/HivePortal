@@ -107,13 +107,13 @@ export function balanceReminderText(
   return lateFeeCharged
     ? `${hi}
 
-My records show an outstanding rent balance of ${amount} for ${monthLabel}, which includes a $50 late fee that has been applied to your account. Please submit payment as soon as possible. If you've already paid, let me know.
+My records show an outstanding rent balance of ${amount} on your account, which includes a $50 late fee that has been applied. Please submit payment as soon as possible. If you've already paid, let me know.
 
 Thanks
 Vinny`
     : `${hi}
 
-My records show an outstanding rent balance of ${amount} for ${monthLabel}. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.
+My records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.
 
 Thanks
 Vinny`;
@@ -549,7 +549,7 @@ export function balanceReminderGmailEmail(
   const text = detail
     ? `${greeting(tenantName)}
 
-My records show an outstanding balance of ${amount} as of ${monthLabel}.
+My records show an outstanding balance of ${amount} on your account.
 
 ${balanceBreakdownText(detail, amountDue)}
 
@@ -829,7 +829,7 @@ export function balanceReminderEmail(
   const text = detail
     ? `${hi}
 
-Our records show an outstanding balance of ${amount} as of ${monthLabel}.
+Our records show an outstanding balance of ${amount} on your account.
 
 ${balanceBreakdownText(detail, amountDue)}
 
@@ -839,12 +839,12 @@ Thanks`
     : lateFeeCharged
       ? `${hi}
 
-Our records show an outstanding rent balance of ${amount} for ${monthLabel}, which includes a $50 late fee that has been applied to your account. Please submit payment as soon as possible. If you've already paid, let us know.
+Our records show an outstanding rent balance of ${amount} on your account, which includes a $50 late fee that has been applied. Please submit payment as soon as possible. If you've already paid, let us know.
 
 Thanks`
       : `${hi}
 
-Our records show an outstanding rent balance of ${amount} for ${monthLabel}. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.
+Our records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.
 
 Thanks`;
   const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">

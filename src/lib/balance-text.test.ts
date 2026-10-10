@@ -21,7 +21,7 @@ describe("balance text greeting", () => {
 
   it("puts the tenant's name and amount in both balance texts", () => {
     expect(balanceReminderText(850, "October 2026", false, "Aviral Bansal")).toMatch(
-      /^Hi Aviral,\n\nMy records show an outstanding rent balance of \$850 for October 2026\./,
+      /^Hi Aviral,\n\nMy records show an outstanding rent balance of \$850 on your account\. Please/,
     );
     expect(balanceReminderText(900, "October 2026", true, "Aviral Bansal")).toMatch(/^Hi Aviral,/);
     expect(monthEndBalanceText(850, "Aviral Bansal")).toMatch(/^Hi Aviral,\n\n.*\$850/);
@@ -35,6 +35,20 @@ describe("balance text greeting", () => {
     const monthEnd = monthEndBalanceEmail(850, "October 2026", "November", undefined, "Aviral Bansal");
     expect(monthEnd.text).toMatch(/^Hi Aviral,\n/);
     expect(monthEnd.html).toContain(">Hi Aviral,</p>");
+  });
+
+  it("names no month in the balance sentence, text or email", () => {
+    const all = [
+      balanceReminderText(850, "October 2026", false, "A"),
+      balanceReminderText(900, "October 2026", true, "A"),
+      balanceReminderEmail(850, "October 2026", undefined, false, "A").text,
+      balanceReminderEmail(900, "October 2026", undefined, true, "A").text,
+      balanceReminderGmailEmail(850, "October 2026", undefined, false, "A").text,
+    ];
+    for (const t of all) {
+      expect(t).toMatch(/records show an outstanding rent balance of \$\d+ on your account[.,]/);
+      expect(t).not.toContain("October 2026");
+    }
   });
 
   it("escapes a name in the HTML card", () => {
