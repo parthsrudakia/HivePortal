@@ -8,7 +8,8 @@
  *   4. roll board recurring cycles + email deadline reminders,
  *   5. apply the monthly $50 late fees (first run on/after the 7th ET),
  *   6. auto-dismiss duplicate signing requests (same person, within 15 days),
- *   7. retry undelivered "agreement signed" Telegram alerts.
+ *   7. retry undelivered "agreement signed" Telegram alerts,
+ *   8. send any "Other" charge emails the per-minute pg_cron missed.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -21,6 +22,7 @@ import { applyMonthlyLateFees } from "@/lib/late-fees";
 import { processExpiredTenancies } from "@/lib/tenancy-lifecycle";
 import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
 import { retrySignedAgreementAlerts } from "@/lib/agreement-notify";
+import { flushChargeNotices } from "@/lib/charge-notices";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -100,8 +102,15 @@ export async function GET(req: NextRequest) {
     }),
   );
 
+  // Safety net for the 5-minute-delayed "Other" charge emails, normally sent
+  // within a minute of coming due by pg_cron → /api/cron/charge-notices.
+  const chargeNotices = await flushChargeNotices().catch((e) => ({
+    error: e instanceof Error ? e.message : "charge notices failed",
+  }));
+
   return NextResponse.json({
     tenancyLifecycle,
+    chargeNotices,
     signedAlerts,
     lease,
     cleaningSchedule,

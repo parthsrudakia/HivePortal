@@ -340,6 +340,44 @@ export type Database = {
         }
         Relationships: []
       }
+      charge_notices: {
+        Row: {
+          attempts: number
+          charge_id: string
+          claimed_at: string | null
+          created_at: string
+          last_error: string | null
+          send_after: string
+          sent_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          charge_id: string
+          claimed_at?: string | null
+          created_at?: string
+          last_error?: string | null
+          send_after: string
+          sent_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          charge_id?: string
+          claimed_at?: string | null
+          created_at?: string
+          last_error?: string | null
+          send_after?: string
+          sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "charge_notices_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: true
+            referencedRelation: "tenancy_charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cleaner_schedule_change_queue: {
         Row: {
           cleaner_id: string
@@ -2361,6 +2399,24 @@ export type Database = {
     }
     Functions: {
       bot_run_query: { Args: { q: string }; Returns: Json }
+      claim_due_charge_notices: {
+        Args: never
+        Returns: {
+          attempts: number
+          charge_id: string
+          claimed_at: string | null
+          created_at: string
+          last_error: string | null
+          send_after: string
+          sent_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "charge_notices"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       credential_password: { Args: { cred_id: string }; Returns: string }
       credential_password_internal: {
         Args: { cred_id: string }
