@@ -29,6 +29,7 @@
     "resend": "^6.12.3",
     "sharp": "^0.35.3",
     "sonner": "^2.0.7",
+    "unpdf": "^1.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

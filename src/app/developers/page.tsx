@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { TenantsApiDocs } from "@/components/docs/tenants-api-docs";
 import { InventoryApiDocs } from "@/components/docs/inventory-api-docs";
+import { UtilitiesApiDocs } from "@/components/docs/utilities-api-docs";
 import { DevelopersTabs } from "./tabs";
 
 export const metadata = {
   title: "Developers — Hive",
   description:
-    "API reference for Hive's read-only JSON APIs: tenants and inventory.",
+    "API reference for Hive's JSON APIs: tenants, inventory, and utility statement intake.",
 };
 
 /**
@@ -27,7 +28,7 @@ export default function DevelopersPage() {
           <span className="font-display text-accent-text">Developers</span>
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Read-only JSON APIs for internal tools and scripts. Every API needs
+          JSON APIs for internal tools and scripts. Every API needs
           its own bearer token, issued by Hive — tokens are never shown here.
         </p>
       </header>
@@ -64,6 +65,20 @@ export default function DevelopersPage() {
               .
             </p>
             <InventoryApiDocs />
+          </>
+        }
+        utilities={
+          <>
+            <h2 className="mt-8 text-2xl tracking-tight text-ink">
+              Utilities{" "}
+              <span className="font-display text-accent-text">API</span>
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Statement intake for the statements agent: send a utility
+              statement with the fields you read from it, and it lands in
+              the utilities log. Write access to that log only.
+            </p>
+            <UtilitiesApiDocs />
           </>
         }
       />

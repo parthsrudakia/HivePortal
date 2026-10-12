@@ -34,7 +34,7 @@ const ChargeSchema = z.object({
   amount: z.number().describe("Dollar amount of this charge"),
 });
 
-const ExtractionSchema = z.object({
+export const ExtractionSchema = z.object({
   provider: z.string().nullable().describe("Company issuing the bill, e.g. PSE&G, Con Edison"),
   utility_type: z
     .enum(["electric", "gas", "water", "internet", "trash", "other"])
@@ -153,7 +153,9 @@ export async function extractUtilityBill(
         ],
       },
     ],
-    output_config: { format: zodOutputFormat(ExtractionSchema) },
+    // Extraction is transcription, not reasoning — low effort keeps the
+    // (billed) thinking short.
+    output_config: { effort: "low", format: zodOutputFormat(ExtractionSchema) },
   });
 
   if (!response.parsed_output) {
