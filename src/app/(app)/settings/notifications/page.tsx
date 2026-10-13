@@ -40,17 +40,27 @@ export default async function NotificationsPage() {
       .order("created_at", { ascending: true }),
     adminClient().auth.admin.listUsers({
       page: 1,
-      perPage: 200,
+      perPage: 1000,
     }),
   ]);
 
   const recipients: Recipient[] = (data ?? []) as Recipient[];
   const alreadyAdded = new Set(recipients.map((r) => r.email.toLowerCase()));
-  const systemUsers = (usersData?.users ?? [])
-    .map((u) => u.email)
-    .filter((e): e is string => !!e)
-    .filter((e) => !alreadyAdded.has(e.toLowerCase()))
-    .sort((a, b) => a.localeCompare(b));
+  const systemUsers: { email: string; name: string | null }[] = [];
+  for (const u of usersData?.users ?? []) {
+    if (!u.email || alreadyAdded.has(u.email.toLowerCase())) continue;
+    const meta = u.user_metadata ?? {};
+    const name =
+      typeof meta.display_name === "string" && meta.display_name.trim()
+        ? meta.display_name.trim()
+        : typeof meta.full_name === "string" && meta.full_name.trim()
+          ? meta.full_name.trim()
+          : null;
+    systemUsers.push({ email: u.email, name });
+  }
+  systemUsers.sort((a, b) =>
+    (a.name ?? a.email).localeCompare(b.name ?? b.email),
+  );
 
   return (
     <div className="mx-auto w-full max-w-3xl">

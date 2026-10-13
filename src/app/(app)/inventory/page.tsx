@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { unitLabel } from "@/lib/unit-label";
@@ -36,6 +37,23 @@ import {
 } from "@/lib/inventory-filter";
 
 export const dynamic = "force-dynamic";
+
+// Service role only to read auth users' profile names (see the ad tally).
+function adminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createServiceClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+/** A portal user's profile name, as `currentPosterName` (inventory/actions.ts)
+ *  snapshots it onto room_ads.posted_by. */
+function profileName(meta: Record<string, unknown> | undefined): string | null {
+  const pick = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
+  return pick(meta?.display_name) ?? pick(meta?.full_name);
+}
 
 type PropertyRel = {
   id: string;
@@ -147,6 +165,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     { data: adRowsData },
     { data: allRoomsData },
     { data: recipientData },
+    { data: usersData },
   ] = await Promise.all([
     supabase
       .from("rooms")
@@ -188,6 +207,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       .from("notification_recipients")
       .select("id, email, label")
       .returns<{ id: string; email: string; label: string | null }[]>(),
+    adminClient().auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 
   const allAds = (adRowsData ?? []) as {
@@ -245,7 +265,9 @@ export default async function InventoryPage({ searchParams }: PageProps) {
   // the listing. The list is seeded with everyone on the notification-recipients
   // list (so configured people show even with zero ads) and then unioned with
   // anyone who has posted an ad but isn't on that list — matching a recipient to
-  // their posts by either their label or email.
+  // their posts by their label, their email, or the profile name of the portal
+  // user with that email (posted_by snapshots the profile name, which rarely
+  // equals the label someone typed on the notifications list).
   // (recipientData is fetched in the parallel block above.)
 
   // Only rooms currently listed count toward the tally.
@@ -270,12 +292,23 @@ export default async function InventoryPage({ searchParams }: PageProps) {
     keys: string[];
   }[] = [];
   const usedKeys = new Set<string>();
+  const nameByEmail = new Map<string, string>();
+  for (const u of usersData?.users ?? []) {
+    const name = profileName(u.user_metadata);
+    if (u.email && name) nameByEmail.set(u.email.toLowerCase(), name);
+  }
   for (const rec of recipientData ?? []) {
     const label = rec.label?.trim() || null;
     const email = rec.email.trim();
-    const keys = [label?.toLowerCase(), email.toLowerCase()].filter(
-      (k): k is string => !!k,
-    );
+    const keys = [
+      ...new Set(
+        [
+          label?.toLowerCase(),
+          email.toLowerCase(),
+          nameByEmail.get(email.toLowerCase())?.toLowerCase(),
+        ].filter((k): k is string => !!k),
+      ),
+    ];
     let count = 0;
     for (const k of keys) {
       count += adCountByPoster.get(k)?.count ?? 0;

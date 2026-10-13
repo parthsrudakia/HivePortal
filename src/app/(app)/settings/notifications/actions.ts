@@ -16,6 +16,12 @@ function adminClient() {
   });
 }
 
+function profileName(meta: Record<string, unknown> | undefined): string | null {
+  const pick = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
+  return pick(meta?.display_name) ?? pick(meta?.full_name);
+}
+
 // Managing notification recipients is operator-only — Vineet and Parth (the
 // page already redirects everyone else; this closes the direct server-action
 // invocation path).
@@ -31,27 +37,54 @@ export async function addRecipient(
   if (!(await assertOperator())) return { error: "Forbidden." };
 
   const email = String(formData.get("email") ?? "").trim();
-  const label = String(formData.get("label") ?? "").trim() || null;
   if (!email) return { error: "Email is required." };
-  if (!label) return { error: "Name is required." };
 
   // Recipients must be existing portal users — not arbitrary addresses.
   const { data: usersData } = await adminClient().auth.admin.listUsers({
     page: 1,
-    perPage: 200,
+    perPage: 1000,
   });
-  const isSystemUser = (usersData?.users ?? []).some(
+  const user = (usersData?.users ?? []).find(
     (u) => u.email?.toLowerCase() === email.toLowerCase(),
   );
-  if (!isSystemUser) {
+  if (!user) {
     return { error: "Recipient must be an existing portal user." };
   }
 
+  // One row per person — a second row would double-send every email and
+  // split their ad tally on /inventory. (Also enforced by a unique index on
+  // lower(email).)
   const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("notification_recipients")
+    .select("id, label")
+    .ilike("email", email.replace(/[\\%_]/g, "\\$&"))
+    .limit(1)
+    .maybeSingle();
+  if (existing) {
+    return {
+      error: `${existing.label ?? email} is already a recipient.`,
+    };
+  }
+
+  // Name defaults to the user's portal profile name — the same name their
+  // ads are recorded under — so they show up as one person everywhere.
+  const label =
+    String(formData.get("label") ?? "").trim() ||
+    profileName(user.user_metadata) ||
+    null;
+
   const { error } = await supabase
     .from("notification_recipients")
-    .insert({ email, label, enabled: true });
-  if (error) return { error: error.message };
+    .insert({ email: user.email ?? email, label, enabled: true });
+  if (error) {
+    return {
+      error:
+        error.code === "23505"
+          ? `${email} is already a recipient.`
+          : error.message,
+    };
+  }
 
   revalidatePath("/settings/notifications");
   return undefined;

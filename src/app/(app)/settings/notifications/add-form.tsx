@@ -3,7 +3,11 @@
 import { useActionState, useEffect, useRef } from "react";
 import { addRecipient, type RecipientFormState } from "./actions";
 
-export function AddRecipientForm({ users }: { users: string[] }) {
+export function AddRecipientForm({
+  users,
+}: {
+  users: { email: string; name: string | null }[];
+}) {
   const [state, action, pending] = useActionState<RecipientFormState, FormData>(
     addRecipient,
     undefined,
@@ -50,23 +54,22 @@ export function AddRecipientForm({ users }: { users: string[] }) {
           <option value="" disabled>
             Select a user…
           </option>
-          {users.map((email) => (
-            <option key={email} value={email}>
-              {email}
+          {users.map((u) => (
+            <option key={u.email} value={u.email}>
+              {u.name ? `${u.name} — ${u.email}` : u.email}
             </option>
           ))}
         </select>
       </label>
       <label className="flex flex-1 min-w-[160px] flex-col gap-1">
         <span className="text-xs uppercase tracking-wide text-muted">
-          Name
+          Name <span className="normal-case">(optional)</span>
         </span>
         <input
           type="text"
           name="label"
-          required
           className="rounded-lg border border-stone bg-white px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-          placeholder="Sales VA"
+          placeholder="Defaults to their profile name"
         />
       </label>
       <button
