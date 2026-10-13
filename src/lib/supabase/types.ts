@@ -2174,6 +2174,7 @@ export type Database = {
           property_id: string | null
           provider: string | null
           service_address: string | null
+          source: string | null
           statement_date: string | null
           statement_path: string | null
           total_amount: number
@@ -2192,6 +2193,7 @@ export type Database = {
           property_id?: string | null
           provider?: string | null
           service_address?: string | null
+          source?: string | null
           statement_date?: string | null
           statement_path?: string | null
           total_amount?: number
@@ -2210,6 +2212,7 @@ export type Database = {
           property_id?: string | null
           provider?: string | null
           service_address?: string | null
+          source?: string | null
           statement_date?: string | null
           statement_path?: string | null
           total_amount?: number

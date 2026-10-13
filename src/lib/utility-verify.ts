@@ -10,11 +10,15 @@ import { z } from "zod";
 import { extractText } from "unpdf";
 import { todayISO } from "@/lib/date";
 import { ExtractionSchema, type UnitOption } from "@/lib/utility-extract";
+import { STATEMENT_SOURCES } from "@/lib/utility-ingest";
 
 /** What the agent sends: the extraction schema minus the unit match (the
  *  portal matches units itself), plus the printed total to check against. */
 export const AgentBillSchema = ExtractionSchema.omit({ property_id: true })
   .extend({
+    source: z
+      .enum(STATEMENT_SOURCES)
+      .describe("Where the statement was downloaded from: pseg, coned, or other."),
     printed_total: z
       .number()
       .describe(

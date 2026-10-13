@@ -24,7 +24,12 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { requireBearer } from "@/lib/api-auth";
 import { extractUtilityBill, type ExtractedBill } from "@/lib/utility-extract";
-import { findHashDuplicate, ingestBill, loadUnits } from "@/lib/utility-ingest";
+import {
+  findHashDuplicate,
+  ingestBill,
+  loadUnits,
+  SOURCE_PROVIDER,
+} from "@/lib/utility-ingest";
 import {
   AgentBillSchema,
   matchUnitByAddress,
@@ -115,10 +120,10 @@ export async function POST(req: Request) {
   const failures = verifyAgentBill(bill, text);
 
   let extracted: ExtractedBill;
-  let source: "agent" | "claude_fallback";
+  let readBy: "agent" | "claude_fallback";
   if (failures.length === 0) {
     extracted = {
-      provider: bill.provider,
+      provider: SOURCE_PROVIDER[bill.source] ?? bill.provider,
       utility_type: bill.utility_type,
       account_number: bill.account_number,
       service_address: bill.service_address,
@@ -129,7 +134,7 @@ export async function POST(req: Request) {
       property_id: matchUnitByAddress(bill.service_address, units),
       notes: withNote(bill.notes, AGENT_NOTE),
     };
-    source = "agent";
+    readBy = "agent";
   } else {
     console.info(
       `[utilities-api] agent data failed ${failures.length} check(s), falling back to Claude:`,
@@ -151,7 +156,10 @@ export async function POST(req: Request) {
       extracted.notes,
       `${AGENT_NOTE} Read by Claude because the agent's data failed: ${failures.join("; ")}.`,
     );
-    source = "claude_fallback";
+    // The agent's source is where it downloaded the file — trust it over
+    // the provider name Claude read off the page.
+    extracted.provider = SOURCE_PROVIDER[bill.source] ?? extracted.provider;
+    readBy = "claude_fallback";
   }
 
   const res = await ingestBill(sb, {
@@ -161,10 +169,11 @@ export async function POST(req: Request) {
     fileHash,
     extracted,
     units,
+    source: bill.source,
   });
   if (!res.ok)
     return fail(res.duplicate ? 409 : 422, res.error, {
-      source,
+      read_by: readBy,
       failed_checks: failures,
     });
 
@@ -177,7 +186,8 @@ export async function POST(req: Request) {
       bill_id: res.billId,
       total: res.total,
       unit: res.unit?.label ?? null,
-      source,
+      statement_source: bill.source,
+      read_by: readBy,
       warnings,
     },
     { status: 201 },

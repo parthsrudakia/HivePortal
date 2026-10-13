@@ -6,6 +6,9 @@
  * Units with nothing logged come back with an empty `coverage` list; bills
  * not yet assigned to a unit are listed under `unassigned`.
  *
+ * `?source=pseg|coned|other` narrows every list to statements from that
+ * source, for the agent's weekly per-provider runs.
+ *
  * Same `UTILITIES_API_KEY` as the intake endpoint. Read-only; returns no
  * tenant data. Docs: /developers (Utilities tab) — keep in sync.
  */
@@ -15,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { requireBearer } from "@/lib/api-auth";
 import { todayISO } from "@/lib/date";
+import { STATEMENT_SOURCES, type StatementSource } from "@/lib/utility-ingest";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +32,7 @@ function admin() {
 
 type BillLite = {
   property_id: string | null;
+  source: string | null;
   provider: string | null;
   utility_type: string;
   account_number: string | null;
@@ -36,6 +41,7 @@ type BillLite = {
 };
 
 type Coverage = {
+  source: string | null;
   provider: string | null;
   utility_type: string;
   account_number: string | null;
@@ -57,6 +63,7 @@ function summarize(bills: BillLite[]): Coverage[] {
     const g = groups.get(key);
     if (!g) {
       groups.set(key, {
+        source: b.source,
         provider: b.provider,
         utility_type: b.utility_type,
         account_number: b.account_number,
@@ -67,6 +74,7 @@ function summarize(bills: BillLite[]): Coverage[] {
     } else {
       g.last_period_end = maxDate(g.last_period_end, b.period_end);
       g.last_statement_date = maxDate(g.last_statement_date, b.statement_date);
+      g.source ??= b.source;
       g.bills_logged += 1;
     }
   }
@@ -78,6 +86,18 @@ function summarize(bills: BillLite[]): Coverage[] {
 export async function GET(req: Request) {
   const denied = requireBearer(req, "UTILITIES_API_KEY");
   if (denied) return denied;
+
+  const sourceParam = new URL(req.url).searchParams.get("source");
+  if (
+    sourceParam !== null &&
+    !(STATEMENT_SOURCES as readonly string[]).includes(sourceParam)
+  ) {
+    return NextResponse.json(
+      { error: `source must be one of: ${STATEMENT_SOURCES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  const source = sourceParam as StatementSource | null;
 
   const sb = admin();
 
@@ -91,11 +111,13 @@ export async function GET(req: Request) {
   const PAGE = 1000;
   const bills: BillLite[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb
+    let q = sb
       .from("utility_bills")
-      .select("property_id, provider, utility_type, account_number, period_end, statement_date")
-      .order("id")
-      .range(from, from + PAGE - 1);
+      .select(
+        "property_id, source, provider, utility_type, account_number, period_end, statement_date",
+      );
+    if (source) q = q.eq("source", source);
+    const { data, error } = await q.order("id").range(from, from + PAGE - 1);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     bills.push(...(data ?? []));
     if (!data || data.length < PAGE) break;
@@ -118,6 +140,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     as_of: todayISO(),
+    source,
     units,
     unassigned: summarize(unassigned),
   });

@@ -39,6 +39,7 @@ export function UtilitiesApiDocs() {
   -H "Authorization: Bearer $UTILITIES_API_KEY" \\
   -F statement=@statement.pdf \\
   -F 'data={
+    "source": "pseg",
     "provider": "Example Electric",
     "utility_type": "electric",
     "account_number": "1234 5678 90",
@@ -55,6 +56,12 @@ export function UtilitiesApiDocs() {
     "notes": null
   }'`}</CodeBlock>
         <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
+          <li>
+            <Code>source</Code> — where you downloaded the statement:{" "}
+            <Code>pseg</Code>, <Code>coned</Code>, or <Code>other</Code>.
+            Required; it&apos;s stored on the bill and, for PSE&amp;G and Con
+            Edison, sets the provider name shown in the log.
+          </li>
           <li>
             <Code>utility_type</Code> — <Code>electric</Code> for any bill
             with electricity (including combined electric + gas),{" "}
@@ -84,11 +91,12 @@ export function UtilitiesApiDocs() {
   "bill_id": "0b6f6a52-6a4e-4a8e-9d55-2f1f3e1c9a10",
   "total": 114.95,
   "unit": "Sample House Apt 3B",
-  "source": "agent",
+  "statement_source": "pseg",
+  "read_by": "agent",
   "warnings": []
 }`}</CodeBlock>
         <p>
-          <Code>source</Code> is <Code>agent</Code> when your fields passed
+          <Code>read_by</Code> is <Code>agent</Code> when your fields passed
           and were stored as sent, or <Code>claude_fallback</Code> when the
           portal had to read the statement — <Code>warnings</Code> then lists
           the checks your data failed. <Code>unit</Code> is{" "}
@@ -104,18 +112,22 @@ export function UtilitiesApiDocs() {
           whose billing period ends <em>after</em>{" "}
           <Code>last_period_end</Code>; a unit with an empty{" "}
           <Code>coverage</Code> list has nothing logged yet. Bills not yet
-          assigned to a unit are listed under <Code>unassigned</Code>.
+          assigned to a unit are listed under <Code>unassigned</Code>. Add{" "}
+          <Code>?source=pseg</Code> or <Code>?source=coned</Code> to see only
+          that provider&apos;s statements.
         </p>
-        <CodeBlock>{`GET /api/utilities/coverage
+        <CodeBlock>{`GET /api/utilities/coverage?source=pseg
 
 {
   "as_of": "2026-10-13",
+  "source": "pseg",
   "units": [
     {
       "unit": "Sample House Apt 3B",
       "service_address": "100 Sample St Apt 3B",
       "coverage": [
         {
+          "source": "pseg",
           "provider": "Example Electric",
           "utility_type": "electric",
           "account_number": "1234 5678 90",
@@ -139,7 +151,7 @@ export function UtilitiesApiDocs() {
         <ParamTable
           header={["Status", "Meaning", ""]}
           rows={[
-            ["400", "Malformed request (POST) or data that doesn't match the schema (see issues)", ""],
+            ["400", "Malformed request, data that doesn't match the schema (see issues), or an unknown ?source= value", ""],
             ["401", "Missing or wrong bearer token", ""],
             ["409", "Duplicate — same file, or a bill for the same account and period is already logged. Don't retry.", ""],
             ["422", "Statement couldn't be read or logged (see error / failed_checks)", ""],

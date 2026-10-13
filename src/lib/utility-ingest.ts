@@ -13,6 +13,16 @@ import { compressStatement } from "@/lib/compress-statement";
 
 type Sb = SupabaseClient<Database>;
 
+export const STATEMENT_SOURCES = ["pseg", "coned", "other"] as const;
+export type StatementSource = (typeof STATEMENT_SOURCES)[number];
+
+/** Canonical provider name per source, so the log reads the same whoever
+ *  typed the provider. */
+export const SOURCE_PROVIDER: Partial<Record<StatementSource, string>> = {
+  pseg: "PSE&G",
+  coned: "Con Edison",
+};
+
 // Normalized hint keys for the learned statement→unit mappings.
 export function hintKeys(bill: {
   account_number: string | null;
@@ -93,6 +103,9 @@ export async function ingestBill(
     fileHash: string;
     extracted: ExtractedBill;
     units: UnitOption[];
+    /** Where the statement came from ('pseg' | 'coned' | 'other'), when the
+     *  submitter knows it — the statements agent always does. */
+    source?: StatementSource | null;
   },
 ): Promise<IngestResult> {
   const { buf, mediaType, fileHash, units } = input;
@@ -251,6 +264,7 @@ export async function ingestBill(
       statement_path: path,
       file_sha256: fileHash,
       notes: extracted.notes,
+      source: input.source ?? null,
     })
     .select("id")
     .single();
