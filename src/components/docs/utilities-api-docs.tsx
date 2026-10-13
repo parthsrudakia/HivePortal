@@ -96,6 +96,41 @@ export function UtilitiesApiDocs() {
         </p>
       </Section>
 
+      <Section title="GET /api/utilities/coverage">
+        <p>
+          What&apos;s already logged, so you only download statements that
+          aren&apos;t. For every active unit, one entry per utility account
+          with the last billing period on file. Download only statements
+          whose billing period ends <em>after</em>{" "}
+          <Code>last_period_end</Code>; a unit with an empty{" "}
+          <Code>coverage</Code> list has nothing logged yet. Bills not yet
+          assigned to a unit are listed under <Code>unassigned</Code>.
+        </p>
+        <CodeBlock>{`GET /api/utilities/coverage
+
+{
+  "as_of": "2026-10-13",
+  "units": [
+    {
+      "unit": "Sample House Apt 3B",
+      "service_address": "100 Sample St Apt 3B",
+      "coverage": [
+        {
+          "provider": "Example Electric",
+          "utility_type": "electric",
+          "account_number": "1234 5678 90",
+          "last_period_end": "2026-09-15",
+          "last_statement_date": "2026-09-18",
+          "bills_logged": 7
+        }
+      ]
+    },
+    { "unit": "Sample House Apt 4A", "service_address": "100 Sample St Apt 4A", "coverage": [] }
+  ],
+  "unassigned": []
+}`}</CodeBlock>
+      </Section>
+
       <Section title="Errors">
         <p>
           Always JSON: <Code>{`{ "error": "<message>" }`}</Code>, sometimes
@@ -104,7 +139,7 @@ export function UtilitiesApiDocs() {
         <ParamTable
           header={["Status", "Meaning", ""]}
           rows={[
-            ["400", "Malformed request or data that doesn't match the schema (see issues)", ""],
+            ["400", "Malformed request (POST) or data that doesn't match the schema (see issues)", ""],
             ["401", "Missing or wrong bearer token", ""],
             ["409", "Duplicate — same file, or a bill for the same account and period is already logged. Don't retry.", ""],
             ["422", "Statement couldn't be read or logged (see error / failed_checks)", ""],
