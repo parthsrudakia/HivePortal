@@ -1,6 +1,7 @@
 import { cache, Suspense } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
-import { isMaster } from "@/lib/access";
+import { notFound } from "next/navigation";
+import { canManageCredentials } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { one } from "@/lib/relations";
 import { unitLabel as propertyLabel } from "@/lib/unit-label";
@@ -55,7 +56,7 @@ async function AddCredentialSlot() {
     getSessionUser(),
     getPropertyOptions(),
   ]);
-  if (!isMaster(user?.email)) return null;
+  if (!canManageCredentials(user?.email)) return null;
   return <AddCredential properties={propertyOptions} />;
 }
 
@@ -79,7 +80,7 @@ async function CredentialsSection() {
 
   // Only admins (masters) can reveal/copy passwords or manage credentials;
   // the plaintext is fetched on demand and never shipped with the page.
-  const admin = isMaster(user?.email);
+  const admin = canManageCredentials(user?.email);
 
   const all: CredentialExplorerRow[] = (credentials ?? []).map((c) => {
     const p = one(c.properties);
@@ -121,7 +122,10 @@ async function CredentialsSection() {
   );
 }
 
-export default function CredentialsPage() {
+// Operator-only page (Vineet + Parth); RLS returns no rows to anyone else.
+export default async function CredentialsPage() {
+  const user = await getSessionUser();
+  if (!canManageCredentials(user?.email)) notFound();
   return (
     <div className="mx-auto w-full max-w-7xl">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-stone/60 pb-4">

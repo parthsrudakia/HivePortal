@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
-import { isMaster } from "@/lib/access";
+import { canManageCredentials } from "@/lib/access";
 import type { Database } from "@/lib/supabase/types";
 
 type Category = Database["public"]["Enums"]["credential_category"];
@@ -18,15 +18,14 @@ const VALID_CATEGORIES: Category[] = [
 
 export type CredentialFormState = { error?: string } | undefined;
 
-const LEDGER_ADMIN_ERROR =
-  "Only Parth or Vineet can manage credentials.";
+const OPERATOR_ERROR = "Only Parth or Vineet can manage credentials.";
 
 // The credentials vault is admin-managed. Every mutation is gated here as
 // defense-in-depth on top of the RLS policy that restricts writes to the two
 // operators (see 20260716095000_credentials_write_rls_and_plaintext_block).
-async function requireMaster(): Promise<string | null> {
+async function requireOperator(): Promise<string | null> {
   const user = await getSessionUser();
-  return isMaster(user?.email) ? null : LEDGER_ADMIN_ERROR;
+  return canManageCredentials(user?.email) ? null : OPERATOR_ERROR;
 }
 
 type CredentialValues = {
@@ -75,7 +74,7 @@ export async function createCredential(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
-  const denied = await requireMaster();
+  const denied = await requireOperator();
   if (denied) return { error: denied };
 
   // Insert the row without the plaintext password (the DB trigger nulls it
@@ -110,7 +109,7 @@ export async function updateCredential(
   if ("error" in parsed) return parsed;
 
   const supabase = await createClient();
-  const denied = await requireMaster();
+  const denied = await requireOperator();
   if (denied) return { error: denied };
 
   // Password is written only through the encrypting setter, and only when a new
@@ -140,7 +139,7 @@ export async function deleteCredential(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  if (await requireMaster()) return;
+  if (await requireOperator()) return;
   await supabase.from("credentials").delete().eq("id", id);
   revalidatePath("/credentials");
 }
@@ -154,7 +153,7 @@ export async function revealCredential(
   credentialId: string,
 ): Promise<{ password: string | null } | { error: string }> {
   const supabase = await createClient();
-  const denied = await requireMaster();
+  const denied = await requireOperator();
   if (denied) return { error: denied };
 
   const { data, error } = await supabase.rpc("credential_password", {

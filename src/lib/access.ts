@@ -56,3 +56,15 @@ export function canViewProfitability(
 export function isOperator(email: string | null | undefined): boolean {
   return canEditLedger(email);
 }
+
+/**
+ * The credentials vault — seeing entries at all, revealing/copying passwords,
+ * adding/editing/deleting — is operator-only: Vineet and Parth. Mirrored in
+ * the credentials RLS policies and the credential_password /
+ * set_credential_password functions (20261014050914_credentials_operator_only_read).
+ */
+export function canManageCredentials(
+  email: string | null | undefined,
+): boolean {
+  return isOperator(email);
+}

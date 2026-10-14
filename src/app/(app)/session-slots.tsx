@@ -3,7 +3,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser, type SessionUser } from "@/lib/session";
-import { canViewProfitability, isMaster, isOperator } from "@/lib/access";
+import {
+  canManageCredentials,
+  canViewProfitability,
+  isMaster,
+  isOperator,
+} from "@/lib/access";
 import { NamePrompt } from "./name-prompt";
 import { NavIcon } from "./nav-icons";
 import { AssistantWidget, AssistantLauncher } from "./assistant-widget";
@@ -68,6 +73,24 @@ export async function ProjectsBadge({ className }: { className: string }) {
  * Styling comes from the caller so the same slot fits the desktop sidebar
  * and the mobile drawer.
  */
+/** Operator-only "Credentials" nav entry — renders nothing for everyone else. */
+export async function CredentialsNavLink({
+  className,
+  iconClassName,
+}: {
+  className: string;
+  iconClassName: string;
+}) {
+  const user = await getSessionUser();
+  if (!canManageCredentials(user?.email)) return null;
+  return (
+    <Link href="/credentials" data-label="Credentials" className={className}>
+      <NavIcon name="credentials" className={iconClassName} />
+      <span className="sidebar-label min-w-0 truncate">Credentials</span>
+    </Link>
+  );
+}
+
 export async function ProfitabilityNavLink({
   className,
   iconClassName,

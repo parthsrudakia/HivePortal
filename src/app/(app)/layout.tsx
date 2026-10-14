@@ -15,6 +15,7 @@ import {
   LoginRemindersSlot,
   MobileUserInfo,
   ProfitabilityNavLink,
+  CredentialsNavLink,
   ProjectsBadge,
   UserIdentity,
 } from "./session-slots";
@@ -34,7 +35,6 @@ const NAV: NavItem[] = [
   { href: "/reconciliation", label: "Reconciliation", icon: "reconciliation" },
   { href: "/cleaning", label: "Cleaning", icon: "cleaning" },
   { href: "/utilities", label: "Utilities", icon: "utilities" },
-  { href: "/credentials", label: "Credentials", icon: "credentials" },
   { href: "/agreements", label: "Agreements", icon: "agreements" },
 ];
 
@@ -56,6 +56,10 @@ export default function AppLayout({
         items={NAV}
         extraNav={
           <Suspense>
+            <CredentialsNavLink
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              iconClassName="shrink-0 text-accent"
+            />
             <ProfitabilityNavLink
               className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
               iconClassName="shrink-0 text-accent"
@@ -143,6 +147,10 @@ export default function AppLayout({
             </Link>
           ))}
           <Suspense>
+            <CredentialsNavLink
+              className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              iconClassName="shrink-0 text-accent"
+            />
             <ProfitabilityNavLink
               className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
               iconClassName="shrink-0 text-accent"

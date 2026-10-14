@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isMaster } from "@/lib/access";
+import { canManageCredentials } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
 import { one } from "@/lib/relations";
 import { formatDate } from "@/lib/date";
@@ -115,9 +115,10 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
   if (!property) notFound();
 
-  // Only admins (masters) can reveal/copy passwords or manage credentials;
-  // the plaintext is fetched on demand and never shipped with the page.
-  const admin = isMaster(user?.email);
+  // Credentials are operator-only (Vineet + Parth): the section is hidden for
+  // everyone else (RLS returns them no rows anyway). Plaintext passwords are
+  // fetched on demand and never shipped with the page.
+  const admin = canManageCredentials(user?.email);
 
   type CleanerRel = { name: string; enabled: boolean };
   const cleanerNames = (
@@ -506,6 +507,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
         )}
       </section>
 
+      {admin && (
       <section className="mt-8">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <h2 className="text-xl tracking-tight text-ink">
@@ -558,6 +560,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           </div>
         )}
       </section>
+      )}
 
     </div>
   );
