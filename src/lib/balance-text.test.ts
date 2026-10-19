@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   balanceReminderEmail,
   balanceReminderGmailEmail,
   balanceReminderText,
   greeting,
+  warnsOfLateFee,
   monthEndBalanceEmail,
   monthEndBalanceText,
 } from "@/lib/email";
@@ -58,5 +59,32 @@ describe("balance text greeting", () => {
   it("falls back to Hi, when there is no name", () => {
     expect(balanceReminderText(850, "October 2026")).toMatch(/^Hi,\n/);
     expect(balanceReminderEmail(850, "October 2026").html).toContain(">Hi,</p>");
+  });
+
+  describe("late-fee warning", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("warns through the 5th only", () => {
+      expect(warnsOfLateFee("2026-10-05")).toBe(true);
+      expect(warnsOfLateFee("2026-10-06")).toBe(false);
+    });
+
+    it("drops the warning from every balance reminder after the 5th", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-20T15:00:00Z"));
+      const all = [
+        balanceReminderText(850, "October 2026", false, "A"),
+        balanceReminderEmail(850, "October 2026", undefined, false, "A").text,
+        balanceReminderEmail(850, "October 2026", undefined, false, "A").html,
+        balanceReminderGmailEmail(850, "October 2026", undefined, false, "A").text,
+      ];
+      for (const t of all) expect(t).not.toMatch(/avoid a/);
+    });
+
+    it("keeps the warning on or before the 5th", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-03T15:00:00Z"));
+      expect(balanceReminderText(850, "October 2026", false, "A")).toContain("to avoid a $50 late fee");
+    });
   });
 });

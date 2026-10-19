@@ -2,7 +2,7 @@ import { logEmail } from "./email-log";
 import { sendGmailMessage } from "./google-mail";
 import { outlookConfigured, sendOutlookMessage } from "./graph-mail";
 import { sendViaResend, type SendResult } from "./resend-quota";
-import { formatDate } from "./date";
+import { formatDate, todayISO } from "./date";
 import { addTrackingPixel, trackedPlainText } from "./email-tracking";
 import type { CleanerCleaning } from "./cleaner-schedule";
 import type { BalanceDetail } from "./balance-detail";
@@ -89,7 +89,12 @@ Thanks`;
 // Balance-reminder body — identical wording to the Gmail send, reused by the
 // SMS channel so texts match emails. Once this month's late fee is already on
 // the account, "avoid a late fee" would be a false promise — the wording
-// flips to say the fee is included in the balance.
+// flips to say the fee is included in the balance. After the 5th (ET) the
+// "avoid a late fee" warning is dropped too — the reminder just asks for payment.
+export function warnsOfLateFee(today: string = todayISO()): boolean {
+  return Number(today.slice(8, 10)) <= 5;
+}
+
 /** "Hi Aviral," from a full name; plain "Hi," when there's no name. */
 export function greeting(fullName?: string | null): string {
   const first = fullName?.trim().split(/\s+/)[0];
@@ -105,6 +110,7 @@ export function balanceReminderText(
 ): string {
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const hi = greeting(tenantName);
+  const avoid = warnsOfLateFee() ? " to avoid a $50 late fee" : "";
   return lateFeeCharged
     ? `${hi}
 
@@ -114,7 +120,7 @@ Thanks
 Vinny`
     : `${hi}
 
-My records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.
+My records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible${avoid}. If you've already paid, let me know.
 
 Thanks
 Vinny`;
@@ -556,7 +562,7 @@ export function balanceReminderGmailEmail(
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const closing = lateFeeCharged
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let me know."
-    : "Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let me know.";
+    : `Please submit payment as soon as possible${warnsOfLateFee() ? " to avoid a $50 late fee" : ""}. If you've already paid, let me know.`;
   const text = detail
     ? `${greeting(tenantName)}
 
@@ -839,10 +845,11 @@ export function balanceReminderEmail(
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const subject = `Rent balance due — ${monthLabel}`;
   // Once this month's late fee is on the account, "avoid a late fee" is a
-  // false promise — acknowledge the fee instead.
+  // false promise — acknowledge the fee instead. After the 5th, no warning.
+  const warn = warnsOfLateFee();
   const closingText = lateFeeCharged
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let us know."
-    : "Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.";
+    : `Please submit payment as soon as possible${warn ? " to avoid a $50 late fee" : ""}. If you've already paid, let us know.`;
   const text = detail
     ? `${hi}
 
@@ -861,7 +868,7 @@ Our records show an outstanding rent balance of ${amount} on your account, which
 Thanks`
       : `${hi}
 
-Our records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible to avoid a $50 late fee. If you've already paid, let us know.
+Our records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible${warn ? " to avoid a $50 late fee" : ""}. If you've already paid, let us know.
 
 Thanks`;
   const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
@@ -878,7 +885,7 @@ Thanks`;
       <p style="margin:12px 0 0; font-size:15px; color:#1a1a18; line-height:1.5;">${
         lateFeeCharged
           ? "A <strong>$50 late fee</strong> has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you&rsquo;ve already paid, let us know."
-          : "Please submit payment as soon as possible to avoid a <strong>$50 late fee</strong>. If you&rsquo;ve already paid, let us know."
+          : `Please submit payment as soon as possible${warn ? " to avoid a <strong>$50 late fee</strong>" : ""}. If you&rsquo;ve already paid, let us know.`
       }</p>
       <p style="margin:16px 0 0; font-size:15px; color:#1a1a18;">Thanks</p>
     </div>
