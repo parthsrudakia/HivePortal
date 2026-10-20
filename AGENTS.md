@@ -68,7 +68,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 - Dates: server is ET (see `instrumentation.ts`); for date-only "today" math use `todayISO()` from `@/lib/date`, not `toISOString()`.
 - `one()` from `@/lib/relations` normalizes PostgREST joins that come back as object-or-array.
 - The generated types cover every table — never use `as any` on a Supabase query. After adding a migration, run `npm run db:types` so new tables/columns are typed.
-- Access control is a stub: `isMaster()` in `src/lib/access.ts` gates `/reports` to the master operator. No general roles system yet.
+- Access control: `src/lib/access.ts` hard-codes the master (`isMaster()`, Vineet) and operators (`isOperator()`, Vineet + Parth). Per-user **section access** (`src/lib/section-access.ts`, table `user_section_access`, a deny-list) is set by Vineet at `/settings/access`: each section folder's `layout.tsx` calls `requireSection()`, the nav hides blocked sections, and **every exported server action in a section's `actions.ts` must start with `await assertSection(...)`** (list every section whose UI calls it). Operators are never restricted.
 
 ## Key domain modules (`src/lib/`)
 

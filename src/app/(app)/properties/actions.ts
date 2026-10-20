@@ -12,6 +12,7 @@ import {
   normalizeUnitAmenities,
   normalizeBuildingAmenities,
 } from "@/lib/amenities";
+import { assertSection } from "@/lib/section-access";
 
 export type PropertyFormState = { error?: string } | undefined;
 
@@ -204,6 +205,7 @@ export async function createProperty(
   _prev: PropertyFormState,
   formData: FormData,
 ): Promise<PropertyFormState> {
+  await assertSection("properties");
   const parsed = parseForm(formData);
   if ("error" in parsed) return parsed;
 
@@ -243,6 +245,7 @@ export async function updateProperty(
   _prev: PropertyFormState,
   formData: FormData,
 ): Promise<PropertyFormState> {
+  await assertSection("properties");
   const parsed = parseForm(formData);
   if ("error" in parsed) return parsed;
 
@@ -323,6 +326,7 @@ const BOOKS_ERROR =
 export async function deleteProperty(
   formData: FormData,
 ): Promise<DeletePropertyState> {
+  await assertSection("properties");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
@@ -460,6 +464,7 @@ export async function deleteProperty(
 // schedule entirely. Resume clears only the property-stamped pauses, so a
 // tenant paused individually stays paused.
 export async function pauseProperty(formData: FormData) {
+  await assertSection("properties");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const supabase = await createClient();
@@ -497,6 +502,7 @@ export async function pauseProperty(formData: FormData) {
 }
 
 export async function resumeProperty(formData: FormData) {
+  await assertSection("properties");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const supabase = await createClient();
@@ -534,6 +540,7 @@ export async function resumeProperty(formData: FormData) {
 // Bring a retired property back: it reappears on /properties, the Rent
 // Tracker (as a vacant group if empty), inventory, and cleaning.
 export async function restoreProperty(formData: FormData) {
+  await assertSection("properties");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const supabase = await createClient();

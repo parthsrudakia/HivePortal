@@ -14,6 +14,7 @@ import {
   type BoardStatus,
   type BoardTask,
 } from "@/lib/board";
+import { assertSection } from "@/lib/section-access";
 
 export type BoardActionState = { error?: string; success?: string } | undefined;
 
@@ -46,6 +47,7 @@ export async function createTask(
   _prev: BoardActionState,
   formData: FormData,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     const title = String(formData.get("title") ?? "").trim();
@@ -109,6 +111,7 @@ export async function updateStatus(
   taskId: string,
   status: BoardStatus,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     const task = await getTask(taskId);
@@ -160,6 +163,7 @@ export async function updateStatus(
 }
 
 export async function approveTask(taskId: string): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -195,6 +199,7 @@ export async function rejectTask(
   taskId: string,
   reason: string,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -241,6 +246,7 @@ export async function toggleAttention(
   taskId: string,
   value: boolean,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     const task = await getTask(taskId);
@@ -280,6 +286,7 @@ export async function updateDeadline(
   taskId: string,
   deadline: string | null,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -316,6 +323,7 @@ export async function addComment(
   taskId: string,
   text: string,
 ): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     const trimmed = text.trim();
@@ -351,6 +359,7 @@ export async function addComment(
 // ── Nudge / delete / bulk ────────────────────────────────────────────────────
 
 export async function sendNudge(taskId: string): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -396,6 +405,7 @@ export async function sendNudge(taskId: string): Promise<BoardActionState> {
 }
 
 export async function deleteTask(taskId: string): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -409,6 +419,7 @@ export async function deleteTask(taskId: string): Promise<BoardActionState> {
 }
 
 export async function clearCompleted(): Promise<BoardActionState> {
+  await assertSection("projects");
   try {
     const me = await caller();
     if (!me.admin) return { error: "Admin only." };
@@ -422,6 +433,7 @@ export async function clearCompleted(): Promise<BoardActionState> {
 }
 
 export async function markSeen(taskId: string): Promise<void> {
+  await assertSection("projects");
   try {
     const me = await caller();
     await tasks()

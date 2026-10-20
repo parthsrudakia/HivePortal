@@ -11,6 +11,7 @@ import {
   normalizeBuildingAmenities,
 } from "@/lib/amenities";
 import { todayISO } from "@/lib/date";
+import { assertSection } from "@/lib/section-access";
 
 // Accept only http(s) web links for ad / photo URLs: a scheme, a host with a
 // dot (or localhost), and no spaces. Guards against pasted plain text or
@@ -34,6 +35,7 @@ const ADS_LOCKED_REASON =
   "This listing is marked Delete, so Facebook ads stay off. Change the listing action first.";
 
 export async function setListingAction(roomId: string, action: Action) {
+  await assertSection("inventory");
   if (!roomId || !VALID.includes(action)) return;
 
   const supabase = await createClient();
@@ -72,6 +74,7 @@ export async function setRoomAd(
   _prev: AdFormState,
   formData: FormData,
 ): Promise<AdFormState> {
+  await assertSection("inventory");
   const url = String(formData.get("ad_url") ?? "").trim();
   if (!url) return { error: "Enter an ad URL." };
   return addRoomAd(roomId, url);
@@ -82,6 +85,7 @@ export async function addRoomAd(
   roomId: string,
   url: string,
 ): Promise<{ error?: string } | undefined> {
+  await assertSection("inventory");
   const ad_url = url.trim();
   if (!ad_url) return { error: "Enter an ad URL." };
   if (!isValidUrl(ad_url))
@@ -107,6 +111,7 @@ export async function deleteRoomAd(
   adId: string,
   roomId: string,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   const supabase = await createClient();
   const { error } = await supabase
     .from("room_ads")
@@ -128,6 +133,7 @@ export async function setRoomRent(
   _prev: RentFormState,
   formData: FormData,
 ): Promise<RentFormState> {
+  await assertSection("inventory");
   const baseStr = String(formData.get("base_rent") ?? "").trim();
   const bundleStr = String(formData.get("bundle_fee") ?? "").trim();
 
@@ -160,6 +166,7 @@ export async function setRoomPhotosUrl(
   roomId: string,
   url: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   const value = url && url.trim() ? url.trim() : null;
   if (value && !isValidUrl(value))
     return { error: "That doesn't look like a URL (must start with http:// or https://)." };
@@ -194,6 +201,7 @@ export async function setRoomAmenities(
   propertyId: string | null,
   a: AmenityValues,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   const supabase = await createClient();
 
   const { error: roomErr } = await supabase
@@ -228,6 +236,7 @@ export async function setRoomFacebookAds(
   roomId: string,
   on: boolean,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   const supabase = await createClient();
   if (on) {
     // Ads stay off while the listing is marked Delete (red row). Refuse with
@@ -257,6 +266,7 @@ export async function setRoomBaseRent(
   roomId: string,
   value: number,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   if (!Number.isFinite(value) || value < 0) {
     return { error: "Base rent must be a non-negative number." };
   }
@@ -277,6 +287,7 @@ export async function setRoomServicesFee(
   roomId: string,
   value: number,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   if (!Number.isFinite(value) || value < 0) {
     return { error: "Services fee must be a non-negative number." };
   }
@@ -307,6 +318,7 @@ export async function makeRoomAvailable(
   availableFrom: string | null,
   opts: { listAnyway?: boolean } = {},
 ): Promise<MakeAvailableResult> {
+  await assertSection("inventory");
   const value =
     availableFrom && availableFrom.trim() ? availableFrom.trim() : null;
   const supabase = await createClient();
@@ -357,6 +369,7 @@ export async function makeRoomAvailable(
 export async function deleteListing(
   roomId: string,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   if (!roomId) return { error: "Missing room." };
   const supabase = await createClient();
   const { error } = await supabase
@@ -374,6 +387,7 @@ export async function deleteListing(
 export async function restoreListing(
   roomId: string,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory", "tenants");
   if (!roomId) return { error: "Missing room." };
   const supabase = await createClient();
   const { error } = await supabase
@@ -421,6 +435,7 @@ export async function cancelMoveOut(
   tenancyId: string,
   roomId: string,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   if (!tenancyId || !roomId) return { error: "Missing tenancy or room." };
   const supabase = await createClient();
 
@@ -452,6 +467,7 @@ export async function setRoomAvailableFrom(
   roomId: string,
   date: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("inventory");
   const supabase = await createClient();
   const value = date === null || date.trim() === "" ? null : date;
   // Route through updateRoomsWithNotification so changing the move-out date

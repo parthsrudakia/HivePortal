@@ -38,6 +38,7 @@ import {
 import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
 import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
+import { assertSection } from "@/lib/section-access";
 
 // Accrual-affecting mutations (rent amounts, tenancy dates, deleting
 // payments/tenants) change what a tenant owes just as directly as a charge
@@ -107,6 +108,7 @@ export async function createTenant(
   _prev: TenantFormState,
   formData: FormData,
 ): Promise<TenantFormState> {
+  await assertSection("tenants");
   const full_name = String(formData.get("full_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim() || null;
   const phone = String(formData.get("phone") ?? "").trim() || null;
@@ -408,6 +410,7 @@ export async function createTenant(
 export async function getLeaseDownloadUrl(
   tenancyId: string,
 ): Promise<{ url?: string; error?: string }> {
+  await assertSection("tenants");
   if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
   const supabase = await createClient();
   const { data: tenancy, error } = await supabase
@@ -432,6 +435,7 @@ export async function updateTenant(
   _prev: TenantFormState,
   formData: FormData,
 ): Promise<TenantFormState> {
+  await assertSection("tenants");
   const full_name = String(formData.get("full_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim() || null;
   const phone = String(formData.get("phone") ?? "").trim() || null;
@@ -493,6 +497,7 @@ export async function setTenancyStartDate(
   tenantId: string,
   date: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("tenants");
   const value = date && date.trim() ? date.trim() : null;
   if (!value) return { error: "Lease start date is required." };
   const supabase = await createClient();
@@ -539,6 +544,7 @@ export async function setTenancyRentAmount(
   value: string | null,
   newLease?: { start: string; end: string },
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("tenants");
   const raw = value?.trim() ?? "";
   let amount: number | null = null;
   if (raw !== "") {
@@ -623,6 +629,7 @@ export async function setTenancyLeaseEndDate(
   tenantId: string,
   date: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("tenants");
   const value = date && date.trim() ? date.trim() : null;
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
@@ -650,6 +657,7 @@ export async function setTenancyLeaseEndDate(
 // by the property-delete flow, which winds down active tenancies first).
 
 export async function endTenancy(formData: FormData) {
+  await assertSection("tenants", "inventory");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   const tenant_id = String(formData.get("tenant_id") ?? "");
   const move_out_date = String(formData.get("move_out_date") ?? "").trim();
@@ -680,6 +688,7 @@ export async function setTenancyMoveOutDate(
   tenantId: string,
   date: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("tenants");
   const value = date && date.trim() ? date.trim() : null;
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
@@ -728,6 +737,7 @@ export async function cancelUpcomingTenancy(
   roomId: string,
   availableFrom: string | null,
 ): Promise<{ ok: true } | { error: string }> {
+  await assertSection("tenants", "inventory");
   const supabase = await createClient();
   const denied = await requireLedgerAdmin();
   if (denied) return { error: denied };
@@ -786,6 +796,7 @@ export async function cancelUpcomingTenancy(
 // ----- Undo an end-tenancy (or revive a finalized one) -----
 
 export async function reactivateTenancy(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!tenancy_id) return;
@@ -845,6 +856,7 @@ export async function startNewTenancy(
   _prev: TenantFormState,
   formData: FormData,
 ): Promise<TenantFormState> {
+  await assertSection("tenants");
   const tenant_id = String(formData.get("tenant_id") ?? "").trim();
   const room_id = String(formData.get("room_id") ?? "").trim();
   const start_date = String(formData.get("start_date") ?? "").trim();
@@ -958,6 +970,7 @@ export async function transferTenancy(
   _prev: TransferFormState,
   formData: FormData,
 ): Promise<TransferFormState> {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "").trim();
   const tenant_id = String(formData.get("tenant_id") ?? "").trim();
   const dest_room_id = String(formData.get("dest_room_id") ?? "").trim();
@@ -1174,6 +1187,7 @@ export async function deleteTenant(
   _prev: DeleteTenantState,
   formData: FormData,
 ): Promise<DeleteTenantState> {
+  await assertSection("tenants");
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing tenant id." };
 
@@ -1261,6 +1275,7 @@ export async function deleteTenant(
 // itself is untouched and the dismissal is reversible.
 
 export async function dismissEndedBalance(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   if (!tenancy_id) return;
 
@@ -1281,6 +1296,7 @@ export async function dismissEndedBalance(formData: FormData) {
 }
 
 export async function undismissEndedBalance(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   if (!tenancy_id) return;
 
@@ -1306,6 +1322,7 @@ export async function undismissEndedBalance(formData: FormData) {
 // Reversible by deleting the Settlement line from the tenant's ledger.
 
 export async function settleEndedBalance(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   if (!tenancy_id) return;
 
@@ -1351,6 +1368,7 @@ export async function recordPayment(
   _prev: PaymentFormState,
   formData: FormData,
 ): Promise<PaymentFormState> {
+  await assertSection("tenants", "reconciliation");
   const paid_on = String(formData.get("paid_on") ?? "").trim();
   const amount_str = String(formData.get("amount") ?? "").trim();
   const payment_type = String(
@@ -1405,6 +1423,7 @@ export async function recordPayment(
 // ----- Delete a payment -----
 
 export async function deletePayment(formData: FormData) {
+  await assertSection("tenants");
   const payment_id = String(formData.get("payment_id") ?? "");
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!payment_id) return;
@@ -1455,6 +1474,7 @@ export async function addCharge(
   _prev: ChargeFormState,
   formData: FormData,
 ): Promise<ChargeFormState> {
+  await assertSection("tenants", "reconciliation");
   const kind = String(formData.get("kind") ?? "") as ChargeKind;
   const amount_str = String(formData.get("amount") ?? "").trim();
   const charged_on = String(formData.get("charged_on") ?? "").trim() || todayISO();
@@ -1515,6 +1535,7 @@ export async function addCharge(
 // the admin acknowledges them here.
 
 export async function acknowledgeOverageAlerts(ids: string[]) {
+  await assertSection("tenants");
   if (ids.length === 0) return;
   const supabase = await createClient();
   const user = await getSessionUser();
@@ -1529,6 +1550,7 @@ export async function acknowledgeOverageAlerts(ids: string[]) {
 }
 
 export async function deleteCharge(formData: FormData) {
+  await assertSection("tenants");
   // charge_ids carries one or more ids (a consolidated "Other" line deletes
   // every underlying charge at once).
   const ids = String(formData.get("charge_ids") ?? "")
@@ -1562,6 +1584,7 @@ export async function sendBalanceReminders(
   _prev: ReminderState,
   formData: FormData,
 ): Promise<ReminderState> {
+  await assertSection("tenants");
   // Which channel(s) to send on: "email", "sms", or "both" (default).
   const channel = String(formData.get("channel") ?? "both");
   const doEmail = channel === "email" || channel === "both";
@@ -1765,6 +1788,7 @@ export async function sendBalanceReminders(
 // ----------------------------------------------------------------------------
 
 export async function pauseTenancy(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!tenancy_id) return;
@@ -1790,6 +1814,7 @@ export async function pauseTenancy(formData: FormData) {
 }
 
 export async function resumeTenancy(formData: FormData) {
+  await assertSection("tenants");
   const tenancy_id = String(formData.get("tenancy_id") ?? "");
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!tenancy_id) return;

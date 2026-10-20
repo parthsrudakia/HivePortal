@@ -9,6 +9,7 @@ import {
   sendAgreementRequest,
   resendAgreementRequest,
 } from "@/lib/agreement-send";
+import { assertSection } from "@/lib/section-access";
 
 // Matches the pad's client-side cap; a real signature PNG is a few KB.
 const MAX_DATA_URL_CHARS = 400_000;
@@ -27,6 +28,7 @@ async function requireUser() {
 export async function saveOperatorSignature(
   pngDataUrl: string,
 ): Promise<ActionResult> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
   if (
@@ -92,6 +94,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export async function sendAgreementToTenant(
   payload: SendToTenantPayload,
 ): Promise<ActionResult> {
+  await assertSection("agreements");
   const { user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
@@ -159,6 +162,7 @@ export async function sendAgreementToTenant(
 
 /** Remove an entry from the tally (deal fell through, signed on paper, …). */
 export async function dismissRequest(requestId: string): Promise<ActionResult> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
   const { error } = await supabase
@@ -172,6 +176,7 @@ export async function dismissRequest(requestId: string): Promise<ActionResult> {
 
 /** Bring a dismissed entry back — to signed if it was signed, else pending. */
 export async function undismissRequest(requestId: string): Promise<ActionResult> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
   const { data: row } = await supabase
@@ -202,6 +207,7 @@ export async function undismissRequest(requestId: string): Promise<ActionResult>
 export async function clearRequests(
   status: "signed" | "dismissed",
 ): Promise<ActionResult & { cleared?: number }> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
@@ -242,6 +248,7 @@ export async function clearRequests(
 
 /** Rotate the token (+48h) and re-send the email with the stored PDF. */
 export async function resendRequest(requestId: string): Promise<ActionResult> {
+  await assertSection("agreements");
   const { user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
   const result = await resendAgreementRequest(requestId);
@@ -254,6 +261,7 @@ export async function resendRequest(requestId: string): Promise<ActionResult> {
 export async function getRequestPdfUrl(
   requestId: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
   const { data: row } = await supabase
@@ -281,6 +289,7 @@ export async function assignToTenancy(
   tenancyId: string,
   opts: { replace?: boolean } = {},
 ): Promise<ActionResult & { needsReplace?: boolean }> {
+  await assertSection("agreements");
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
 

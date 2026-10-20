@@ -2090,6 +2090,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_section_access: {
+        Row: {
+          blocked_sections: string[]
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          blocked_sections?: string[]
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          blocked_sections?: string[]
+          updated_at?: string
+          updated_by?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       utility_bill_charges: {
         Row: {
           amount: number

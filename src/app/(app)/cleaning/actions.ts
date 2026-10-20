@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { enqueueCleanerScheduleChange } from "@/lib/cleaner-reminders";
+import { assertSection } from "@/lib/section-access";
 
 export type CleaningFormState = { error?: string } | undefined;
 export type SaveResult = { error?: string; ok?: boolean } | undefined;
@@ -10,6 +11,7 @@ export type SaveResult = { error?: string; ok?: boolean } | undefined;
 // Inline edit of an upcoming cleaning date. With a record_id it updates (or
 // deletes when the date is cleared); without one it inserts a new upcoming row.
 export async function saveUpcomingDate(formData: FormData): Promise<SaveResult> {
+  await assertSection("cleaning");
   const property_id = String(formData.get("property_id") ?? "").trim();
   const record_id = String(formData.get("record_id") ?? "").trim();
   const cleaning_date = String(formData.get("cleaning_date") ?? "").trim();
@@ -90,6 +92,7 @@ export async function addCleaning(
   _prev: CleaningFormState,
   formData: FormData,
 ): Promise<CleaningFormState> {
+  await assertSection("cleaning", "properties");
   const parsed = parse(formData);
   if ("error" in parsed) return parsed;
 
@@ -114,6 +117,7 @@ export async function updateCleaning(
   _prev: CleaningFormState,
   formData: FormData,
 ): Promise<CleaningFormState> {
+  await assertSection("cleaning", "properties");
   const parsed = parse(formData);
   if ("error" in parsed) return parsed;
 
@@ -142,6 +146,7 @@ export async function updateCleaning(
 }
 
 export async function deleteCleaning(formData: FormData) {
+  await assertSection("cleaning", "properties");
   const id = String(formData.get("id") ?? "");
   const property_id = String(formData.get("property_id") ?? "");
   if (!id) return;

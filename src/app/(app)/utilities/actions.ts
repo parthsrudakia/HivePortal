@@ -29,6 +29,7 @@ import {
   OVERAGE_THRESHOLD,
   type BillRow,
 } from "@/lib/utility-bills";
+import { assertSection } from "@/lib/section-access";
 
 export type UploadState =
   | { error?: string; success?: string; warning?: string }
@@ -40,6 +41,7 @@ export async function uploadStatement(
   _prev: UploadState,
   formData: FormData,
 ): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -151,6 +153,7 @@ export async function commitManualBills(
   _prev: UploadState,
   formData: FormData,
 ): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -456,6 +459,7 @@ export async function attachBillFiles(
   billId: string,
   formData: FormData,
 ): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -591,6 +595,7 @@ export async function assignBillProperty(
   billId: string,
   propertyId: string | null,
 ): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -638,6 +643,7 @@ export async function assignBillProperty(
 }
 
 export async function deleteBill(billId: string): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -697,6 +703,7 @@ export async function deleteBill(billId: string): Promise<UploadState> {
 export async function getBillFileUrl(
   fileId: string,
 ): Promise<{ url?: string; error?: string }> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -722,6 +729,7 @@ export async function dismissOverage(
   billIds: string[],
   dismissed: boolean,
 ): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -1197,6 +1205,7 @@ export type OveragePreview = {
  * be charged what, over which days. Posts nothing.
  */
 export async function previewOverage(billId: string): Promise<OveragePreview> {
+  await assertSection("utilities");
   const empty: OveragePreview = {
     billId,
     unit: "—",
@@ -1255,6 +1264,7 @@ export async function chargeOverage(
   /** Operator-edited shares from the preview popup; omit to use the split. */
   shares?: { tenancyId: string; amount: number }[],
 ): Promise<OverageChargeResult> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return deniedResult(billId, "Not signed in.");
@@ -1278,6 +1288,7 @@ export async function chargeOverage(
 export async function chargeAllOverages(
   billIds: string[],
 ): Promise<OverageChargeResult[]> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return billIds.map((id) => deniedResult(id, "Not signed in."));
@@ -1302,6 +1313,7 @@ export async function chargeAllOverages(
  * reopen the bill so it can be flagged/charged again.
  */
 export async function unpostOverage(billId: string): Promise<UploadState> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
@@ -1344,6 +1356,7 @@ export async function unpostOverage(billId: string): Promise<UploadState> {
 export async function getStatementUrl(
   billId: string,
 ): Promise<{ url?: string; error?: string }> {
+  await assertSection("utilities");
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };

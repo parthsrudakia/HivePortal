@@ -36,6 +36,12 @@ const ADMIN_LINKS: AdminLink[] = [
     masterOnly: true,
   },
   {
+    href: "/settings/access",
+    title: "Access control",
+    description: "Choose which portal sections each teammate can open.",
+    masterOnly: true,
+  },
+  {
     href: "/settings/notifications",
     title: "Notification settings",
     description:

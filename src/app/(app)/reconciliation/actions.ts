@@ -24,6 +24,7 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { isValid, zUuid } from "@/lib/validation";
+import { assertSection } from "@/lib/section-access";
 
 // Store a statement's negative Zelle rows (chargebacks) as reversal alerts,
 // each matched to its best-guess original payment: the most recent posted
@@ -98,6 +99,7 @@ export async function addStatement(
   _prev: AddStatementState,
   formData: FormData,
 ): Promise<AddStatementState> {
+  await assertSection("reconciliation");
   const bankFile = formData.get("bank_statement");
   const otherFile = formData.get("other_payments");
   if (!(bankFile instanceof File) || bankFile.size === 0) {
@@ -314,6 +316,7 @@ export async function assignDeposit(
   _prev: AssignState,
   formData: FormData,
 ): Promise<AssignState> {
+  await assertSection("reconciliation");
   const depositId = String(formData.get("deposit_id") ?? "");
   const tenancyId = String(formData.get("tenancy_id") ?? "");
   if (!depositId || !tenancyId) {
@@ -455,6 +458,7 @@ export async function dismissDeposit(
   _prev: DismissState,
   formData: FormData,
 ): Promise<DismissState> {
+  await assertSection("reconciliation");
   const depositId = String(formData.get("deposit_id") ?? "");
   if (!depositId) return { error: "Missing deposit." };
   if (!isValid(zUuid, depositId)) return { error: "Invalid deposit id." };
@@ -484,6 +488,7 @@ export async function restoreDeposit(
   _prev: DismissState,
   formData: FormData,
 ): Promise<DismissState> {
+  await assertSection("reconciliation");
   const depositId = String(formData.get("deposit_id") ?? "");
   if (!depositId) return { error: "Missing deposit." };
   if (!isValid(zUuid, depositId)) return { error: "Invalid deposit id." };
@@ -514,6 +519,7 @@ export async function recordManualPayments(
   _prev: BulkPaymentState,
   formData: FormData,
 ): Promise<BulkPaymentState> {
+  await assertSection("reconciliation");
   const paid_on = String(formData.get("paid_on") ?? "").trim();
   if (!paid_on) return { error: "Pick a payment date." };
   // Same date guards as the single-payment form — one shared date governs
@@ -584,6 +590,7 @@ export async function ignoreUnmatchedPayer(
   _prev: IgnorePayerState,
   formData: FormData,
 ): Promise<IgnorePayerState> {
+  await assertSection("reconciliation");
   const payerKey = String(formData.get("payer_key") ?? "");
   if (!payerKey) return { error: "Missing payer." };
 
@@ -619,6 +626,7 @@ export async function ignoreUnmatchedPayer(
 }
 
 export async function unignorePayer(formData: FormData) {
+  await assertSection("reconciliation");
   const payerKey = String(formData.get("payer_key") ?? "");
   if (!payerKey) return;
 
@@ -647,6 +655,7 @@ export async function resolveReversal(
   _prev: ReversalState,
   formData: FormData,
 ): Promise<ReversalState> {
+  await assertSection("reconciliation");
   const id = String(formData.get("id") ?? "");
   const mode = String(formData.get("mode") ?? "");
   if (!isValid(zUuid, id) || (mode !== "refund" && mode !== "dismiss")) {

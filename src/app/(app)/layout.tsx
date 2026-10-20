@@ -6,6 +6,7 @@ import { CommandPalette } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
 import { NavIcon, type NavIconName } from "./nav-icons";
 import { Sidebar } from "./sidebar";
+import { GatedNav } from "./gated-nav";
 import {
   AssistantHeaderLink,
   AssistantSlot,
@@ -38,6 +39,78 @@ const NAV: NavItem[] = [
   { href: "/agreements", label: "Agreements", icon: "agreements" },
 ];
 
+function mobileNav(items: NavItem[]) {
+  return (
+    <MobileNav
+      items={items}
+      extraNav={
+        <Suspense>
+          <CredentialsNavLink
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+            iconClassName="shrink-0 text-accent"
+          />
+          <ProfitabilityNavLink
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+            iconClassName="shrink-0 text-accent"
+          />
+          <DevelopersNavLink
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+            iconClassName="shrink-0 text-accent"
+          />
+        </Suspense>
+      }
+      badges={{
+        "/projects": (
+          <Suspense>
+            <ProjectsBadge className="ml-auto rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white" />
+          </Suspense>
+        ),
+      }}
+      userInfo={
+        <>
+          <Suspense>
+            <MobileUserInfo />
+          </Suspense>
+          <form action={logout} className="px-3 pt-3">
+            <button
+              type="submit"
+              className="w-full whitespace-nowrap rounded-full border border-stone bg-white px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink transition hover:border-accent hover:text-accent-text"
+            >
+              Sign out
+            </button>
+          </form>
+        </>
+      }
+      headerExtra={
+        <Suspense>
+          <AssistantHeaderLink />
+        </Suspense>
+      }
+    />
+  );
+}
+
+function sidebarNav(items: NavItem[]) {
+  return items.map((item) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      data-label={item.label}
+      className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+    >
+      <NavIcon name={item.icon} className="shrink-0 text-accent" />
+      <span className="min-w-0 truncate sidebar-label">{item.label}</span>
+      {item.href === "/projects" && (
+        <span className="sidebar-label ml-auto">
+          <Suspense>
+            <ProjectsBadge className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white" />
+          </Suspense>
+        </span>
+      )}
+    </Link>
+  ));
+}
+
 // This layout must stay synchronous with no runtime data access (cookies,
 // auth, queries) — anything session-dependent streams in via the
 // <Suspense>-wrapped slots from session-slots.tsx. Otherwise every
@@ -52,52 +125,9 @@ export default function AppLayout({
       <Suspense>
         <AuthGate />
       </Suspense>
-      <MobileNav
-        items={NAV}
-        extraNav={
-          <Suspense>
-            <CredentialsNavLink
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
-              iconClassName="shrink-0 text-accent"
-            />
-            <ProfitabilityNavLink
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
-              iconClassName="shrink-0 text-accent"
-            />
-            <DevelopersNavLink
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
-              iconClassName="shrink-0 text-accent"
-            />
-          </Suspense>
-        }
-        badges={{
-          "/projects": (
-            <Suspense>
-              <ProjectsBadge className="ml-auto rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white" />
-            </Suspense>
-          ),
-        }}
-        userInfo={
-          <>
-            <Suspense>
-              <MobileUserInfo />
-            </Suspense>
-            <form action={logout} className="px-3 pt-3">
-              <button
-                type="submit"
-                className="w-full whitespace-nowrap rounded-full border border-stone bg-white px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink transition hover:border-accent hover:text-accent-text"
-              >
-                Sign out
-              </button>
-            </form>
-          </>
-        }
-        headerExtra={
-          <Suspense>
-            <AssistantHeaderLink />
-          </Suspense>
-        }
-      />
+      <Suspense fallback={mobileNav(NAV)}>
+        <GatedNav items={NAV}>{mobileNav}</GatedNav>
+      </Suspense>
       <CommandPalette />
       <Sidebar>
         <Link
@@ -126,26 +156,9 @@ export default function AppLayout({
           </span>
         </Link>
         <nav className="mt-10 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto text-sm">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              data-label={item.label}
-              className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
-            >
-              <NavIcon name={item.icon} className="shrink-0 text-accent" />
-              <span className="min-w-0 truncate sidebar-label">
-                {item.label}
-              </span>
-              {item.href === "/projects" && (
-                <span className="sidebar-label ml-auto">
-                  <Suspense>
-                    <ProjectsBadge className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white" />
-                  </Suspense>
-                </span>
-              )}
-            </Link>
-          ))}
+          <Suspense fallback={sidebarNav(NAV)}>
+            <GatedNav items={NAV}>{sidebarNav}</GatedNav>
+          </Suspense>
           <Suspense>
             <CredentialsNavLink
               className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
