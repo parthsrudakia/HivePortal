@@ -54,9 +54,12 @@ export function CredentialGroups({
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+      {/* The wrapper scrolls both ways, so the sticky header pins to its top
+          (an overflow-x-auto wrapper alone makes it the sticky scroller, and a
+          page-level top offset would shove the header into the rows). */}
+      <div className="max-h-[calc(100dvh-7rem)] overflow-auto rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
         <table className="w-full min-w-[1100px] text-sm [&_td]:border-r [&_td]:border-stone/30 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-stone/30 [&_th:last-child]:border-r-0">
-          <thead className="sticky top-0 z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm md:top-14">
+          <thead className="sticky top-0 z-10 bg-warm text-left text-xs uppercase tracking-wide text-muted shadow-sm">
             <tr>
               <th className="rounded-tl-xl bg-warm px-3 py-2 font-medium">
                 Unit/Category

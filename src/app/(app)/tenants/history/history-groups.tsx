@@ -174,9 +174,9 @@ export function HistoryGroups({
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+      <div className="max-h-[calc(100dvh-7rem)] overflow-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full min-w-[900px] text-base">
-          <thead className="sticky top-0 z-10 bg-warm text-left text-sm uppercase tracking-wide text-muted shadow-sm md:top-14">
+          <thead className="sticky top-0 z-10 bg-warm text-left text-sm uppercase tracking-wide text-muted shadow-sm">
             <tr>
               <th className="rounded-tl-2xl bg-warm px-5 py-3 font-medium">
                 Unit/Tenant
