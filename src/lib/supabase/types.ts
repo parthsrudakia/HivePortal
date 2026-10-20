@@ -2093,18 +2093,21 @@ export type Database = {
       user_section_access: {
         Row: {
           blocked_sections: string[]
+          granted_permissions: string[]
           updated_at: string
           updated_by: string | null
           user_id: string
         }
         Insert: {
           blocked_sections?: string[]
+          granted_permissions?: string[]
           updated_at?: string
           updated_by?: string | null
           user_id: string
         }
         Update: {
           blocked_sections?: string[]
+          granted_permissions?: string[]
           updated_at?: string
           updated_by?: string | null
           user_id?: string
@@ -2446,6 +2449,7 @@ export type Database = {
         Args: { cred_id: string }
         Returns: string
       }
+      has_portal_permission: { Args: { perm: string }; Returns: boolean }
       ingest_reconciliation_statement: {
         Args: { p_deposits: Json; p_statement: Json }
         Returns: Json

@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getSessionUser } from "@/lib/session";
-import { canEditLedger } from "@/lib/access";
+
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 import { applyMoveOut } from "@/lib/move-out";
@@ -12,7 +11,7 @@ import {
   normalizeUnitAmenities,
   normalizeBuildingAmenities,
 } from "@/lib/amenities";
-import { assertSection } from "@/lib/section-access";
+import { assertSection, hasPermission } from "@/lib/section-access";
 
 export type PropertyFormState = { error?: string } | undefined;
 
@@ -120,8 +119,7 @@ function parseForm(formData: FormData): ParsedForm | { error: string } {
 }
 
 async function isPropertyOperator(): Promise<boolean> {
-  const user = await getSessionUser();
-  return canEditLedger(user?.email);
+  return hasPermission("ledger");
 }
 
 // Replace a property's cleaner assignments with the given set.

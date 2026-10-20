@@ -1,8 +1,8 @@
 import { cache, Suspense } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import { canManageCredentials } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { one } from "@/lib/relations";
 import { unitLabel as propertyLabel } from "@/lib/unit-label";
 import { SearchInput } from "@/components/search-input";
@@ -52,19 +52,17 @@ const getPropertyOptions = cache(async (): Promise<PropertyOption[]> => {
 });
 
 async function AddCredentialSlot() {
-  const [user, propertyOptions] = await Promise.all([
-    getSessionUser(),
+  const [propertyOptions] = await Promise.all([
     getPropertyOptions(),
   ]);
-  if (!canManageCredentials(user?.email)) return null;
+  if (!(await hasPermission("credentials"))) return null;
   return <AddCredential properties={propertyOptions} />;
 }
 
 async function CredentialsSection() {
   const supabase = await getCachedClient();
 
-  const [user, propertyOptions, { data: credentials }] = await Promise.all([
-    getSessionUser(),
+  const [propertyOptions, { data: credentials }] = await Promise.all([
     getPropertyOptions(),
     supabase
       .from("credentials")
@@ -80,7 +78,7 @@ async function CredentialsSection() {
 
   // Only admins (masters) can reveal/copy passwords or manage credentials;
   // the plaintext is fetched on demand and never shipped with the page.
-  const admin = canManageCredentials(user?.email);
+  const admin = await hasPermission("credentials");
 
   const all: CredentialExplorerRow[] = (credentials ?? []).map((c) => {
     const p = one(c.properties);
@@ -122,10 +120,9 @@ async function CredentialsSection() {
   );
 }
 
-// Operator-only page (Vineet + Parth); RLS returns no rows to anyone else.
+// Credentials-permission page; RLS returns no rows to anyone else.
 export default async function CredentialsPage() {
-  const user = await getSessionUser();
-  if (!canManageCredentials(user?.email)) notFound();
+  if (!(await hasPermission("credentials"))) notFound();
   return (
     <div className="mx-auto w-full max-w-7xl">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-stone/60 pb-4">

@@ -4,8 +4,8 @@ import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/cleaning";
 import { EditableDate } from "./cleaning/editable-date";
 import { formatDate } from "@/lib/date";
-import { canEditLedger } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { EndingSoonTable } from "./ending-soon-table";
 import { NavIcon } from "./nav-icons";
 import { CardSkeleton } from "@/components/section-skeletons";
@@ -31,18 +31,17 @@ function fmtMoney(n: number) {
 }
 
 async function StatsSection() {
-  const [user, propertyCountRes, roomCountRes, { collectedThisMonth }, rentWorklist] =
+  const [propertyCountRes, roomCountRes, { collectedThisMonth }, rentWorklist] =
     await Promise.all([
-      getSessionUser(),
       getPropertyCount(),
       getRoomCount(),
       getPaymentsThisCycle(),
       getRentWorklist(),
     ]);
 
-  // Aggregate collection totals are operator-only (Vineet + Parth);
+  // Aggregate collection totals are limited to Financial edits access;
   // per-tenant outstanding amounts (pending balances) stay visible to all.
-  const admin = canEditLedger(user?.email);
+  const admin = await hasPermission("ledger");
   const outstanding = rentWorklist.reduce((s, r) => s + r.outstanding, 0);
 
   return (

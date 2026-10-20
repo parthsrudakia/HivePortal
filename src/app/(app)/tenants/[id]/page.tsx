@@ -25,10 +25,10 @@ import {
   type TenancyLedgerInput,
 } from "@/lib/rent";
 import { ledgerRows } from "@/lib/rent-data";
-import { canEditLedger } from "@/lib/access";
+
 import { pauseTenancy, resumeTenancy } from "../actions";
 import { fetchAssignableRooms, type RoomOption } from "../room-options";
-import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/section-access";
 import { todayISO } from "@/lib/date";
 import { linkActive } from "@/lib/emergency-contact";
 
@@ -148,9 +148,8 @@ export default async function TenantDetailPage({
 
   // Every ledger input is a must-succeed read (LedgerDataError otherwise):
   // a balance is never rendered from a partial picture.
-  const [user, { data: tenant }, tenancies, payments] =
+  const [{ data: tenant }, tenancies, payments] =
     await Promise.all([
-      getSessionUser(),
       supabase
         .from("tenants")
         .select(
@@ -195,7 +194,7 @@ export default async function TenantDetailPage({
   const emergencyLinkOpen = linkActive(emergency?.expires_at ?? null);
 
   // Ledger charges (add/delete) are operator-only; payments stay open to all.
-  const ledgerAdmin = canEditLedger(user?.email);
+  const ledgerAdmin = await hasPermission("ledger");
 
   const active = tenancies.find((t) => t.status === "active") ?? null;
   const upcoming = tenancies.filter((t) => t.status === "upcoming");

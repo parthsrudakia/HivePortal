@@ -4,8 +4,9 @@ import { getCachedClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { SearchInput } from "@/components/search-input";
 import { TableSkeleton } from "@/components/section-skeletons";
-import { isMaster, canEditLedger } from "@/lib/access";
+import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/section-access";
 import { computeLedger } from "@/lib/rent";
 import { fetchLedgerSidecars, fetchTenantLedgers, tenantLedger } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
@@ -161,7 +162,7 @@ const loadHistory = cache(async () => {
     rows,
     owing,
     admin: isMaster(user?.email), // "Total paid" is admin-only
-    canUndismiss: canEditLedger(user?.email),
+    canUndismiss: (await hasPermission("ledger")),
   };
 });
 

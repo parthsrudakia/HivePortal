@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
-import { canViewProfitability } from "@/lib/access";
+import { hasPermission } from "@/lib/section-access";
 
 export type LineItemFormState = { error?: string } | undefined;
 
-const OWNER_ONLY_ERROR = "Only Parth or Vineet can edit profitability items.";
+const OWNER_ONLY_ERROR = "You don't have Profitability access. Ask Vineet to grant it.";
 
 export async function addLineItem(
   _prev: LineItemFormState,
@@ -15,7 +15,7 @@ export async function addLineItem(
 ): Promise<LineItemFormState> {
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canViewProfitability(user?.email)) return { error: OWNER_ONLY_ERROR };
+  if (!(await hasPermission("profitability"))) return { error: OWNER_ONLY_ERROR };
 
   const year = Number(String(formData.get("year") ?? ""));
   const side = String(formData.get("side") ?? "");
@@ -48,8 +48,7 @@ export async function deleteLineItem(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canViewProfitability(user?.email)) throw new Error(OWNER_ONLY_ERROR);
+  if (!(await hasPermission("profitability"))) throw new Error(OWNER_ONLY_ERROR);
 
   await supabase.from("profitability_line_items").delete().eq("id", id);
   revalidatePath("/profitability");

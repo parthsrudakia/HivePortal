@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { canManageCredentials } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { one } from "@/lib/relations";
 import { formatDate } from "@/lib/date";
 import { cleaningScheduleFor, todayISO } from "@/lib/cleaning";
@@ -51,7 +51,6 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   const supabase = await createClient();
 
   const [
-    user,
     { data: property },
     { data: rooms },
     { data: cleanings },
@@ -59,7 +58,6 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     { data: residents },
     { data: propertyCleaners },
   ] = await Promise.all([
-    getSessionUser(),
     supabase
       .from("properties")
       .select(
@@ -115,10 +113,10 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
   if (!property) notFound();
 
-  // Credentials are operator-only (Vineet + Parth): the section is hidden for
+  // Credentials need the credentials permission: the section is hidden for
   // everyone else (RLS returns them no rows anyway). Plaintext passwords are
   // fetched on demand and never shipped with the page.
-  const admin = canManageCredentials(user?.email);
+  const admin = await hasPermission("credentials");
 
   type CleanerRel = { name: string; enabled: boolean };
   const cleanerNames = (

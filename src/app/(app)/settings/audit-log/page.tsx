@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { isOperator } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 
 export const dynamic = "force-dynamic";
 
@@ -81,8 +81,7 @@ export default async function AuditLogPage({
   searchParams: SearchParams;
 }) {
   const supabase = await createClient();
-  const user = await getSessionUser();
-  const operator = isOperator(user?.email);
+  const operator = await hasPermission("logs");
   if (!operator) {
     return (
       <div className="mx-auto w-full max-w-3xl">

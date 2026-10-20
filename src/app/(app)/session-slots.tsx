@@ -3,12 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser, type SessionUser } from "@/lib/session";
-import {
-  canManageCredentials,
-  canViewProfitability,
-  isMaster,
-  isOperator,
-} from "@/lib/access";
+import { hasPermission } from "@/lib/section-access";
+import { isMaster } from "@/lib/access";
 import { NamePrompt } from "./name-prompt";
 import { NavIcon } from "./nav-icons";
 import { AssistantWidget, AssistantLauncher } from "./assistant-widget";
@@ -69,11 +65,11 @@ export async function ProjectsBadge({ className }: { className: string }) {
 }
 
 /**
- * Owner-only "Profitability" nav entry — renders nothing for everyone else.
- * Styling comes from the caller so the same slot fits the desktop sidebar
- * and the mobile drawer.
+ * "Credentials" nav entry, for users granted the credentials permission
+ * (Settings → Access control) — renders nothing for everyone else. Styling
+ * comes from the caller so the same slot fits the desktop sidebar and the
+ * mobile drawer.
  */
-/** Operator-only "Credentials" nav entry — renders nothing for everyone else. */
 export async function CredentialsNavLink({
   className,
   iconClassName,
@@ -81,8 +77,7 @@ export async function CredentialsNavLink({
   className: string;
   iconClassName: string;
 }) {
-  const user = await getSessionUser();
-  if (!canManageCredentials(user?.email)) return null;
+  if (!(await hasPermission("credentials"))) return null;
   return (
     <Link href="/credentials" data-label="Credentials" className={className}>
       <NavIcon name="credentials" className={iconClassName} />
@@ -91,6 +86,7 @@ export async function CredentialsNavLink({
   );
 }
 
+/** "Profitability" nav entry — profitability permission only. */
 export async function ProfitabilityNavLink({
   className,
   iconClassName,
@@ -98,8 +94,7 @@ export async function ProfitabilityNavLink({
   className: string;
   iconClassName: string;
 }) {
-  const user = await getSessionUser();
-  if (!canViewProfitability(user?.email)) return null;
+  if (!(await hasPermission("profitability"))) return null;
   return (
     <Link href="/profitability" data-label="Profitability" className={className}>
       <NavIcon name="profitability" className={iconClassName} />
@@ -109,8 +104,8 @@ export async function ProfitabilityNavLink({
 }
 
 /**
- * Operator-only "Developers" nav entry (API docs) — renders nothing for
- * everyone else. Same slot pattern as ProfitabilityNavLink. Used in the
+ * "Developers" nav entry (API docs) — developers permission only; renders
+ * nothing for everyone else. Same slot pattern as ProfitabilityNavLink. Used in the
  * mobile drawer, where the icon-buttons header doesn't exist.
  */
 export async function DevelopersNavLink({
@@ -120,8 +115,7 @@ export async function DevelopersNavLink({
   className: string;
   iconClassName: string;
 }) {
-  const user = await getSessionUser();
-  if (!isOperator(user?.email)) return null;
+  if (!(await hasPermission("developers"))) return null;
   return (
     <Link href="/developers" className={className}>
       <NavIcon name="developers" className={iconClassName} />
@@ -132,11 +126,10 @@ export async function DevelopersNavLink({
 
 /**
  * Icon-only Developers link for the desktop header, beside the settings
- * gear. Same operator gate as the drawer entry.
+ * gear. Same permission as the drawer entry.
  */
 export async function DevelopersHeaderLink() {
-  const user = await getSessionUser();
-  if (!isOperator(user?.email)) return null;
+  if (!(await hasPermission("developers"))) return null;
   return (
     <Link
       href="/developers"
@@ -150,20 +143,18 @@ export async function DevelopersHeaderLink() {
 }
 
 /**
- * The in-portal ops-assistant chat — same bot as Telegram. Operator-only
- * (Vineet & Parth), same gate as the Developers link. Renders nothing for
- * everyone else, so the widget never mounts for non-operators.
+ * The in-portal ops-assistant chat — same bot as Telegram. Assistant
+ * permission only; renders nothing for everyone else, so the widget never
+ * mounts for them.
  */
 export async function AssistantSlot() {
-  const user = await getSessionUser();
-  if (!isOperator(user?.email)) return null;
+  if (!(await hasPermission("assistant"))) return null;
   return <AssistantWidget />;
 }
 
-/** Header launcher icon (beside Developers) — operator-only, same gate. */
+/** Header launcher icon (beside Developers) — same assistant permission. */
 export async function AssistantHeaderLink() {
-  const user = await getSessionUser();
-  if (!isOperator(user?.email)) return null;
+  if (!(await hasPermission("assistant"))) return null;
   return <AssistantLauncher />;
 }
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { canEditLedger } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { todayISO, addDaysISO, currentRentCycle } from "@/lib/date";
 import { computeLedger, rateForMonthISO } from "@/lib/rent";
 import {
@@ -114,8 +114,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
   const toggleNewHref = buildHref(activeFilters, !newActive);
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  const admin = canEditLedger(user?.email);
+  const admin = await hasPermission("ledger");
   if (!admin) {
     return (
       <div className="mx-auto w-full max-w-3xl rounded-2xl bg-white px-6 py-12 text-center text-sm text-muted shadow-sm">

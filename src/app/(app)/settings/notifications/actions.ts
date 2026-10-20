@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { getSessionUser } from "@/lib/session";
-import { isOperator } from "@/lib/access";
+import { hasPermission } from "@/lib/section-access";
 
 export type RecipientFormState = { error?: string } | undefined;
 
@@ -22,12 +21,11 @@ function profileName(meta: Record<string, unknown> | undefined): string | null {
   return pick(meta?.display_name) ?? pick(meta?.full_name);
 }
 
-// Managing notification recipients is operator-only — Vineet and Parth (the
+// Managing notification recipients needs the notifications permission (the
 // page already redirects everyone else; this closes the direct server-action
 // invocation path).
 async function assertOperator(): Promise<boolean> {
-  const user = await getSessionUser();
-  return isOperator(user?.email);
+  return hasPermission("notifications");
 }
 
 export async function addRecipient(

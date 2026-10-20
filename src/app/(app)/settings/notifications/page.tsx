@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { isOperator } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { formatDate } from "@/lib/date";
 import { AddRecipientForm } from "./add-form";
 import { toggleRecipient, deleteRecipient } from "./actions";
@@ -27,8 +27,7 @@ type Recipient = {
 
 export default async function NotificationsPage() {
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!isOperator(user?.email)) redirect("/");
+  if (!(await hasPermission("notifications"))) redirect("/");
 
   // Recipients can only be people who already have a portal account: pull the
   // recipient list and the system (auth) users in parallel.

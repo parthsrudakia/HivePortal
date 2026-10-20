@@ -1,7 +1,8 @@
+import { hasPermission } from "@/lib/section-access";
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
-import { canEditLedger } from "@/lib/access";
+
 import { todayISO, addDaysISO } from "@/lib/date";
 import {
   monthBounds,
@@ -36,10 +37,7 @@ export async function GET(req: Request) {
   const supabase = await createClient();
   // The sheet carries the money totals and tenant emails/phones the UI
   // deliberately hides from non-admins — enforce the same rule here.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!canEditLedger(user?.email)) {
+  if (!(await hasPermission("ledger"))) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

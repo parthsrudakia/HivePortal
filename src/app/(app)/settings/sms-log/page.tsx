@@ -3,8 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { SMS_TYPE_LABELS, type SmsType } from "@/lib/sms-log";
 import { getSmsOptStatus, smsConfigured, type SmsOptResult } from "@/lib/sms";
 import { resolveRecipientPhone } from "@/lib/sms-recipient";
-import { isMaster, isOperator } from "@/lib/access";
+import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/section-access";
 import { ClearLogButton } from "../clear-log-button";
 import { LogFilters } from "../log-filters";
 import { clearSmsLog } from "../log-actions";
@@ -66,7 +67,7 @@ export default async function SmsLogPage({ searchParams }: PageProps) {
   const supabase = await createClient();
   const user = await getSessionUser();
   const master = isMaster(user?.email);
-  if (!isOperator(user?.email)) {
+  if (!(await hasPermission("logs"))) {
     return (
       <div className="mx-auto w-full max-w-3xl">
         <Link
@@ -114,7 +115,6 @@ export default async function SmsLogPage({ searchParams }: PageProps) {
         }
       : { input: checkInput, tenantName: null, result: { ok: false, error: resolved.error } };
   }
-
 
   return (
     <div className="mx-auto w-full max-w-5xl">

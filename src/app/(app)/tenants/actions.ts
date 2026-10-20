@@ -35,17 +35,16 @@ import {
   createTenancyForTenant,
   findRoomClash,
 } from "@/lib/tenancy-create";
-import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
+import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
 import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
-import { assertSection } from "@/lib/section-access";
+import { assertSection, hasPermission } from "@/lib/section-access";
 
 // Accrual-affecting mutations (rent amounts, tenancy dates, deleting
 // payments/tenants) change what a tenant owes just as directly as a charge
-// row — same two-operator restriction as charges.
+// row — same Financial edits permission as charges.
 async function requireLedgerAdmin(): Promise<string | null> {
-  const user = await getSessionUser();
-  return canEditLedger(user?.email) ? null : LEDGER_ADMIN_ERROR;
+  return (await hasPermission("ledger")) ? null : LEDGER_ADMIN_ERROR;
 }
 
 type PaymentType = Database["public"]["Enums"]["payment_type"];
@@ -1281,7 +1280,7 @@ export async function dismissEndedBalance(formData: FormData) {
 
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
   if (!isValid(zUuid, tenancy_id)) return;
 
   await supabase
@@ -1301,8 +1300,7 @@ export async function undismissEndedBalance(formData: FormData) {
   if (!tenancy_id) return;
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
   if (!isValid(zUuid, tenancy_id)) return;
 
   await supabase
@@ -1327,8 +1325,7 @@ export async function settleEndedBalance(formData: FormData) {
   if (!tenancy_id) return;
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
   if (!isValid(zUuid, tenancy_id)) return;
 
   const today = todayISO();
@@ -1399,7 +1396,7 @@ export async function recordPayment(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "You are not signed in." };
-  if (payment_type === "refund" && !canEditLedger(user.email)) {
+  if (payment_type === "refund" && !(await hasPermission("ledger"))) {
     return { error: LEDGER_ADMIN_ERROR };
   }
   if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
@@ -1493,8 +1490,7 @@ export async function addCharge(
     return { error: "Charge date can't be in the future." };
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
   if (tenantId && !isValid(zUuid, tenantId))
     return { error: "Invalid tenant id." };
@@ -1538,9 +1534,8 @@ export async function acknowledgeOverageAlerts(ids: string[]) {
   await assertSection("tenants");
   if (ids.length === 0) return;
   const supabase = await createClient();
-  const user = await getSessionUser();
   // The popup is operator-facing; only the ledger admins may dismiss it.
-  if (!canEditLedger(user?.email)) return;
+  if (!(await hasPermission("ledger"))) return;
   if (!isValid(zUuidArray, ids)) return;
   await supabase
     .from("utility_overage_alerts")
@@ -1561,8 +1556,7 @@ export async function deleteCharge(formData: FormData) {
   if (ids.length === 0) return;
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return;
+  if (!(await hasPermission("ledger"))) return;
   if (
     !isValid(zUuidArray, ids) ||
     (tenant_id !== "" && !isValid(zUuid, tenant_id))
@@ -1592,7 +1586,7 @@ export async function sendBalanceReminders(
 
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   // An unknown channel would send nothing yet still log a batch row.
   if (!isValid(z.enum(["email", "sms", "both"]), channel))
     return { error: "Invalid channel." };
@@ -1793,8 +1787,7 @@ export async function pauseTenancy(formData: FormData) {
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!tenancy_id) return;
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
   if (
     !isValid(zUuid, tenancy_id) ||
     (tenant_id !== "" && !isValid(zUuid, tenant_id))
@@ -1819,8 +1812,7 @@ export async function resumeTenancy(formData: FormData) {
   const tenant_id = String(formData.get("tenant_id") ?? "");
   if (!tenancy_id) return;
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
   if (
     !isValid(zUuid, tenancy_id) ||
     (tenant_id !== "" && !isValid(zUuid, tenant_id))

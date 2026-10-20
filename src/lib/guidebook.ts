@@ -22,30 +22,31 @@ export const GUIDEBOOK_SECTIONS: GuidebookSection[] = [
   {
     title: "Access & roles",
     body: `
-There is no roles screen. Access is decided by the signed-in email address, and the same list is enforced by the database's row-level security, so a direct API call can't do more than the screen allows. Three effective levels exist.
+Vineet sets each teammate's access at **Settings → Access control**. The database's row-level security follows the same settings, so a direct API call can't do more than the screen allows.
+
+- **Sections** (Properties, Projects, Inventory, Rent Tracker, Reconciliation, Cleaning, Utilities, Agreements) are on for everyone until Vineet unticks one. A blocked section disappears from that person's navigation and its pages send them back to the dashboard.
+- **Extra access** is off until Vineet grants it: Credentials, Profitability, Financial edits, Admin logs, Notification settings, Developers, and the Ops assistant.
 
 ### Master (Vineet's account)
-Everything the operators can do, plus the master-only surfaces:
+Full access to everything, always, plus the master-only surfaces:
 
-- **Reports** (portfolio collections), **Users** (invite and remove teammates), and the Settings card for the **Telegram bot log**.
-- **Credentials**: adding, editing, deleting, and revealing/copying passwords is done from the master account (the database would also allow Parth, but the screens only offer these controls to the master).
+- **Access control**, **Reports** (portfolio collections), **Users** (invite and remove teammates), and the Settings card for the **Telegram bot log**.
 - **Clear log** on the Email and Text logs, the **Total paid** column on Past Tenants, and the **moved-out utility charge popup** on the Rent Tracker.
 - **Projects board admin** (reviews and approves tasks).
 
-### Financial operators (Vineet + Parth)
-All money and admin surfaces:
-
-- Dashboard and Rent Tracker KPI tiles, the Paid column, unit subtotals, Reconciliation, Profitability.
-- Ledger writes: adding and deleting charges, deleting payments, recording refunds, settling or dismissing moved-out balances, changing rent (lease renewals), pausing, transferring and moving tenants out, adding tenants.
-- Creating, editing, pausing, archiving and restoring **properties** (staff can view them but not change them; rooms themselves can be edited by anyone).
-- Utilities: uploading statements, assigning, charging and unposting bills.
-- Balance reminders (email/text), the **in-portal assistant** and the Telegram bot, the **Developers** page.
-- Settings: Notification settings, Audit log, Email log, Text log, and the Telegram bot log (reachable by URL).
+### What each extra access grants
+- **Financial edits**: Dashboard and Rent Tracker KPI tiles, the Paid column, unit subtotals, Reconciliation runs and exports; ledger writes (adding and deleting charges, deleting payments, recording refunds, settling or dismissing moved-out balances, changing rent, pausing, transferring and moving tenants out, adding tenants); creating, editing, pausing, archiving and restoring **properties**; uploading, assigning, charging and unposting utility bills; balance reminders.
+- **Credentials**: seeing the vault, revealing/copying passwords, adding, editing and deleting entries.
+- **Profitability**: the per-unit P&L page and its line items.
+- **Admin logs**: Audit, Email and Text logs (and the Telegram bot log by URL).
+- **Notification settings**: who gets room-change emails.
+- **Developers**: the API docs page.
+- **Ops assistant**: the in-portal assistant chat. It acts with full portal access, so grant it carefully.
 
 ### Everyone else (staff)
-The rest of the portal: tenants and their rent status (Due and running Balance per tenant, but no Paid column and no aggregate totals), properties (view only), inventory and listings, cleaning, utilities log (view only), agreements, credentials (non-secret fields only), the Projects board as a member, the shared tab notepads, and this guidebook. Staff can record ordinary payments, including back-dated ones, but can never record a refund, attach a bank reference, or tie a payment to a reconciliation run.
+Without any extra access: tenants and their rent status (Due and running Balance per tenant, but no Paid column and no aggregate totals), properties (view only), inventory and listings, cleaning, utilities log (view only), agreements, the Projects board as a member, the shared tab notepads, and this guidebook. Staff can record ordinary payments, including back-dated ones, but can never record a refund, attach a bank reference, or tie a payment to a reconciliation run.
 
-Some staff-visible controls (contact Edit, Lease End Date) are refused by the server; they simply do nothing for a non-operator.
+Some staff-visible controls (contact Edit, Lease End Date) are refused by the server; they simply do nothing without Financial edits.
 `,
   },
   {
@@ -484,7 +485,7 @@ Logins for payment portals, maintenance portals, utilities, internet, building l
   {
     title: "Profitability & Reports",
     body: `
-### Profitability (Vineet + Parth)
+### Profitability (Profitability access)
 A per-unit P&L for a chosen year, with tabs for Summary, Profit, Rent Collection, Rent Paid, Utilities, Internet, Cleaning, Amenity Fees, Misc Fees and Insurance; each tab is a units × months grid grouped by quarter with totals.
 
 - **Revenue** per unit-month is every payment dated in that calendar month except security deposits (refunds subtract), plus any manual revenue line items.

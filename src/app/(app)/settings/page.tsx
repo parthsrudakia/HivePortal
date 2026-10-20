@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { isMaster, isOperator } from "@/lib/access";
+import { isMaster } from "@/lib/access";
+import { hasPermission, type PortalPermission } from "@/lib/section-access";
 import { getSessionUser } from "@/lib/session";
 import { boardAdmin } from "@/lib/board";
 import { ChangePasswordForm } from "./change-password-form";
@@ -12,8 +13,8 @@ type AdminLink = {
   title: string;
   description: string;
   masterOnly?: boolean;
-  /** Visible to the operators (Vineet + Parth) only. */
-  operatorOnly?: boolean;
+  /** Visible only to users granted this permission (Vineet has all). */
+  permission?: PortalPermission;
 };
 
 const ADMIN_LINKS: AdminLink[] = [
@@ -46,25 +47,25 @@ const ADMIN_LINKS: AdminLink[] = [
     title: "Notification settings",
     description:
       "Manage who gets emailed on room status and listing-action changes.",
-    operatorOnly: true,
+    permission: "notifications",
   },
   {
     href: "/settings/audit-log",
     title: "Audit log",
     description: "Review every change made across the portal.",
-    operatorOnly: true,
+    permission: "logs",
   },
   {
     href: "/settings/email-log",
     title: "Email log",
     description: "Every email the portal has sent, filterable by type and status.",
-    operatorOnly: true,
+    permission: "logs",
   },
   {
     href: "/settings/sms-log",
     title: "Text log",
     description: "Every text the portal has sent, filterable by type and status.",
-    operatorOnly: true,
+    permission: "logs",
   },
   {
     href: "/settings/telegram-log",
@@ -78,9 +79,11 @@ const ADMIN_LINKS: AdminLink[] = [
 export default async function AdminSettingsPage() {
   const user = await getSessionUser();
   const master = isMaster(user?.email);
-  const operator = isOperator(user?.email);
+  const granted = await Promise.all(
+    ADMIN_LINKS.map((l) => (l.permission ? hasPermission(l.permission) : true)),
+  );
   const visibleLinks = ADMIN_LINKS.filter(
-    (l) => (!l.masterOnly || master) && (!l.operatorOnly || operator),
+    (l, i) => (!l.masterOnly || master) && granted[i],
   );
 
   // Projects board email pref (default on when no row exists yet).

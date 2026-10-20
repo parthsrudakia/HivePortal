@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
-import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
+import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 import { LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
@@ -24,7 +24,7 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { isValid, zUuid } from "@/lib/validation";
-import { assertSection } from "@/lib/section-access";
+import { assertSection, hasPermission } from "@/lib/section-access";
 
 // Store a statement's negative Zelle rows (chargebacks) as reversal alerts,
 // each matched to its best-guess original payment: the most recent posted
@@ -108,7 +108,7 @@ export async function addStatement(
 
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   // 1) Parse in-memory.
   let bankResult;
@@ -329,8 +329,7 @@ export async function assignDeposit(
   const supabase = await createClient();
   // Posts money into a tenant ledger and permanently maps the payer —
   // operator-only.
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   const { data: dep, error: depErr } = await supabase
     .from("reconciliation_deposits")
@@ -465,7 +464,7 @@ export async function dismissDeposit(
 
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   // The payment_id guard backs up the DB check constraint: a posted deposit
   // can't be dismissed (delete its payment from the tenant ledger instead —
@@ -494,8 +493,7 @@ export async function restoreDeposit(
   if (!isValid(zUuid, depositId)) return { error: "Invalid deposit id." };
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   const { error } = await supabase
     .from("reconciliation_deposits")
@@ -566,8 +564,7 @@ export async function recordManualPayments(
   if (rows.length === 0) return { error: "Enter an amount for at least one tenant." };
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   const { error } = await supabase.from("payments").insert(rows);
   if (error) return { error: error.message };
 
@@ -598,7 +595,7 @@ export async function ignoreUnmatchedPayer(
   // Hiding money from the books is a ledger-level decision — same gate as
   // assigning.
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   // Prefer the bank's original casing for display.
   const { data: dep } = await supabase
@@ -631,8 +628,7 @@ export async function unignorePayer(formData: FormData) {
   if (!payerKey) return;
 
   const supabase = await createClient();
-  const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) throw new Error(LEDGER_ADMIN_ERROR);
+  if (!(await hasPermission("ledger"))) throw new Error(LEDGER_ADMIN_ERROR);
 
   const { error: deleteError } = await supabase
     .from("ignored_payers")
@@ -664,7 +660,7 @@ export async function resolveReversal(
 
   const supabase = await createClient();
   const user = await getSessionUser();
-  if (!canEditLedger(user?.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   // The refund payment and alert resolution commit together. The database
   // also verifies any pre-existing external_ref matches amount/date/type.

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { canViewProfitability } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { todayISO } from "@/lib/date";
 import {
   loadProfitability,
@@ -78,11 +78,10 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
   // All figures come from the shared computation (also behind the Telegram
   // bot's get_profitability), so every consumer always agrees. The load runs
   // alongside the identity check; RLS still guards the reads themselves.
-  const [user, data] = await Promise.all([
-    getSessionUser(),
+  const [data] = await Promise.all([
     loadProfitability(supabase, year, today),
   ]);
-  if (!canViewProfitability(user?.email)) notFound();
+  if (!(await hasPermission("profitability"))) notFound();
   const props = data.units;
   const {
     monthlyRevenue,

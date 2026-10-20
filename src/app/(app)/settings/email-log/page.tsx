@@ -2,8 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { EMAIL_TYPE_LABELS, type EmailType } from "@/lib/email-log";
 import { resendUsage } from "@/lib/resend-quota";
-import { isMaster, isOperator } from "@/lib/access";
+import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/section-access";
 import { ClearLogButton } from "../clear-log-button";
 import { LogFilters } from "../log-filters";
 import { clearEmailLog } from "../log-actions";
@@ -51,7 +52,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
   const supabase = await createClient();
   const user = await getSessionUser();
   const master = isMaster(user?.email);
-  if (!isOperator(user?.email)) {
+  if (!(await hasPermission("logs"))) {
     return (
       <div className="mx-auto w-full max-w-3xl">
         <Link
@@ -102,7 +103,6 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
   const atMonthly = usage.month >= usage.monthlyCap;
 
   const rows = (data ?? []) as LogRow[];
-
 
   return (
     <div className="mx-auto w-full max-w-5xl">

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
-import { canManageCredentials } from "@/lib/access";
+import { hasPermission } from "@/lib/section-access";
+
 import type { Database } from "@/lib/supabase/types";
 
 type Category = Database["public"]["Enums"]["credential_category"];
@@ -18,14 +19,13 @@ const VALID_CATEGORIES: Category[] = [
 
 export type CredentialFormState = { error?: string } | undefined;
 
-const OPERATOR_ERROR = "Only Parth or Vineet can manage credentials.";
+const OPERATOR_ERROR = "You don't have Credentials access. Ask Vineet to grant it.";
 
 // The credentials vault is admin-managed. Every mutation is gated here as
 // defense-in-depth on top of the RLS policy that restricts writes to the two
 // operators (see 20260716095000_credentials_write_rls_and_plaintext_block).
 async function requireOperator(): Promise<string | null> {
-  const user = await getSessionUser();
-  return canManageCredentials(user?.email) ? null : OPERATOR_ERROR;
+  return (await hasPermission("credentials")) ? null : OPERATOR_ERROR;
 }
 
 type CredentialValues = {

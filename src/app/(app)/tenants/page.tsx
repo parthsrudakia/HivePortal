@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/section-access";
 import { one } from "@/lib/relations";
 import { SearchInput } from "@/components/search-input";
 import { KpiRowSkeleton, TableSkeleton } from "@/components/section-skeletons";
@@ -9,7 +10,7 @@ import { RentReminderButton } from "./rent-reminder-button";
 import { computeLedger } from "@/lib/rent";
 import { LedgerDataError, tenantLedger } from "@/lib/rent-data";
 import { todayISO } from "@/lib/date";
-import { canEditLedger, isMaster } from "@/lib/access";
+import { isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 import { FormerTenants, type FormerTenantRow } from "./former-tenants";
 import { UpcomingTenants, type UpcomingTenantRow } from "./upcoming-tenants";
@@ -67,17 +68,16 @@ async function OverageAlertsSlot() {
 }
 
 async function RentKpisSection() {
-  const [user, { rows }, reminderInfo] = await Promise.all([
-    getSessionUser(),
+  const [{ rows }, reminderInfo] = await Promise.all([
     getRowsWithStatus(),
     getTenantsReminderInfo(),
   ]);
   if (rows.length === 0) return null;
 
-  // Only the ledger operators (Vineet + Parth) see the aggregate collection
+  // Only users with Financial edits see the aggregate collection
   // totals and per-tenant "paid" amounts. Everyone else still sees each
   // tenant's rent and pending balance.
-  const admin = canEditLedger(user?.email);
+  const admin = await hasPermission("ledger");
   const expectedTotal = rows.reduce((s, r) => s + r.due, 0);
   // Rent money only — security_deposit charges applied this cycle are
   // deducted per tenancy (Zelle deposits arrive typed "rent"; the applied
@@ -210,9 +210,8 @@ async function RentKpisSection() {
 }
 
 async function SideListsSection() {
-  const [user, endedRes, upcomingRes, activeRes, sidecars, tl] =
+  const [endedRes, upcomingRes, activeRes, sidecars, tl] =
     await Promise.all([
-      getSessionUser(),
       getEndedTenancies(),
       getUpcomingTenancies(),
       getActiveTenancies(),
@@ -373,15 +372,14 @@ async function SideListsSection() {
       <UpcomingMoveOuts rows={moveOutRows} />
       <FormerTenants
         rows={formerRows}
-        canDismiss={canEditLedger(user?.email)}
+        canDismiss={await hasPermission("ledger")}
       />
     </>
   );
 }
 
 async function TenantTrackerSection() {
-  const [user, { rows, error }, { data: allProps }] = await Promise.all([
-    getSessionUser(),
+  const [{ rows, error }, { data: allProps }] = await Promise.all([
     getRowsWithStatus(),
     getAllProperties(),
   ]);
@@ -390,7 +388,7 @@ async function TenantTrackerSection() {
     return <p className="mt-6 text-sm text-red-700">{error.message}</p>;
   }
 
-  const admin = canEditLedger(user?.email);
+  const admin = await hasPermission("ledger");
 
   const trackerRows: TrackerRow[] = rows.map((r) => {
     const tenant = one(r.tenants);

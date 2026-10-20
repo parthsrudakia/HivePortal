@@ -5,8 +5,8 @@
  * identical system prompt, tools, and anti-hallucination guards) but driven
  * from the portal's support chat instead of Telegram.
  *
- * Auth: portal session + the operator allowlist (Vineet & Parth) — the same
- * gate as the ledger admin and the Developers link.
+ * Auth: portal session + the 'assistant' permission (Settings → Access
+ * control; Vineet always has it).
  */
 
 import { NextResponse } from "next/server";
@@ -21,7 +21,8 @@ import {
   type ConvoMessage,
 } from "@/lib/assistant-core";
 import { getSessionUser } from "@/lib/session";
-import { isOperator } from "@/lib/access";
+import { hasPermission } from "@/lib/section-access";
+
 import { logTelegramEvent } from "@/lib/telegram-log";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ async function appendHistory(
 /** GET → the operator's prior conversation, rendered messages only. */
 export async function GET() {
   const user = await getSessionUser();
-  if (!isOperator(user?.email)) {
+  if (!(await hasPermission("assistant"))) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });
   }
   const history = await loadHistory(user!.id);
@@ -78,7 +79,7 @@ export async function GET() {
 /** DELETE → clear this operator's conversation. */
 export async function DELETE() {
   const user = await getSessionUser();
-  if (!isOperator(user?.email)) {
+  if (!(await hasPermission("assistant"))) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });
   }
   await admin()
@@ -91,7 +92,7 @@ export async function DELETE() {
 /** POST { message } → run one assistant turn, persist it, return the reply. */
 export async function POST(req: Request) {
   const user = await getSessionUser();
-  if (!isOperator(user?.email)) {
+  if (!(await hasPermission("assistant"))) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });
   }
 

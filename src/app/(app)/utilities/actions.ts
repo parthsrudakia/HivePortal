@@ -16,7 +16,7 @@ import {
 } from "@/lib/utility-ingest";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
-import { canEditLedger, LEDGER_ADMIN_ERROR } from "@/lib/access";
+import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import {
   sendUtilityChargeNotice,
   sendUtilityChargeNoticeGmail,
@@ -29,7 +29,7 @@ import {
   OVERAGE_THRESHOLD,
   type BillRow,
 } from "@/lib/utility-bills";
-import { assertSection } from "@/lib/section-access";
+import { assertSection, hasPermission } from "@/lib/section-access";
 
 export type UploadState =
   | { error?: string; success?: string; warning?: string }
@@ -45,7 +45,7 @@ export async function uploadStatement(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   const file = formData.get("statement");
   if (!(file instanceof File) || file.size === 0)
@@ -157,7 +157,7 @@ export async function commitManualBills(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
 
   const propertyId = String(formData.get("property_id") ?? "");
   const utilityType = String(formData.get("utility_type") ?? "");
@@ -463,7 +463,7 @@ export async function attachBillFiles(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   const files = formData
@@ -599,7 +599,7 @@ export async function assignBillProperty(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, billId) || !isValid(zUuid.nullable(), propertyId))
     return { error: "Invalid bill or unit id." };
 
@@ -647,7 +647,7 @@ export async function deleteBill(billId: string): Promise<UploadState> {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   const sb = supabase;
@@ -733,7 +733,7 @@ export async function dismissOverage(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuidArray, billIds)) return { error: "Invalid bill ids." };
   if (billIds.length === 0) return undefined;
 
@@ -1221,7 +1221,7 @@ export async function previewOverage(billId: string): Promise<OveragePreview> {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { ...empty, error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { ...empty, error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { ...empty, error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, billId)) return { ...empty, error: "Invalid bill id." };
 
   const split = await computeOverageSplit(supabase, billId);
@@ -1268,7 +1268,7 @@ export async function chargeOverage(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return deniedResult(billId, "Not signed in.");
-  if (!canEditLedger(user.email))
+  if (!(await hasPermission("ledger")))
     return deniedResult(billId, LEDGER_ADMIN_ERROR);
   if (!isValid(zUuid, billId) || !isValid(SharesSchema, shares))
     return deniedResult(billId, "Invalid charge input.");
@@ -1292,7 +1292,7 @@ export async function chargeAllOverages(
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return billIds.map((id) => deniedResult(id, "Not signed in."));
-  if (!canEditLedger(user.email))
+  if (!(await hasPermission("ledger")))
     return billIds.map((id) => deniedResult(id, LEDGER_ADMIN_ERROR));
   if (!isValid(zUuidArray, billIds))
     return billIds.map((id) => deniedResult(id, "Invalid bill id."));
@@ -1317,7 +1317,7 @@ export async function unpostOverage(billId: string): Promise<UploadState> {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in." };
-  if (!canEditLedger(user.email)) return { error: LEDGER_ADMIN_ERROR };
+  if (!(await hasPermission("ledger"))) return { error: LEDGER_ADMIN_ERROR };
   if (!isValid(zUuid, billId)) return { error: "Invalid bill id." };
 
   const sb = supabase;

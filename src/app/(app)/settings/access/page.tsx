@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { isMaster, isOperator } from "@/lib/access";
+import { isMaster } from "@/lib/access";
 import { getSessionUser } from "@/lib/session";
-import { PORTAL_SECTIONS } from "@/lib/section-access";
-import { SectionToggles } from "./section-toggles";
+import { PORTAL_PERMISSIONS, PORTAL_SECTIONS } from "@/lib/section-access";
+import { AccessToggles } from "./access-toggles";
 
 export const dynamic = "force-dynamic";
 
@@ -30,30 +30,36 @@ export default async function AccessControlPage() {
   const [{ data: usersData, error: usersErr }, { data: rows, error: rowsErr }] =
     await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      admin.from("user_section_access").select("user_id, blocked_sections"),
+      admin
+        .from("user_section_access")
+        .select("user_id, blocked_sections, granted_permissions"),
     ]);
   // Don't render toggles from a partial read — a missing row would show a
   // restricted user as having full access.
   if (usersErr) throw new Error(`Couldn't load users: ${usersErr.message}`);
   if (rowsErr) throw new Error(`Couldn't load access: ${rowsErr.message}`);
 
-  const blockedByUser = new Map(
-    (rows ?? []).map((r) => [r.user_id, r.blocked_sections]),
-  );
+  const accessByUser = new Map((rows ?? []).map((r) => [r.user_id, r]));
   const users = (usersData?.users ?? [])
     .map((u) => ({
       id: u.id,
       email: u.email ?? "—",
       name: profileName(u.user_metadata),
-      operator: isOperator(u.email),
-      blocked: blockedByUser.get(u.id) ?? [],
+      master: isMaster(u.email),
+      blocked: accessByUser.get(u.id)?.blocked_sections ?? [],
+      granted: accessByUser.get(u.id)?.granted_permissions ?? [],
     }))
     .sort(
       (a, b) =>
-        Number(b.operator) - Number(a.operator) ||
+        Number(b.master) - Number(a.master) ||
         (a.name ?? a.email).localeCompare(b.name ?? b.email),
     );
   const sections = PORTAL_SECTIONS.map(({ key, label }) => ({ key, label }));
+  const permissions = PORTAL_PERMISSIONS.map(({ key, label, description }) => ({
+    key,
+    label,
+    description,
+  }));
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -62,9 +68,10 @@ export default async function AccessControlPage() {
           Access <span className="font-display text-accent-text">Control</span>
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Choose which sections each teammate can open. Unchecked sections
-          disappear from their navigation and redirect to the dashboard.
-          Changes save instantly. New users start with full access.
+          Choose what each teammate can open. Sections are on by default;
+          unchecked ones disappear from their navigation. Extra access
+          (credentials, financial edits, logs and the rest) is off until you
+          grant it. Hover a chip for details. Changes save instantly.
         </p>
       </header>
 
@@ -85,18 +92,20 @@ export default async function AccessControlPage() {
                   <p className="truncate text-xs text-muted">{u.email}</p>
                 )}
               </div>
-              {u.operator && (
+              {u.master && (
                 <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-text">
-                  Operator · full access
+                  Full access
                 </span>
               )}
             </div>
-            {!u.operator && (
+            {!u.master && (
               <div className="mt-3">
-                <SectionToggles
+                <AccessToggles
                   userId={u.id}
                   sections={sections}
+                  permissions={permissions}
                   initialBlocked={u.blocked}
+                  initialGranted={u.granted}
                 />
               </div>
             )}

@@ -1,7 +1,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { canEditLedger } from "@/lib/access";
-import { getSessionUser } from "@/lib/session";
+
+import { hasPermission } from "@/lib/section-access";
 import { one } from "@/lib/relations";
 import { isOverThreshold } from "@/lib/utility-bills";
 import { UtilitiesView } from "./utilities-view";
@@ -24,8 +24,7 @@ export default async function UtilitiesPage({
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
-  const [user, { data: props }, billsRes] = await Promise.all([
-    getSessionUser(),
+  const [{ data: props }, billsRes] = await Promise.all([
     sb
       .from("properties")
       .select("id, building_name, street_address, unit_number")
@@ -40,7 +39,7 @@ export default async function UtilitiesPage({
   ]);
 
   // Charging the over-$200 overage writes to tenant ledgers — operator-only.
-  const canCharge = canEditLedger(user?.email);
+  const canCharge = await hasPermission("ledger");
 
   const units: UnitOpt[] = (props ?? []).map((p) => ({
     id: p.id,
