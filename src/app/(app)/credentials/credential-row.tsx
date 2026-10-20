@@ -175,10 +175,10 @@ export function CredentialRow({
           {CATEGORY_LABELS[credential.category]}
         </span>
       </td>
-      <td className="px-3 py-2 text-ink">{credential.service_name}</td>
       <td className="px-3 py-2 text-xs text-muted">
         {credential.owner_label ?? "—"}
       </td>
+      <td className="px-3 py-2 text-ink">{credential.service_name}</td>
       <td className="px-3 py-2">
         {credential.username ? (
           <div className="flex w-full items-center justify-between gap-3">

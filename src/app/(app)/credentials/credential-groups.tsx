@@ -64,8 +64,8 @@ export function CredentialGroups({
               <th className="rounded-tl-xl bg-warm px-3 py-2 font-medium">
                 Unit/Category
               </th>
-              <th className="bg-warm px-3 py-2 font-medium">Service</th>
               <th className="bg-warm px-3 py-2 font-medium">Owner</th>
+              <th className="bg-warm px-3 py-2 font-medium">Type</th>
               <th className="bg-warm px-3 py-2 font-medium">Username</th>
               <th className="bg-warm px-3 py-2 font-medium">Password</th>
               <th className="bg-warm px-3 py-2 font-medium">Account #</th>

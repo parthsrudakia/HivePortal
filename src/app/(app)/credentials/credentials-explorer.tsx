@@ -80,19 +80,6 @@ export function CredentialsExplorer({
   return (
     <>
       <ul className="mt-3 flex flex-wrap gap-1.5">
-        <li>
-          <button
-            type="button"
-            onClick={() => setCategoryParam("")}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
-              activeCategory === null
-                ? "border-ink bg-ink text-white"
-                : "border-stone bg-white text-ink hover:bg-warm"
-            }`}
-          >
-            All ({all.length})
-          </button>
-        </li>
         {CATEGORY_ORDER.map((c) => {
           const isActive = activeCategory === c;
           const count = countsByCategory[c];
