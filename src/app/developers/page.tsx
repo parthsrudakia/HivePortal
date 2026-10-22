@@ -2,12 +2,13 @@ import Link from "next/link";
 import { TenantsApiDocs } from "@/components/docs/tenants-api-docs";
 import { InventoryApiDocs } from "@/components/docs/inventory-api-docs";
 import { UtilitiesApiDocs } from "@/components/docs/utilities-api-docs";
+import { CredentialsApiDocs } from "@/components/docs/credentials-api-docs";
 import { DevelopersTabs } from "./tabs";
 
 export const metadata = {
   title: "Developers — Hive",
   description:
-    "API reference for Hive's JSON APIs: tenants, inventory, and utility statement intake.",
+    "API reference for Hive's JSON APIs: tenants, inventory, utility statement intake, and credentials.",
 };
 
 /**
@@ -79,6 +80,20 @@ export default function DevelopersPage() {
               the utilities log. Write access to that log only.
             </p>
             <UtilitiesApiDocs />
+          </>
+        }
+        credentials={
+          <>
+            <h2 className="mt-8 text-2xl tracking-tight text-ink">
+              Credentials{" "}
+              <span className="font-display text-accent-text">API</span>
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Stored logins with decrypted passwords, read-only. Every
+              credential returned is written to the access log; its token is
+              separate from every other API&apos;s.
+            </p>
+            <CredentialsApiDocs />
           </>
         }
       />

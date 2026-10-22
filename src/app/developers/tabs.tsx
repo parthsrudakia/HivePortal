@@ -2,31 +2,33 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-type TabKey = "tenants" | "inventory" | "utilities";
+type TabKey = "tenants" | "inventory" | "utilities" | "credentials";
 
 /**
  * Pill-tab switcher for the API references. The active tab is mirrored into
- * the URL hash (#tenants / #inventory / #utilities) so a specific API's docs can be
- * linked directly; the doc content itself stays server-rendered and is
- * passed in as props.
+ * the URL hash (#tenants / #inventory / #utilities / #credentials) so a
+ * specific API's docs can be linked directly; the doc content itself stays
+ * server-rendered and is passed in as props.
  */
 export function DevelopersTabs({
   tenants,
   inventory,
   utilities,
+  credentials,
 }: {
   tenants: ReactNode;
   inventory: ReactNode;
   utilities: ReactNode;
+  credentials: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("tenants");
 
-  // Honor a #inventory / #utilities deep link after mount (server render can't see the
-  // hash, so the initial state must be deterministic to avoid a hydration
-  // mismatch).
+  // Honor a #inventory / #utilities / #credentials deep link after mount
+  // (server render can't see the hash, so the initial state must be
+  // deterministic to avoid a hydration mismatch).
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (hash === "inventory" || hash === "utilities")
+    if (hash === "inventory" || hash === "utilities" || hash === "credentials")
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync from the URL hash, which the server render cannot see
       setTab(hash);
   }, []);
@@ -55,10 +57,11 @@ export function DevelopersTabs({
         {pill("tenants", "Tenants API")}
         {pill("inventory", "Inventory API")}
         {pill("utilities", "Utilities API")}
+        {pill("credentials", "Credentials API")}
       </div>
       <div className={tab === "tenants" ? "" : "hidden"}>{tenants}</div>
       <div className={tab === "inventory" ? "" : "hidden"}>{inventory}</div>
       <div className={tab === "utilities" ? "" : "hidden"}>{utilities}</div>
-    </>
+      <div className={tab === "credentials" ? "" : "hidden"}>{credentials}</div>    </>
   );
 }
