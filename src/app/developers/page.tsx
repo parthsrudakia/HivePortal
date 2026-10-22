@@ -77,7 +77,7 @@ export default function DevelopersPage() {
             <p className="mt-1 text-sm text-muted">
               Statement intake for the statements agent: send a utility
               statement with the fields you read from it, and it lands in
-              the utilities log. Write access to that log only.
+              the utilities log. Also read-only access to past bills.
             </p>
             <UtilitiesApiDocs />
           </>

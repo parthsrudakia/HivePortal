@@ -1,9 +1,9 @@
 import { Section, Code, CodeBlock, ParamTable } from "@/components/api-docs";
 
 /**
- * Utilities statement-intake API reference — served on the PUBLIC
- * /developers page, so the example payload must stay fictional. The API
- * lives in src/app/api/utilities/statements/ — keep this in sync.
+ * Utilities API reference (statement intake, coverage, past bills) — served
+ * on the PUBLIC /developers page, so example payloads must stay fictional.
+ * The API lives in src/app/api/utilities/ — keep this in sync.
  */
 export function UtilitiesApiDocs() {
   return (
@@ -143,6 +143,57 @@ export function UtilitiesApiDocs() {
 }`}</CodeBlock>
       </Section>
 
+      <Section title="GET /api/utilities/bills">
+        <p>
+          Every logged bill with its line items, newest billing period
+          first. All filters are optional and combine:
+        </p>
+        <ParamTable
+          header={["Param", "Meaning", ""]}
+          rows={[
+            ["source", "pseg, coned, or other", ""],
+            ["property_id", "one unit's id, or unassigned for bills not yet matched to a unit", ""],
+            ["utility_type", "electric, gas, water, internet, trash, or other", ""],
+            ["account", "account number; compared digits-only, so spaces/dashes don't matter", ""],
+            ["from / to", "YYYY-MM-DD; billing period end within the range (inclusive)", ""],
+          ]}
+        />
+        <CodeBlock>{`GET /api/utilities/bills?source=pseg&from=2026-01-01
+
+{
+  "count": 1,
+  "bills": [
+    {
+      "id": "0b6f6a52-6a4e-4a8e-9d55-2f1f3e1c9a10",
+      "unit": "Sample House Apt 3B",
+      "property_id": "5d1c2b7e-1f0a-4c2b-9e3d-7a8b9c0d1e2f",
+      "source": "pseg",
+      "provider": "Example Electric",
+      "utility_type": "electric",
+      "account_number": "1234 5678 90",
+      "service_address": "100 Sample St Apt 3B, Exampleville NJ 07000",
+      "statement_date": "2026-09-18",
+      "period_start": "2026-08-14",
+      "period_end": "2026-09-15",
+      "total": 114.95,
+      "charges": [
+        { "kind": "current", "description": "Electric delivery", "amount": 61.20 },
+        { "kind": "current", "description": "Electric supply", "amount": 48.75 },
+        { "kind": "late_fee", "description": "Late payment charge", "amount": 5.00 }
+      ],
+      "notes": null,
+      "logged_at": "2026-09-19T14:02:11.000Z"
+    }
+  ]
+}`}</CodeBlock>
+        <p>
+          <Code>unit</Code> and <Code>property_id</Code> are{" "}
+          <Code>null</Code> for bills not yet assigned to a unit.{" "}
+          <Code>total</Code> is this cycle&apos;s charges only (no previous
+          balance).
+        </p>
+      </Section>
+
       <Section title="Errors">
         <p>
           Always JSON: <Code>{`{ "error": "<message>" }`}</Code>, sometimes
@@ -151,7 +202,7 @@ export function UtilitiesApiDocs() {
         <ParamTable
           header={["Status", "Meaning", ""]}
           rows={[
-            ["400", "Malformed request, data that doesn't match the schema (see issues), or an unknown ?source= value", ""],
+            ["400", "Malformed request, data that doesn't match the schema (see issues), or an invalid query parameter", ""],
             ["401", "Missing or wrong bearer token", ""],
             ["409", "Duplicate — same file, or a bill for the same account and period is already logged. Don't retry.", ""],
             ["422", "Statement couldn't be read or logged (see error / failed_checks)", ""],
