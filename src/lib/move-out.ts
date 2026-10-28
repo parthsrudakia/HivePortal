@@ -1,6 +1,7 @@
 import type { createClient } from "@/lib/supabase/server";
 import { todayISO, addDaysISO } from "@/lib/date";
 import { updateRoomsWithNotification } from "@/lib/notifications";
+import { freshListingFacebookAds } from "@/lib/facebook-ads";
 
 // Services bundle baked into every room's rent: utilities + wi-fi + maid +
 // amenities. A room's total_rent (generated) = base_rent + bundle_fee.
@@ -55,6 +56,9 @@ export async function applyMoveOut(
       .eq("id", tenancy.room_id)
       .maybeSingle();
     const freshListing = !roomBefore?.available_from;
+    const facebookAds = freshListing
+      ? await freshListingFacebookAds(supabase, tenancy.room_id)
+      : null;
 
     // Carry the last tenant's rent forward as the room's list price. Their
     // monthly_rent is the all-in total (base + $125 bundle), so split it back
@@ -75,8 +79,9 @@ export async function applyMoveOut(
       status: hasMovedOut ? "available" : "occupied",
       available_from: addDaysISO(move_out_date, 1),
       listing_action: "no_action",
-      // A new vacancy cycle starts with Facebook ads off (like room_ads below).
-      ...(freshListing ? { facebook_ads: false } : {}),
+      // A new vacancy cycle resets Facebook ads (like room_ads below): on for
+      // non-NY units, off for NY.
+      ...(facebookAds !== null ? { facebook_ads: facebookAds } : {}),
       ...rentPatch,
       },
     );

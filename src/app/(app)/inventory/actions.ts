@@ -12,6 +12,7 @@ import {
 } from "@/lib/amenities";
 import { todayISO } from "@/lib/date";
 import { assertSection } from "@/lib/section-access";
+import { freshListingFacebookAds } from "@/lib/facebook-ads";
 
 // Accept only http(s) web links for ad / photo URLs: a scheme, a host with a
 // dot (or localhost), and no spaces. Guards against pasted plain text or
@@ -343,10 +344,15 @@ export async function makeRoomAvailable(
     };
   }
 
-  // A fresh listing always starts with Facebook ads off.
+  // A fresh listing starts with Facebook ads on for non-NY units, off for NY.
+  const facebookAds = await freshListingFacebookAds(supabase, roomId);
   const { error } = await supabase
     .from("rooms")
-    .update({ status: "available", available_from: value, facebook_ads: false })
+    .update({
+      status: "available",
+      available_from: value,
+      facebook_ads: facebookAds,
+    })
     .eq("id", roomId);
   if (error) return { error: error.message };
 
