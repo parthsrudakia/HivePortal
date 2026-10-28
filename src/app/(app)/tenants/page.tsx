@@ -110,7 +110,7 @@ async function RentKpisSection() {
 
   return (
     <>
-      <section className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+      <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* The four money tiles stack 2×2 to the left of Outstanding. */}
         {admin && (
           <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-2">
@@ -153,16 +153,11 @@ async function RentKpisSection() {
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
           {admin ? (
             <>
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Total outstanding:
-                </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(outstandingTotal)}
-                </span>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                Total outstanding:
               </p>
-              <p className="mt-1 text-xs text-muted">
-                Running balance, all months
+              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                {fmtMoney(outstandingTotal)}
               </p>
             </>
           ) : (
