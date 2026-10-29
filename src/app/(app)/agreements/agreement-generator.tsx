@@ -88,7 +88,9 @@ export function AgreementGenerator({
   const [selectedPrefill, setSelectedPrefill] = useState("");
   const [showCalculator, setShowCalculator] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState("");
-  const [inNewYork, setInNewYork] = useState(false);
+  // Must be set before sending — pre-chosen from the property record when a
+  // unit or tenant is picked, otherwise left for the user to choose.
+  const [inNewYork, setInNewYork] = useState<boolean | null>(null);
   const [coverNote, setCoverNote] = useState("");
   const [sending, setSending] = useState(false);
   // Set only by picking from the property dropdown (or a prefill); cleared as
@@ -208,6 +210,10 @@ export function AgreementGenerator({
     if (!validate()) return;
     if (!recipientEmail.trim()) {
       toast.error("Fill in the tenant's email first.");
+      return;
+    }
+    if (inNewYork === null) {
+      toast.error("Choose whether this is a New York or non-New York apartment.");
       return;
     }
     setSending(true);
@@ -562,19 +568,38 @@ export function AgreementGenerator({
                 className={fieldInput}
               />
             </label>
-            <label className="flex items-center gap-2 pb-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={inNewYork}
-                onChange={(e) => setInNewYork(e.target.checked)}
-                className="h-4 w-4 accent-accent"
-              />
-              New York unit
-            </label>
+            <div className="flex flex-col gap-1.5">
+              <span className={fieldLabel}>Apartment location *</span>
+              <div
+                role="radiogroup"
+                aria-label="Apartment location"
+                className="flex rounded-full border border-stone bg-white p-1"
+              >
+                {[
+                  { value: true, label: "New York" },
+                  { value: false, label: "Non-New York" },
+                ].map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={inNewYork === opt.value}
+                    onClick={() => setInNewYork(opt.value)}
+                    className={`rounded-full px-4 py-1.5 text-sm transition ${
+                      inNewYork === opt.value
+                        ? "bg-ink text-white"
+                        : "text-ink hover:bg-warm"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               type="button"
               onClick={send}
-              disabled={sending || !hasOperatorSignature}
+              disabled={sending || !hasOperatorSignature || inNewYork === null}
               className="rounded-full bg-ink px-6 py-3 text-sm font-medium uppercase tracking-wide text-white transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-40"
             >
               {sending ? "Sending…" : "Send to tenant"}
@@ -597,7 +622,11 @@ export function AgreementGenerator({
           </label>
           <p className="mt-3 text-xs text-muted">
             {hasOperatorSignature ? (
-              inNewYork ? (
+              inNewYork === null ? (
+                <span className="text-amber-800">
+                  Choose New York or Non-New York before sending.
+                </span>
+              ) : inNewYork ? (
                 <>
                   New York: sent plain from the personal Gmail, no letterhead or
                   branding.
