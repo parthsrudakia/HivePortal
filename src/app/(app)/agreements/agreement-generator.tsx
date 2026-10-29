@@ -213,7 +213,7 @@ export function AgreementGenerator({
       return;
     }
     if (inNewYork === null) {
-      toast.error("Choose whether this is a New York or non-New York apartment.");
+      toast.error("Choose New York or non-New York branding.");
       return;
     }
     setSending(true);
@@ -569,10 +569,10 @@ export function AgreementGenerator({
               />
             </label>
             <div className="flex flex-col gap-1.5">
-              <span className={fieldLabel}>Apartment location *</span>
+              <span className={fieldLabel}>Branding *</span>
               <div
                 role="radiogroup"
-                aria-label="Apartment location"
+                aria-label="Branding"
                 className="flex rounded-full border border-stone bg-white p-1"
               >
                 {[

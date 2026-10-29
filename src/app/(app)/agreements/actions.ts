@@ -127,7 +127,7 @@ export async function sendAgreementToTenant(
     return { ok: false, error: "Lease end date must be after the start date." };
   }
   if (typeof payload.inNewYork !== "boolean") {
-    return { ok: false, error: "Choose whether this is a New York or non-New York apartment." };
+    return { ok: false, error: "Choose New York or non-New York branding." };
   }
   if (payload.propertyId && !UUID_RE.test(payload.propertyId)) {
     return { ok: false, error: "Invalid property id." };
