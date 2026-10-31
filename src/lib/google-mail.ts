@@ -116,15 +116,17 @@ function handoverLogger(onHandover: () => void) {
   };
 }
 
-// An explicit 4xx (or 535 — Gmail intermittently refuses the app password
-// from Vercel) means Gmail refused this attempt, so nothing was accepted. A
-// dropped connection is only safe before the hand-over: after it, Gmail may
-// have taken the message and just never said so.
-const RETRY_SMTP_CODES = new Set([421, 450, 451, 452, 454, 535]);
+// An explicit 4xx means Gmail refused this attempt, so nothing was accepted.
+// A refused login (EAUTH, e.g. 535) is never retried: it means the app
+// password is dead, and trying again can't fix that. A dropped connection is
+// only safe before the hand-over: after it, Gmail may have taken the message
+// and just never said so.
+const RETRY_SMTP_CODES = new Set([421, 450, 451, 452, 454]);
 const RETRY_CONNECTION_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "ESOCKET", "ECONNECTION"]);
 
 function retryableGmailError(e: unknown, handedOver: boolean): boolean {
   const { code, responseCode } = (e ?? {}) as { code?: unknown; responseCode?: unknown };
+  if (code === "EAUTH") return false;
   if (typeof responseCode === "number") return RETRY_SMTP_CODES.has(responseCode);
   return !handedOver && typeof code === "string" && RETRY_CONNECTION_CODES.has(code);
 }

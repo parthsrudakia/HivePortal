@@ -87,11 +87,26 @@ beforeEach(() => {
 const send = () => sendGmailMessage({ to: "tenant@example.com", subject: "Rent", text: "Hi" });
 
 describe("sendGmailMessage retries", () => {
-  it("retries Gmail's intermittent 535 login refusal, then sends once", async () => {
+  it("does not retry a refused login (535): the app password is dead", async () => {
     smtp.scripts = [{ auth: "535 5.7.8 Username and Password not accepted" }];
     const r = await send();
+    expect(r).toMatchObject({ ok: false, attempts: 1 });
+    expect(r.ok || r.error).toMatch(/^Invalid login: 535/);
+    expect(smtp.connections).toBe(1);
+    expect(smtp.messages).toBe(0);
+  });
+
+  it("does not retry a 4xx refusal at login either", async () => {
+    smtp.scripts = [{ auth: "454 4.7.0 Too many login attempts, please try again later" }];
+    const r = await send();
+    expect(r).toMatchObject({ ok: false, attempts: 1 });
+    expect(smtp.connections).toBe(1);
+  });
+
+  it("still retries the same 4xx outside the login", async () => {
+    smtp.scripts = [{ rcpt: "454 4.7.0 Temporary server error" }];
+    const r = await send();
     expect(r).toMatchObject({ ok: true, attempts: 2 });
-    expect(smtp.connections).toBe(2);
     expect(smtp.messages).toBe(1);
   });
 
