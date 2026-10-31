@@ -342,6 +342,7 @@ async function deliverAgreementEmail(opts: {
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }

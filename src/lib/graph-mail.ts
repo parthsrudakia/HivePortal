@@ -17,6 +17,7 @@
  */
 
 import type { DraftInput, SendDiag, SendResult } from "./google-mail";
+import { RetryableFailure, withSendRetry } from "./send-retry";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const GRAPH_MESSAGES_URL = `${GRAPH_BASE}/me/messages`;
@@ -62,6 +63,30 @@ async function graphFetch(
     ),
   );
   return fetch(url, { ...init, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) });
+}
+
+// POST /send gets its own retries (withSendRetry below) instead of graphFetch's.
+const NO_RETRY = new Set<number>();
+const SEND_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRY_AFTER_MS = 8_000;
+
+type SendFailure = { status: number; detail: string };
+
+function retryAfterMs(res: Response): number | undefined {
+  const seconds = Number(res.headers.get("retry-after"));
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
+    : undefined;
+}
+
+// Only a message that is still a draft has certainly not been sent. Any
+// doubt (lookup failed, no longer a draft) means don't resend.
+async function stillUnsentDraft(draftUrl: string, token: string): Promise<boolean> {
+  const res = await graphFetch(`${draftUrl}?$select=isDraft`, {
+    headers: { Authorization: `Bearer ${token}`, ...PREFER_IMMUTABLE_ID },
+  }).catch(() => null);
+  if (!res?.ok) return false;
+  return ((await res.json().catch(() => ({}))) as { isDraft?: boolean }).isDraft === true;
 }
 
 function config() {
@@ -258,31 +283,57 @@ export async function sendOutlookMessage(
     //    absorbs client/server clock skew.
     const sentFloor = new Date(Date.now() - 60_000).toISOString();
 
-    // 3. Send the persisted draft. /send returns 202 with an empty body. Only
-    //    429 is blind-retried (Graph is explicit the request wasn't
-    //    processed). A definite 4xx rejection means the draft never left —
-    //    clean it up and fail. Anything ambiguous (5xx, timeout, network
-    //    error) falls through to verification, which decides whether the
-    //    message actually went out — never delete or resend on an ambiguous
-    //    outcome.
+    // 3. Send the persisted draft. /send returns 202 with an empty body.
+    //    429/5xx and network errors are retried with backoff (send-retry.ts,
+    //    Retry-After honoured up to 8s). 429 means Graph didn't process the
+    //    request; after anything ambiguous (5xx, timeout, network error) the
+    //    draft is re-read first and only resent while it is still a draft.
+    //    A definite 4xx rejection means the draft never left — clean it up
+    //    and fail. Anything still ambiguous after the retries falls through
+    //    to verification, which decides whether the message actually went
+    //    out — never delete or resend on an ambiguous outcome.
     let sendErrorDetail = "";
     let sendDefinitelyFailed = false;
-    try {
-      const sendRes = await graphFetch(
-        `${draftUrl}/send`,
-        { method: "POST", headers: authHeaders },
-        new Set([429]),
-      );
-      diag.sendStatus = sendRes.status;
-      if (!sendRes.ok) {
-        const detail = await sendRes.text().catch(() => "");
-        sendErrorDetail = `Outlook send failed (${sendRes.status}): ${detail.slice(0, 200)}`;
-        sendDefinitelyFailed = sendRes.status >= 400 && sendRes.status < 500;
+    const send = await withSendRetry(
+      async () => {
+        const res = await graphFetch(
+          `${draftUrl}/send`,
+          { method: "POST", headers: authHeaders },
+          NO_RETRY,
+        );
+        if (!SEND_RETRY_STATUSES.has(res.status)) return res;
+        const failure: SendFailure = {
+          status: res.status,
+          detail: await res.text().catch(() => ""),
+        };
+        throw new RetryableFailure(failure, retryAfterMs(res));
+      },
+      {
+        isRetryable: () => true, // a retryable status or a network error
+        beforeRetry: (e) =>
+          e instanceof RetryableFailure && (e.result as SendFailure).status === 429
+            ? Promise.resolve(true)
+            : stillUnsentDraft(draftUrl, token),
+      },
+    );
+    if (send.ok) {
+      diag.sendStatus = send.value.status;
+      if (!send.value.ok) {
+        const detail = await send.value.text().catch(() => "");
+        sendErrorDetail = `Outlook send failed (${send.value.status}): ${detail.slice(0, 200)}`;
+        sendDefinitelyFailed = send.value.status >= 400 && send.value.status < 500;
       }
-    } catch (e) {
+    } else if (send.error instanceof RetryableFailure) {
+      const { status, detail } = send.error.result as SendFailure;
+      diag.sendStatus = status;
+      sendErrorDetail = `Outlook send failed (${status}): ${detail.slice(0, 200)}`;
+      sendDefinitelyFailed = status === 429;
+    } else {
+      const e = send.error;
       sendErrorDetail = `Outlook send did not respond: ${e instanceof Error ? e.message : String(e)}`;
       diag.note = "send timed out — outcome resolved via Sent Items check";
     }
+    const sendAttempts = send.attempts;
     if (sendDefinitelyFailed) {
       // Best-effort: the draft was never sent, so remove it rather than
       // letting failed attempts pile up in the Drafts folder.
@@ -291,7 +342,7 @@ export async function sendOutlookMessage(
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
       }).catch(() => {});
-      return { ok: false, error: sendErrorDetail, diag };
+      return { ok: false, error: sendErrorDetail, diag, attempts: sendAttempts };
     }
 
     // 4. Verify the message actually landed in Sent Items before reporting
@@ -334,7 +385,12 @@ export async function sendOutlookMessage(
             diag.verifyMethod = "immutable-id";
             diag.verifyAttempts = attempts;
             diag.matchedInSentItems = true;
-            return { ok: true, id: m.internetMessageId ?? m.id ?? "", diag };
+            return {
+              ok: true,
+              id: m.internetMessageId ?? m.id ?? "",
+              diag,
+              attempts: sendAttempts,
+            };
           }
         }
       }
@@ -372,6 +428,7 @@ export async function sendOutlookMessage(
             ok: true,
             id: match.internetMessageId ?? match.id ?? "",
             diag,
+            attempts: sendAttempts,
           };
         }
       }
@@ -388,6 +445,7 @@ export async function sendOutlookMessage(
           "be processing. Check the Sent folder before retrying so the tenant " +
           "isn't emailed twice.",
       diag,
+      attempts: sendAttempts,
     };
   } catch (e) {
     return {

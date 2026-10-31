@@ -51,6 +51,10 @@ export async function logEmail(entry: {
   resend_id?: string | null;
   /** Open-tracking pixel id embedded in the HTML (see email-tracking.ts). */
   track_id?: string | null;
+  /** Provider attempts the send took (send-retry.ts). More than one adds
+   *  "(after N attempts)" to the error of a failed row, or the context of a
+   *  sent one — the row itself stays one per email, with the final outcome. */
+  attempts?: number;
 }): Promise<void> {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -59,14 +63,18 @@ export async function logEmail(entry: {
     const sb = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    const retried =
+      entry.attempts && entry.attempts > 1 ? `(after ${entry.attempts} attempts)` : null;
+    const noted = (s: string | null | undefined) =>
+      retried ? (s ? `${s} ${retried}` : retried) : (s ?? null);
     await sb.from("email_log").insert({
       type: entry.type,
       recipient: entry.recipient,
       subject: entry.subject,
       status: entry.status,
       channel: entry.channel ?? "resend",
-      error: entry.error ?? null,
-      context: entry.context ?? null,
+      error: entry.status === "failed" ? noted(entry.error) : (entry.error ?? null),
+      context: entry.status === "sent" ? noted(entry.context) : (entry.context ?? null),
       resend_id: entry.resend_id ?? null,
       track_id: entry.track_id ?? null,
     });
