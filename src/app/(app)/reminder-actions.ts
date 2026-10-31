@@ -16,10 +16,24 @@ export async function dismissLoginReminders(
 
   // RLS also restricts to the caller's own rows; the filter keeps intent
   // explicit and the update a no-op for anyone else's ids.
+  const { data: shown, error: readError } = await supabase
+    .from("login_reminders")
+    .select("id, created_by")
+    .in("id", ids)
+    .eq("user_id", user.id);
+  if (readError) return { error: readError.message };
+
+  // Mailbox warnings (src/lib/mailbox-health.ts) stay until the mailbox
+  // check passes and clears them; "Got it" only closes the popup.
+  const dismissible = (shown ?? [])
+    .filter((r) => !r.created_by?.startsWith("mailbox-check:"))
+    .map((r) => r.id);
+  if (dismissible.length === 0) return undefined;
+
   const { error } = await supabase
     .from("login_reminders")
     .update({ dismissed_at: new Date().toISOString() })
-    .in("id", ids)
+    .in("id", dismissible)
     .eq("user_id", user.id);
   if (error) return { error: error.message };
 

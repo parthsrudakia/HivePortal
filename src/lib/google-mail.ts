@@ -12,6 +12,7 @@
 
 import nodemailer from "nodemailer";
 import { ImapFlow } from "imapflow";
+import { reportMailboxAuthFailure } from "./mailbox-health";
 
 // All New York correspondence goes out under this personal identity — display
 // name "Vineet", no Hive branding.
@@ -196,6 +197,21 @@ async function findInGmailSent(
  * additionally requires the message to show up in the Sent folder over IMAP.
  */
 export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
+  const result = await sendOverSmtp(input);
+  // Judged on the final result, so it holds however the send itself is built.
+  if (!result.ok && isGmailLoginFailure(result.error)) {
+    await reportMailboxAuthFailure("gmail").catch(() => {});
+  }
+  return result;
+}
+
+// nodemailer words every refused SMTP login (EAUTH) "Invalid login: <reply>";
+// Gmail's reply to a rejected app password is 535.
+function isGmailLoginFailure(error: string): boolean {
+  return error.startsWith("Invalid login");
+}
+
+async function sendOverSmtp(input: DraftInput): Promise<SendResult> {
   const cfg = config();
   if (!cfg) {
     return {
