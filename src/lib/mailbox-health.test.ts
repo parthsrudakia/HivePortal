@@ -59,6 +59,7 @@ function fakeAdmin() {
             users: [
               { id: "u-boss", email: "boss@example.com" },
               { id: "u-staff", email: "staff@example.com" },
+              { id: "u-grokbot", email: health.EXTRA_ALERT_EMAILS[0] },
             ],
           },
           error: null,
@@ -116,34 +117,50 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const users = (rows: Row[]) => rows.map((r) => r.user_id).sort();
+
 describe("runMailboxHealthCheck", () => {
-  it("creates one reminder per master user when a mailbox can't connect", async () => {
+  it("creates one reminder per alert recipient when a mailbox can't connect", async () => {
     mocks.gmail.mockResolvedValue(GMAIL_DOWN);
     const result = await run();
 
     expect(result).toEqual({
-      gmail: { connected: false, error: GMAIL_DOWN.error, created: 1 },
+      gmail: { connected: false, error: GMAIL_DOWN.error, created: 2 },
       outlook: { connected: true, cleared: 0 },
     });
     expect(mocks.gmail).toHaveBeenCalledTimes(2); // failed, then confirmed
-    expect(admin.rows).toEqual([
-      {
-        id: "r1",
-        user_id: "u-boss",
-        message:
-          "The NY Gmail account isn't connected (Google is rejecting its app password), so NY agreements and reminders aren't going out. Ask Parth or Amir to reconnect it. [Invalid login: 535-5.7.8 Username and Password not accepted.]",
-        show_after: todayISO(),
-        created_by: "mailbox-check:gmail",
-        dismissed_at: null,
-      },
-    ]);
+    expect(admin.rows.find((r) => r.user_id === "u-boss")).toEqual({
+      id: "r1",
+      user_id: "u-boss",
+      message:
+        "The NY Gmail account isn't connected (Google is rejecting its app password), so NY agreements and reminders aren't going out. Ask Parth or Amir to reconnect it. [Invalid login: 535-5.7.8 Username and Password not accepted.]",
+      show_after: todayISO(),
+      created_by: "mailbox-check:gmail",
+      dismissed_at: null,
+    });
+  });
+
+  it("also alerts the GrokBot account, and clears its reminder on recovery", async () => {
+    mocks.outlook.mockResolvedValue({ configured: true, ok: false, error: "invalid_grant" });
+    await run();
+    const [grok] = admin.rows.filter((r) => r.user_id === "u-grokbot");
+    expect(grok).toMatchObject({ created_by: "mailbox-check:outlook", dismissed_at: null });
+    expect(grok.message).toMatch(/^The Outlook work mailbox isn't connected .* \[invalid_grant\]$/);
+    expect(users(admin.rows)).toEqual(["u-boss", "u-grokbot"]); // not u-staff
+
+    await run();
+    expect(admin.rows).toHaveLength(2); // no duplicate for either
+
+    mocks.outlook.mockResolvedValue(PASS);
+    await run();
+    expect(grok.dismissed_at).not.toBeNull();
   });
 
   it("counts an unconfigured mailbox as not connected", async () => {
     mocks.outlook.mockResolvedValue({ configured: false, ok: false });
     const result = await run();
 
-    expect(result.outlook).toEqual({ connected: false, error: "not configured", created: 1 });
+    expect(result.outlook).toEqual({ connected: false, error: "not configured", created: 2 });
     expect(admin.open("mailbox-check:outlook")[0].message).toMatch(
       /^The Outlook work mailbox isn't connected .* \[not configured\]$/,
     );
@@ -156,21 +173,21 @@ describe("runMailboxHealthCheck", () => {
     await report("gmail");
 
     expect(again.gmail).toMatchObject({ connected: false, created: 0 });
-    expect(admin.rows).toHaveLength(1);
+    expect(users(admin.rows)).toEqual(["u-boss", "u-grokbot"]);
   });
 
   it("dismisses the reminder by itself once the mailbox connects again", async () => {
     mocks.gmail.mockResolvedValue(GMAIL_DOWN);
     mocks.outlook.mockResolvedValue({ configured: true, ok: false, error: "invalid_grant" });
     await run();
-    expect(admin.rows).toHaveLength(2);
+    expect(admin.rows).toHaveLength(4);
 
     mocks.gmail.mockResolvedValue(PASS);
     const result = await run();
 
-    expect(result.gmail).toEqual({ connected: true, cleared: 1 });
+    expect(result.gmail).toEqual({ connected: true, cleared: 2 });
     expect(admin.open("mailbox-check:gmail")).toHaveLength(0);
-    expect(admin.open("mailbox-check:outlook")).toHaveLength(1); // still down
+    expect(admin.open("mailbox-check:outlook")).toHaveLength(2); // still down
   });
 
   it("raises nothing when a failed check passes on the recheck", async () => {
@@ -188,7 +205,7 @@ describe("reportMailboxAuthFailure", () => {
     await report("gmail");
 
     expect(mocks.gmail).toHaveBeenCalledTimes(1);
-    expect(admin.open("mailbox-check:gmail")).toHaveLength(1);
+    expect(users(admin.open("mailbox-check:gmail"))).toEqual(["u-boss", "u-grokbot"]);
   });
 
   it("creates no reminder when the recheck passes", async () => {
@@ -213,7 +230,7 @@ describe("reportMailboxAuthFailure", () => {
     vi.advanceTimersByTime(60_000);
     await report("gmail");
     expect(mocks.gmail).toHaveBeenCalledTimes(2);
-    expect(admin.rows).toHaveLength(1);
+    expect(admin.rows).toHaveLength(2); // boss + grokbot, once each
   });
 
   it("never throws, even when the check and the database both blow up", async () => {

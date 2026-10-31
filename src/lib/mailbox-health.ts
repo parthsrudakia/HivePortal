@@ -1,8 +1,9 @@
 /**
  * Mailbox connection alerts. If the NY Gmail account or the Outlook work
- * mailbox can't sign in, every master user (Vineet) gets a blocking login
- * reminder (login_reminders → LoginReminderPopup) until it's fixed; once the
- * mailbox signs in again, its reminder clears itself.
+ * mailbox can't sign in, every master user (Vineet) and the EXTRA_ALERT_EMAILS
+ * accounts get a blocking login reminder (login_reminders →
+ * LoginReminderPopup). "Got it" can't dismiss it (see reminder-actions.ts):
+ * it stays until the mailbox signs in again and the check clears it.
  *
  * Both triggers reuse the Telegram /diag checks:
  *   - runMailboxHealthCheck — the daily cron checks both mailboxes.
@@ -34,9 +35,11 @@ const MESSAGES: Record<MailboxChannel, string> = {
     "The Outlook work mailbox isn't connected (Microsoft rejected its sign-in), so branded agreements and reminders aren't going out. Ask Parth or Amir to reconnect it.",
 };
 
+/** Portal accounts alerted alongside the master users: the GrokBot account. */
+export const EXTRA_ALERT_EMAILS = ["vdutta1485@hotmail.com"];
+
 // A failed check is tried once more after this pause before it raises an
-// alert: Gmail intermittently refuses the app password, and a one-off
-// refusal shouldn't put a false alarm in front of Vineet.
+// alert, so a one-off network blip doesn't raise a false alarm.
 const RECHECK_DELAY_MS = 3_000;
 const REPORT_INTERVAL_MS = 10 * 60_000;
 
@@ -58,18 +61,26 @@ function shortError(result: CheckResult): string {
   return error.length > 160 ? `${error.slice(0, 159)}…` : error;
 }
 
-async function masterUserIds(admin: SupabaseClient): Promise<string[]> {
+function isAlertRecipient(email: string | undefined): boolean {
+  return (
+    isMaster(email) ||
+    (!!email && EXTRA_ALERT_EMAILS.includes(email.trim().toLowerCase()))
+  );
+}
+
+async function alertUserIds(admin: SupabaseClient): Promise<string[]> {
   const { data, error } = await admin.auth.admin.listUsers({
     page: 1,
     perPage: 1000,
   });
   if (error) throw new Error(error.message);
-  return (data?.users ?? []).filter((u) => isMaster(u.email)).map((u) => u.id);
+  return (data?.users ?? []).filter((u) => isAlertRecipient(u.email)).map((u) => u.id);
 }
 
 /**
  * Bring login_reminders in line with one check result: a failing mailbox has
- * exactly one undismissed reminder per master user, a passing one has none.
+ * exactly one undismissed reminder per alert recipient, a passing one has
+ * none.
  */
 async function recordStatus(
   admin: SupabaseClient,
@@ -89,17 +100,17 @@ async function recordStatus(
   }
 
   const detail = shortError(result);
-  const masters = await masterUserIds(admin);
-  if (masters.length === 0) return { connected: false, error: detail, created: 0 };
+  const recipients = await alertUserIds(admin);
+  if (recipients.length === 0) return { connected: false, error: detail, created: 0 };
   const { data: open, error: openError } = await admin
     .from("login_reminders")
     .select("user_id")
     .eq("created_by", createdBy)
     .is("dismissed_at", null)
-    .in("user_id", masters);
+    .in("user_id", recipients);
   if (openError) throw new Error(openError.message);
   const alerted = new Set((open ?? []).map((r) => r.user_id));
-  const missing = masters.filter((id) => !alerted.has(id));
+  const missing = recipients.filter((id) => !alerted.has(id));
   if (missing.length > 0) {
     const { error } = await admin.from("login_reminders").insert(
       missing.map((user_id) => ({

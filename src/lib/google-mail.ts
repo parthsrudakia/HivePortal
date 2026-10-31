@@ -94,13 +94,6 @@ function makeTransport(cfg: { user: string; pass: string }) {
   });
 }
 
-// nodemailer tags a refused login EAUTH; Gmail answers a rejected app
-// password with 535.
-function isGmailAuthError(e: unknown): boolean {
-  const { code, responseCode } = (e ?? {}) as { code?: unknown; responseCode?: unknown };
-  return code === "EAUTH" || responseCode === 535;
-}
-
 /**
  * Verify the Gmail App Password authenticates over SMTP (i.e. sending will work)
  * WITHOUT sending anything. Used by the Telegram /diag command.
@@ -204,6 +197,21 @@ async function findInGmailSent(
  * additionally requires the message to show up in the Sent folder over IMAP.
  */
 export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
+  const result = await sendOverSmtp(input);
+  // Judged on the final result, so it holds however the send itself is built.
+  if (!result.ok && isGmailLoginFailure(result.error)) {
+    await reportMailboxAuthFailure("gmail").catch(() => {});
+  }
+  return result;
+}
+
+// nodemailer words every refused SMTP login (EAUTH) "Invalid login: <reply>";
+// Gmail's reply to a rejected app password is 535.
+function isGmailLoginFailure(error: string): boolean {
+  return error.startsWith("Invalid login");
+}
+
+async function sendOverSmtp(input: DraftInput): Promise<SendResult> {
   const cfg = config();
   if (!cfg) {
     return {
@@ -266,9 +274,6 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
       diag,
     };
   } catch (e) {
-    if (isGmailAuthError(e)) {
-      await reportMailboxAuthFailure("gmail").catch(() => {});
-    }
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Unknown Gmail error",

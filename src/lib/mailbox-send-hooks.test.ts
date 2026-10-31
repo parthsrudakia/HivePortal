@@ -38,8 +38,10 @@ describe("Gmail send", () => {
     expect(mocks.report).toHaveBeenCalledExactlyOnceWith("gmail");
   });
 
-  it("doesn't report a failure that isn't about the login", async () => {
+  it("doesn't report failures that aren't about the login", async () => {
     mocks.sendMail.mockRejectedValue(smtpError("Connection reset", { code: "ECONNRESET" }));
+    expect(await sendGmailMessage(message)).toMatchObject({ ok: false });
+    mocks.sendMail.mockReset().mockResolvedValue({ rejected: ["tenant@example.com"], messageId: "<m1>" });
     expect(await sendGmailMessage(message)).toMatchObject({ ok: false });
     expect(mocks.report).not.toHaveBeenCalled();
   });
