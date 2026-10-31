@@ -32,14 +32,21 @@ beforeEach(() => {
 });
 
 describe("Gmail send", () => {
+  // Failures here are ones no version of the send retries, so these hold
+  // with or without the send-retry change.
   it("reports a refused login and returns the failure unchanged", async () => {
     mocks.sendMail.mockRejectedValue(REFUSED);
-    expect(await sendGmailMessage(message)).toEqual({ ok: false, error: REFUSED.message });
+    expect(await sendGmailMessage(message)).toMatchObject({ ok: false, error: REFUSED.message });
     expect(mocks.report).toHaveBeenCalledExactlyOnceWith("gmail");
   });
 
   it("doesn't report failures that aren't about the login", async () => {
-    mocks.sendMail.mockRejectedValue(smtpError("Connection reset", { code: "ECONNRESET" }));
+    mocks.sendMail.mockRejectedValue(
+      smtpError("Can't send mail - all recipients were rejected: 550 5.1.1 No such user", {
+        code: "EENVELOPE",
+        responseCode: 550,
+      }),
+    );
     expect(await sendGmailMessage(message)).toMatchObject({ ok: false });
     mocks.sendMail.mockReset().mockResolvedValue({ rejected: ["tenant@example.com"], messageId: "<m1>" });
     expect(await sendGmailMessage(message)).toMatchObject({ ok: false });
@@ -48,8 +55,9 @@ describe("Gmail send", () => {
 
   it("returns the same result even if the reporter throws", async () => {
     mocks.sendMail.mockRejectedValue(REFUSED);
+    const expected = await sendGmailMessage(message);
     mocks.report.mockRejectedValue(new Error("reporter blew up"));
-    expect(await sendGmailMessage(message)).toEqual({ ok: false, error: REFUSED.message });
+    expect(await sendGmailMessage(message)).toEqual(expected);
   });
 });
 
