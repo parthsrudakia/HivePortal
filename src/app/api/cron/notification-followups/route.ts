@@ -9,7 +9,8 @@
  *   5. apply the monthly $50 late fees (first run on/after the 7th ET),
  *   6. auto-dismiss duplicate signing requests (same person, within 15 days),
  *   7. retry undelivered "agreement signed" Telegram alerts,
- *   8. send any "Other" charge emails the per-minute pg_cron missed.
+ *   8. send any "Other" charge emails the per-minute pg_cron missed,
+ *   9. check the Gmail (NY) and Outlook (work) mailboxes can still sign in.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -23,6 +24,7 @@ import { processExpiredTenancies } from "@/lib/tenancy-lifecycle";
 import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
 import { retrySignedAgreementAlerts } from "@/lib/agreement-notify";
 import { flushChargeNotices } from "@/lib/charge-notices";
+import { runMailboxHealthCheck } from "@/lib/mailbox-health";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -108,6 +110,12 @@ export async function GET(req: NextRequest) {
     error: e instanceof Error ? e.message : "charge notices failed",
   }));
 
+  // A mailbox that can't sign in puts a blocking popup in front of Vineet
+  // until it's reconnected; one that signs in again clears its old popup.
+  const mailboxHealth = await runMailboxHealthCheck(supabase).catch((e) => ({
+    error: e instanceof Error ? e.message : "mailbox health check failed",
+  }));
+
   return NextResponse.json({
     tenancyLifecycle,
     chargeNotices,
@@ -118,5 +126,6 @@ export async function GET(req: NextRequest) {
     board,
     lateFees,
     agreementDedupe,
+    mailboxHealth,
   });
 }

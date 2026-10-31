@@ -12,6 +12,7 @@
 
 import nodemailer from "nodemailer";
 import { ImapFlow } from "imapflow";
+import { reportMailboxAuthFailure } from "./mailbox-health";
 
 // All New York correspondence goes out under this personal identity — display
 // name "Vineet", no Hive branding.
@@ -91,6 +92,13 @@ function makeTransport(cfg: { user: string; pass: string }) {
     greetingTimeout: 10_000,
     socketTimeout: 30_000,
   });
+}
+
+// nodemailer tags a refused login EAUTH; Gmail answers a rejected app
+// password with 535.
+function isGmailAuthError(e: unknown): boolean {
+  const { code, responseCode } = (e ?? {}) as { code?: unknown; responseCode?: unknown };
+  return code === "EAUTH" || responseCode === 535;
 }
 
 /**
@@ -258,6 +266,9 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
       diag,
     };
   } catch (e) {
+    if (isGmailAuthError(e)) {
+      await reportMailboxAuthFailure("gmail").catch(() => {});
+    }
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Unknown Gmail error",

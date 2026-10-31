@@ -17,6 +17,7 @@
  */
 
 import type { DraftInput, SendDiag, SendResult } from "./google-mail";
+import { reportMailboxAuthFailure } from "./mailbox-health";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const GRAPH_MESSAGES_URL = `${GRAPH_BASE}/me/messages`;
@@ -102,6 +103,11 @@ export async function checkOutlookSendAuth(): Promise<{
   }
 }
 
+// A 400/401 from the token endpoint means Microsoft rejected the stored
+// sign-in itself (invalid_grant: refresh token expired, revoked or not
+// consented; invalid_client: bad or expired client secret), not a blip.
+class OutlookSignInError extends Error {}
+
 async function accessToken(scope: string): Promise<string> {
   const cfg = config();
   if (!cfg) throw new Error("Outlook is not configured (missing MS_* env).");
@@ -127,9 +133,10 @@ async function accessToken(scope: string): Promise<string> {
     const hint = needsConsent
       ? " — the refresh token isn't consented for Mail.Send; re-mint MS_REFRESH_TOKEN with Mail.Send + offline_access."
       : "";
-    throw new Error(
-      `Outlook token refresh failed (${res.status}): ${detail.slice(0, 200)}${hint}`,
-    );
+    const message = `Outlook token refresh failed (${res.status}): ${detail.slice(0, 200)}${hint}`;
+    throw res.status === 400 || res.status === 401
+      ? new OutlookSignInError(message)
+      : new Error(message);
   }
   const data = (await res.json()) as { access_token?: string };
   if (!data.access_token) {
@@ -390,6 +397,9 @@ export async function sendOutlookMessage(
       diag,
     };
   } catch (e) {
+    if (e instanceof OutlookSignInError) {
+      await reportMailboxAuthFailure("outlook").catch(() => {});
+    }
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Unknown Outlook error",
