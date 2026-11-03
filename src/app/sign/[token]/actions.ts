@@ -198,6 +198,7 @@ export async function submitSignature(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? trackId : null,
+    attempts: result.attempts,
   });
 
   // Alert the operators on Telegram. On a confirmed send, stamp the row as

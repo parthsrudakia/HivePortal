@@ -12,6 +12,7 @@
 
 import nodemailer from "nodemailer";
 import { ImapFlow } from "imapflow";
+import { withSendRetry } from "./send-retry";
 
 // All New York correspondence goes out under this personal identity — display
 // name "Vineet", no Hive branding.
@@ -63,8 +64,8 @@ export type SendDiag = {
 };
 
 export type SendResult =
-  | { ok: true; id: string; diag?: SendDiag }
-  | { ok: false; error: string; diag?: SendDiag };
+  | { ok: true; id: string; diag?: SendDiag; attempts?: number }
+  | { ok: false; error: string; diag?: SendDiag; attempts?: number };
 
 function config() {
   const user = process.env.GMAIL_USER;
@@ -79,7 +80,10 @@ export function gmailConfigured(): boolean {
   return config() !== null;
 }
 
-function makeTransport(cfg: { user: string; pass: string }) {
+function makeTransport(
+  cfg: { user: string; pass: string },
+  onHandover?: () => void,
+) {
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -90,7 +94,41 @@ function makeTransport(cfg: { user: string; pass: string }) {
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
     socketTimeout: 30_000,
+    logger: onHandover ? handoverLogger(onHandover) : false,
   });
+}
+
+// nodemailer logs `tnx: "send"` once connect, TLS and login are done, just
+// before it starts handing the message over (MAIL FROM, RCPT, DATA). Nothing
+// else is logged or kept.
+function handoverLogger(onHandover: () => void) {
+  const ignore = () => {};
+  return {
+    level: ignore,
+    trace: ignore,
+    debug: ignore,
+    info: (entry: { tnx?: string } | undefined) => {
+      if (entry?.tnx === "send") onHandover();
+    },
+    warn: ignore,
+    error: ignore,
+    fatal: ignore,
+  };
+}
+
+// An explicit 4xx means Gmail refused this attempt, so nothing was accepted.
+// A refused login (EAUTH, e.g. 535) is never retried: it means the app
+// password is dead, and trying again can't fix that. A dropped connection is
+// only safe before the hand-over: after it, Gmail may have taken the message
+// and just never said so.
+const RETRY_SMTP_CODES = new Set([421, 450, 451, 452, 454]);
+const RETRY_CONNECTION_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "ESOCKET", "ECONNECTION"]);
+
+function retryableGmailError(e: unknown, handedOver: boolean): boolean {
+  const { code, responseCode } = (e ?? {}) as { code?: unknown; responseCode?: unknown };
+  if (code === "EAUTH") return false;
+  if (typeof responseCode === "number") return RETRY_SMTP_CODES.has(responseCode);
+  return !handedOver && typeof code === "string" && RETRY_CONNECTION_CODES.has(code);
 }
 
 /**
@@ -204,7 +242,11 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
     };
   }
   try {
-    const info = await makeTransport(cfg).sendMail({
+    let handedOver = false;
+    const transport = makeTransport(cfg, () => {
+      handedOver = true;
+    });
+    const message = {
       from: fromHeader(cfg.user),
       to: input.to,
       bcc: input.bcc,
@@ -220,7 +262,25 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
             },
           ]
         : undefined,
-    });
+    };
+    // Only sendMail is retried; nothing after Gmail's 250 (the recipient
+    // check, the Sent-folder check) ever sends again.
+    const sent = await withSendRetry(
+      () => {
+        handedOver = false;
+        return transport.sendMail(message);
+      },
+      { isRetryable: (e) => retryableGmailError(e, handedOver) },
+    );
+    const attempts = sent.attempts;
+    if (!sent.ok) {
+      return {
+        ok: false,
+        error: sent.error instanceof Error ? sent.error.message : "Unknown Gmail error",
+        attempts,
+      };
+    }
+    const info = sent.value;
     // SMTP can accept the envelope while refusing individual recipients
     // (mainly on BCC blasts) — surface that instead of reporting a full send.
     const rejected = (info.rejected ?? []).map((r) =>
@@ -230,11 +290,12 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
       return {
         ok: false,
         error: `Gmail refused recipient(s): ${rejected.join(", ")}`,
+        attempts,
       };
     }
     const messageId = info.messageId || "";
     if (!input.verifySent) {
-      return { ok: true, id: messageId };
+      return { ok: true, id: messageId, attempts };
     }
 
     const verify = await findInGmailSent(cfg, messageId);
@@ -247,7 +308,7 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
     if (!verify.ran || verify.found) {
       // Found in Sent Mail, or verification infrastructure was unavailable —
       // in the latter case the SMTP 250 stands and the diag says why.
-      return { ok: true, id: messageId, diag };
+      return { ok: true, id: messageId, diag, attempts };
     }
     return {
       ok: false,
@@ -256,6 +317,7 @@ export async function sendGmailMessage(input: DraftInput): Promise<SendResult> {
         "within ~9s — check the Sent folder before retrying so the recipient " +
         "isn't emailed twice.",
       diag,
+      attempts,
     };
   } catch (e) {
     return {

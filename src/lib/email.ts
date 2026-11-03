@@ -395,6 +395,7 @@ export async function sendRentReminderOutlookBulk(
       error: result.ok ? null : result.error,
       resend_id: null,
       track_id: result.ok ? tracked.trackId : null,
+      attempts: result.attempts,
     });
     if (!result.ok) {
       res.failed += group.length;
@@ -447,6 +448,7 @@ export async function sendRentReminderGmailBulk(
       error: result.ok ? null : result.error,
       resend_id: result.ok ? result.id || null : null,
       track_id: result.ok ? tracked.trackId : null,
+      attempts: result.attempts,
     });
     if (!result.ok) {
       res.failed += group.length;
@@ -605,6 +607,7 @@ export async function sendBalanceReminderGmail(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
@@ -691,6 +694,7 @@ export async function sendUtilityChargeNoticeGmail(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
@@ -776,6 +780,7 @@ export async function sendOtherChargeNoticeGmail(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
@@ -947,6 +952,7 @@ export async function sendBalanceReminderOutlook(
     error: result.ok ? null : result.error,
     resend_id: null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
@@ -1038,6 +1044,7 @@ export async function sendMonthEndBalanceReminderOutlook(
     error: result.ok ? null : result.error,
     resend_id: null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
@@ -1073,6 +1080,7 @@ Vinny`;
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id || null : null,
     track_id: result.ok ? tracked.trackId : null,
+    attempts: result.attempts,
   });
   return result;
 }
