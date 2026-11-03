@@ -2,19 +2,56 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayISO } from "@/lib/date";
 import { updateRoomsWithNotification } from "@/lib/notifications";
 
-/**
- * Finalize scheduled move-outs. This is background work, not a render side
- * effect: the daily service-role cron calls it once and reports the outcome.
- */
-export async function processExpiredTenancies(
-  supabase: SupabaseClient,
-  today: string = todayISO(),
-): Promise<{
+type LifecycleResult = {
   activated: number;
   ended: number;
   roomsReleased: number;
   error?: string;
-}> {
+};
+
+/**
+ * Finalize scheduled move-outs. This is background work, not a render side
+ * effect: the daily service-role cron calls it once and reports the outcome.
+ *
+ * Order matters: expired tenancies are ended BEFORE upcoming ones are
+ * activated. `tenancies_one_active_per_room` allows a single active tenancy
+ * per room, so on a back-to-back turnover (old tenant out 10/31, new tenant in
+ * 11/01) activating the incoming tenancy first collides with the outgoing one
+ * still being active — a 409 that used to abort the whole run, leaving every
+ * move-out in the portal stuck as active.
+ */
+export async function processExpiredTenancies(
+  supabase: SupabaseClient,
+  today: string = todayISO(),
+): Promise<LifecycleResult> {
+  // 1. End tenancies whose move-out date has passed.
+  const { data: expired, error: expiredError } = await supabase
+    .from("tenancies")
+    .select("id, room_id")
+    .eq("status", "active")
+    .lt("move_out_date", today)
+    .not("move_out_date", "is", null);
+  if (expiredError) {
+    return { activated: 0, ended: 0, roomsReleased: 0, error: expiredError.message };
+  }
+
+  const endedIds = (expired ?? []).map((tenancy) => tenancy.id);
+  const endedRoomIds = (expired ?? [])
+    .map((tenancy) => tenancy.room_id)
+    .filter((id): id is string => Boolean(id));
+
+  if (endedIds.length > 0) {
+    const { error: endError } = await supabase
+      .from("tenancies")
+      .update({ status: "ended" })
+      .in("id", endedIds);
+    if (endError) {
+      return { activated: 0, ended: 0, roomsReleased: 0, error: endError.message };
+    }
+  }
+
+  // 2. Activate tenancies whose start date has arrived. Their rooms are now
+  // free of the outgoing tenancy ended above.
   const { data: starting, error: startingError } = await supabase
     .from("tenancies")
     .select("id, room_id")
@@ -23,7 +60,7 @@ export async function processExpiredTenancies(
   if (startingError) {
     return {
       activated: 0,
-      ended: 0,
+      ended: endedIds.length,
       roomsReleased: 0,
       error: startingError.message,
     };
@@ -41,7 +78,7 @@ export async function processExpiredTenancies(
     if (activateError) {
       return {
         activated: 0,
-        ended: 0,
+        ended: endedIds.length,
         roomsReleased: 0,
         error: activateError.message,
       };
@@ -55,7 +92,7 @@ export async function processExpiredTenancies(
       if (occupyError) {
         return {
           activated: startingIds.length,
-          ended: 0,
+          ended: endedIds.length,
           roomsReleased: 0,
           error: occupyError.message,
         };
@@ -63,63 +100,26 @@ export async function processExpiredTenancies(
     }
   }
 
-  const { data: expired, error } = await supabase
-    .from("tenancies")
-    .select("id, room_id")
-    .eq("status", "active")
-    .lt("move_out_date", today)
-    .not("move_out_date", "is", null);
-  if (error) {
-    return {
-      activated: startingIds.length,
-      ended: 0,
-      roomsReleased: 0,
-      error: error.message,
-    };
-  }
-  if (!expired || expired.length === 0) {
-    return { activated: startingIds.length, ended: 0, roomsReleased: 0 };
-  }
-
-  const ids = expired.map((tenancy) => tenancy.id);
-  const roomIds = expired
-    .map((tenancy) => tenancy.room_id)
-    .filter((id): id is string => Boolean(id));
-
-  const { error: tenancyError } = await supabase
-    .from("tenancies")
-    .update({ status: "ended" })
-    .in("id", ids);
-  if (tenancyError) {
-    return {
-      activated: startingIds.length,
-      ended: 0,
-      roomsReleased: 0,
-      error: tenancyError.message,
-    };
-  }
-
-  // Back-to-back turnover guard: an ended tenancy's room may already belong
-  // to the incoming tenant (activated moments ago in this same run, or added
-  // earlier). Releasing it would flip an occupied room back to available, so
-  // only rooms with no live tenancy left are released.
+  // 3. Release the rooms of ended tenancies. Back-to-back turnover guard: a
+  // room may already belong to an incoming tenant (activated just above, or
+  // added earlier), so only rooms with no live tenancy left are released.
   let releasableRoomIds: string[] = [];
-  if (roomIds.length > 0) {
+  if (endedRoomIds.length > 0) {
     const { data: stillHeld, error: heldError } = await supabase
       .from("tenancies")
       .select("room_id")
-      .in("room_id", roomIds)
+      .in("room_id", endedRoomIds)
       .in("status", ["active", "upcoming"]);
     if (heldError) {
       return {
         activated: startingIds.length,
-        ended: ids.length,
+        ended: endedIds.length,
         roomsReleased: 0,
         error: heldError.message,
       };
     }
     const held = new Set((stillHeld ?? []).map((t) => t.room_id));
-    releasableRoomIds = [...new Set(roomIds)].filter((id) => !held.has(id));
+    releasableRoomIds = [...new Set(endedRoomIds)].filter((id) => !held.has(id));
   }
 
   if (releasableRoomIds.length > 0) {
@@ -131,7 +131,7 @@ export async function processExpiredTenancies(
     if (roomError) {
       return {
         activated: startingIds.length,
-        ended: ids.length,
+        ended: endedIds.length,
         roomsReleased: 0,
         error: roomError.message,
       };
@@ -140,7 +140,7 @@ export async function processExpiredTenancies(
 
   return {
     activated: startingIds.length,
-    ended: ids.length,
+    ended: endedIds.length,
     roomsReleased: releasableRoomIds.length,
   };
 }

@@ -14,11 +14,13 @@
  * past the cap.
  */
 
+import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { logEmail, type EmailType } from "./email-log";
 import { todayISO } from "./date";
 import { addTrackingPixel } from "./email-tracking";
+import { RetryableFailure, withSendRetry } from "./send-retry";
 import type { Database } from "./supabase/types";
 
 export const DAILY_CAP = Number(process.env.RESEND_DAILY_CAP) || 90;
@@ -135,6 +137,19 @@ function fromAllowed(from: string): boolean {
   return emailOf(from) === emailOf(configured);
 }
 
+type ResendResponse = Awaited<ReturnType<Resend["emails"]["send"]>>;
+
+// Worth another try: no response at all (network), rate limiting, a Resend-side
+// 5xx, and a 409 for our own earlier attempt still in flight. Never a 4xx
+// validation/auth error, and never a daily/monthly quota 429 — waiting seconds
+// won't lift those.
+function retryableResendError(e: NonNullable<ResendResponse["error"]>): boolean {
+  if (typeof e.statusCode !== "number") return true;
+  if (e.statusCode === 429) return e.name === "rate_limit_exceeded";
+  if (e.name === "concurrent_idempotent_requests") return true;
+  return e.statusCode >= 500;
+}
+
 /** Actually hit the Resend API and log the outcome to email_log. */
 async function dispatch(
   payload: ResendPayload,
@@ -173,16 +188,35 @@ async function dispatch(
   const { html, trackId } = addTrackingPixel(payload.html);
 
   const resend = new Resend(apiKey);
-  const { data, error } = await resend.emails.send({
-    from: payload.from,
-    to: payload.to,
-    bcc: payload.bcc,
-    replyTo: payload.replyTo,
-    subject: payload.subject,
-    text: payload.text,
-    html,
-    scheduledAt: payload.scheduledAt,
-  });
+  // One idempotency key for every attempt: if an attempt that looked failed
+  // did reach Resend, the retry gets that email's response back instead of
+  // sending it again (Resend remembers keys for 24h).
+  const idempotencyKey = randomUUID();
+  const sent = await withSendRetry(
+    async () => {
+      const res = await resend.emails.send(
+        {
+          from: payload.from,
+          to: payload.to,
+          bcc: payload.bcc,
+          replyTo: payload.replyTo,
+          subject: payload.subject,
+          text: payload.text,
+          html,
+          scheduledAt: payload.scheduledAt,
+        },
+        { idempotencyKey },
+      );
+      if (res.error && retryableResendError(res.error)) throw new RetryableFailure(res);
+      return res;
+    },
+    { isRetryable: (e) => e instanceof RetryableFailure },
+  );
+  // Anything else thrown is a bug, not a send failure — surface it as before.
+  if (!sent.ok && !(sent.error instanceof RetryableFailure)) throw sent.error;
+  const { data, error } = sent.ok
+    ? sent.value
+    : (sent.error as RetryableFailure<ResendResponse>).result;
 
   const result: DispatchResult = error
     ? { ok: false, error: error.message }
@@ -200,6 +234,7 @@ async function dispatch(
     error: result.ok ? null : result.error,
     resend_id: result.ok ? result.id : null,
     track_id: result.ok ? trackId : null,
+    attempts: sent.attempts,
   });
   return result;
 }
