@@ -25,13 +25,11 @@ vi.mock("@/lib/reconciliation/matching", async (importOriginal) => ({
 }));
 
 import { addStatement } from "./actions";
-
-/** PostgREST's max-rows: no single response holds more than this. */
-const CAP = 1000;
+import { cappedTable } from "@/lib/testing/capped-table";
 
 type Sent = { external_ref: string }[];
 
-// reconciliation_deposits behind PostgREST (each response capped at CAP
+// reconciliation_deposits behind PostgREST (each response capped at 1,000
 // rows), plus the storage bucket and the ingest RPC, which records what the
 // upload would have inserted.
 function fakeSupabase(storedRefs: string[], opts: { failRead?: boolean } = {}) {
@@ -42,34 +40,10 @@ function fakeSupabase(storedRefs: string[], opts: { failRead?: boolean } = {}) {
     uploads,
     from(table: string) {
       expect(table).toBe("reconciliation_deposits");
-      let from = 0;
-      let to = Infinity;
-      let counted = false;
-      const b = {
-        select: (_columns: string, o?: { count?: string }) => {
-          counted = o?.count === "exact";
-          return b;
-        },
-        order: () => b,
-        range: (f: number, t: number) => {
-          from = f;
-          to = t;
-          return b;
-        },
-        then: <R,>(resolve: (r: unknown) => R) =>
-          Promise.resolve(
-            opts.failRead
-              ? { data: null, error: { message: "504 gateway timeout" }, count: null }
-              : {
-                  data: storedRefs
-                    .slice(from, Math.min(to + 1, from + CAP))
-                    .map((external_ref) => ({ external_ref })),
-                  error: null,
-                  count: counted ? storedRefs.length : null,
-                },
-          ).then(resolve),
-      };
-      return b;
+      return cappedTable(
+        storedRefs.map((external_ref) => ({ external_ref })),
+        { fail: () => !!opts.failRead },
+      );
     },
     storage: {
       from: () => ({
