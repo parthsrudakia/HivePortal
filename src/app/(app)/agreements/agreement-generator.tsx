@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { roomLabel } from "@/lib/room-label";
 import {
   buildAgreementPdf,
   agreementFilename,
@@ -385,7 +386,7 @@ export function AgreementGenerator({
                 <option value="">Pick a room…</option>
                 {roomOptions.map((r) => (
                   <option key={r.id} value={r.id}>
-                    Room {r.roomNumber}
+                    {roomLabel(r.roomNumber)}
                   </option>
                 ))}
               </select>

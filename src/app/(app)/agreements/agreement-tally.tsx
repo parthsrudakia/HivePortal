@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { roomLabel } from "@/lib/room-label";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { SearchableSelect } from "@/components/searchable-select";
 import {
@@ -339,7 +340,7 @@ export function AgreementTally({
                   </p>
                   <p className="truncate text-xs text-muted">
                     {r.recipientEmail} ·{" "}
-                    {r.roomNumber ? `Room ${r.roomNumber}, ` : ""}
+                    {r.roomNumber ? `${roomLabel(r.roomNumber)}, ` : ""}
                     {r.propertyAddress} · sent{" "}
                     {fmtDate(r.sentAt)}
                   </p>
