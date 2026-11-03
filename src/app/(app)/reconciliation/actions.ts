@@ -7,6 +7,7 @@ import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 import { LEDGER_PAYMENT_CUTOFF } from "@/lib/rent";
+import { allLedgerRows } from "@/lib/rent-data";
 import {
   parseBankFile,
   parseOtherFile,
@@ -167,14 +168,23 @@ export async function addStatement(
 
   // 2) Fingerprint hygiene against everything already stored (the deposit log
   //    is global now), then auto-match payer keys — every tenancy is a
-  //    candidate, including ones that haven't started yet.
-  const { data: existingRefRows, error: refErr } = await supabase
-    .from("reconciliation_deposits")
-    .select("external_ref");
-  if (refErr) return { error: `Failed to load existing deposits: ${refErr.message}` };
-  const existingRefs = ((existingRefRows ?? []) as { external_ref: string }[]).map(
-    (r) => r.external_ref,
-  );
+  //    candidate, including ones that haven't started yet. Paged, so the
+  //    check still sees every stored ref past the 1,000-row response cap.
+  //    (An .in() on the upload's refs can't work: stored refs carry an
+  //    ordinal suffix the incoming rows don't have yet.)
+  let existingRefs: string[];
+  try {
+    const rows = await allLedgerRows("existing deposits", (from, to) =>
+      supabase
+        .from("reconciliation_deposits")
+        .select("external_ref", { count: "exact" })
+        .order("id")
+        .range(from, to),
+    );
+    existingRefs = rows.map((r) => r.external_ref);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 
   const [{ rows: payerRows, error: ptErr }, ignoredKeys] = await Promise.all([
     loadPayerTenancies(supabase),

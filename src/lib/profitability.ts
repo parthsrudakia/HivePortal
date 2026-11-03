@@ -13,6 +13,7 @@
  */
 
 import { one } from "@/lib/relations";
+import { allLedgerRows } from "@/lib/rent-data";
 import { billMonth, type BillRow } from "@/lib/utility-bills";
 
 export const PROFIT_MONTHS = [
@@ -145,10 +146,12 @@ export async function loadProfitability(
     year > START_YEAR ? 0 : year === START_YEAR ? START_MONTH_IDX : 12;
   const inRange = (m: number) => m >= firstMonthIdx && m <= lastMonthIdx;
 
+  // Payments and bills outgrow the 1,000-row response cap, so they page
+  // through allLedgerRows (exact count, stable order) instead of one select.
   const [
     { data: properties },
-    { data: payments },
-    { data: bills },
+    payments,
+    bills,
     { data: lineItemRows },
   ] = await Promise.all([
     supabase
@@ -160,18 +163,28 @@ export async function loadProfitability(
          internet_monthly, cleaning_fee_monthly, insurance_monthly`,
       )
       .order("street_address") as Promise<{ data: ProfitUnit[] | null }>,
-    supabase
-      .from("payments")
-      .select(
-        "amount, paid_on, payment_type, tenancies!inner(rooms!inner(property_id))",
-      )
-      .gte("paid_on", `${year}-01-01`)
-      .lte("paid_on", `${year}-12-31`) as Promise<{ data: PaymentRow[] | null }>,
-    supabase
-      .from("utility_bills")
-      .select(
-        "id, property_id, provider, utility_type, account_number, service_address, statement_date, period_start, period_end, total_amount, overage_dismissed, overage_charged_at, notes, created_at, utility_bill_charges(id, kind, description, amount)",
-      ) as Promise<{ data: BillRow[] | null }>,
+    allLedgerRows<PaymentRow>("payments", (from, to) =>
+      supabase
+        .from("payments")
+        .select(
+          "amount, paid_on, payment_type, tenancies!inner(rooms!inner(property_id))",
+          { count: "exact" },
+        )
+        .gte("paid_on", `${year}-01-01`)
+        .lte("paid_on", `${year}-12-31`)
+        .order("id")
+        .range(from, to),
+    ),
+    allLedgerRows<BillRow>("utility bills", (from, to) =>
+      supabase
+        .from("utility_bills")
+        .select(
+          "id, property_id, provider, utility_type, account_number, service_address, statement_date, period_start, period_end, total_amount, overage_dismissed, overage_charged_at, notes, created_at, utility_bill_charges(id, kind, description, amount)",
+          { count: "exact" },
+        )
+        .order("id")
+        .range(from, to),
+    ),
     supabase
       .from("profitability_line_items")
       .select("id, side, label, amount")
@@ -196,7 +209,7 @@ export async function loadProfitability(
   const collection = new Map<string, number[]>(
     units.map((p) => [p.id, Array(12).fill(0)]),
   );
-  for (const pay of payments ?? []) {
+  for (const pay of payments) {
     const propertyId = one(one(pay.tenancies)?.rooms ?? null)?.property_id;
     if (!propertyId) continue;
     if (pay.payment_type === "security_deposit") continue;
@@ -210,7 +223,7 @@ export async function loadProfitability(
   const utilityActual = new Map<string, (number | undefined)[]>(
     units.map((p) => [p.id, Array(12).fill(undefined)]),
   );
-  for (const b of bills ?? []) {
+  for (const b of bills) {
     if (!b.property_id) continue;
     const bm = billMonth(b);
     if (bm.slice(0, 4) !== String(year)) continue;
