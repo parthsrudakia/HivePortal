@@ -7,9 +7,9 @@
  * the service-role client since callers have no cookie session.
  *
  * The payload is core listing data only: unit/building, neighborhood, room,
- * rent breakdown, availability, amenities, photos link, marketing description.
- * Tenant names, ads, and listing actions are portal-internal and deliberately
- * excluded.
+ * rent breakdown, availability, amenities, photos link, marketing description,
+ * and the listing action (the ops flag set on /inventory). Tenant names and
+ * posted ads are portal-internal and deliberately excluded.
  */
 
 import { NextResponse } from "next/server";
@@ -64,6 +64,7 @@ export type RoomRow = {
   has_private_bathroom: boolean;
   has_ac: boolean;
   facebook_ads: boolean;
+  listing_action: Database["public"]["Enums"]["listing_action"];
   properties: PropertyRel | PropertyRel[] | null;
 };
 
@@ -71,7 +72,7 @@ export type RoomRow = {
 // rooms of retired (archived) properties must never be served by this API.
 export const ROOM_SELECT = `id, room_number, base_rent, bundle_fee, total_rent,
   available_from, status, marketing_description, photos_url,
-  has_private_bathroom, has_ac, facebook_ads,
+  has_private_bathroom, has_ac, facebook_ads, listing_action,
   properties!inner(id, building_name, street_address, unit_number, neighborhood,
              unit_amenities, building_amenities)`;
 
@@ -115,5 +116,6 @@ export function serializeRoom(r: RoomRow) {
     photos_url: r.photos_url,
     marketing_description: r.marketing_description,
     facebook_ads: r.facebook_ads,
+    listing_action: r.listing_action,
   };
 }

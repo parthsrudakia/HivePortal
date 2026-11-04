@@ -62,7 +62,8 @@ export function InventoryApiDocs() {
       },
       "photos_url": "https://drive.google.com/...",
       "marketing_description": null,
-      "facebook_ads": false
+      "facebook_ads": false,
+      "listing_action": "update_price_or_date"
     }
   ]
 }`}</CodeBlock>
@@ -131,6 +132,14 @@ function FieldNotes() {
         <Code>facebook_ads</Code> — whether Facebook ads are currently running
         for this listing. Starts <Code>false</Code> whenever a room enters
         inventory.
+      </li>
+      <li>
+        <Code>listing_action</Code> — the follow-up flagged for this listing
+        on the portal&apos;s inventory board: <Code>no_action</Code>,{" "}
+        <Code>update_price_or_date</Code> (refresh the listing&apos;s price or
+        move-in date), <Code>boost_post</Code>, <Code>priority</Code>, or{" "}
+        <Code>delete_listing</Code> (take the listing down; Facebook ads are
+        kept off). Read-only here — it&apos;s set in the portal.
       </li>
     </ul>
   );
