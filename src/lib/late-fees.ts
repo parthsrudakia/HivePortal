@@ -8,7 +8,8 @@
  * UTILITY_ONLY_TOLERANCE) to the utility charges posted this month and/or
  * last month means rent is paid and only a utility share is pending.
  * Runs from the daily ops cron — the date gate below makes it fire on the
- * first invocation on/after the 7th (Eastern), and a rent_reminder_batches
+ * first invocation on/after the 7th (Eastern) once the newest uploaded bank
+ * statement reaches the 7th (so all of the 6th is in), and a rent_reminder_batches
  * row (kind 'late_fee') marks the month done so it never runs twice. A
  * tenancy that already carries a late-fee charge that month — manual or
  * automatic — is skipped, so operators hand-charging first never causes a
@@ -62,6 +63,33 @@ export async function applyMonthlyLateFees(
   }
   if (day <= GRACE_DAY) {
     return { ran: false, reason: `waiting for day ${GRACE_DAY + 1}` };
+  }
+
+  // Payments only reach the ledger once a bank statement holding them is
+  // uploaded, so wait until the newest one reaches the day after the grace
+  // day (all of the 6th is in): otherwise a tenant who paid on the 5th or
+  // 6th still shows a balance. Checked before the claim, so a skipped day
+  // leaves the month open for tomorrow.
+  const graceDate = `${period}-0${GRACE_DAY}`;
+  const coveredDate = `${period}-0${GRACE_DAY + 1}`;
+  const { data: newestBank, error: coverError } = await supabase
+    .from("reconciliation_statements")
+    .select("max_deposit_date")
+    .eq("source", "bank")
+    .not("max_deposit_date", "is", null)
+    .order("max_deposit_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (coverError) {
+    return { ran: false, error: coverError.message, period };
+  }
+  const coversTill = newestBank?.max_deposit_date ?? null;
+  if (!coversTill || coversTill < coveredDate) {
+    return {
+      ran: false,
+      reason: `waiting for bank data covering all of ${graceDate}; covers till ${coversTill ?? "no bank statement yet"}`,
+      period,
+    };
   }
 
   // Claim the month before calculating or inserting anything. The partial
