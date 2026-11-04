@@ -77,8 +77,8 @@ export async function GET(req: NextRequest) {
   }));
 
   // Monthly $50 late fee for tenants whose balance isn't clear after the
-  // 6th — self-gated (from Aug 2026, day ≥ 7, bank statement covering the
-  // 6th, once per month), so calling it daily is safe.
+  // 6th — self-gated (from Aug 2026, day ≥ 7, bank statement reaching the
+  // 7th, once per month), so calling it daily is safe.
   const lateFees = await applyMonthlyLateFees(supabase).catch((e) => ({
     ran: false as const,
     error: e instanceof Error ? e.message : "late fees failed",

@@ -9,7 +9,7 @@
  * last month means rent is paid and only a utility share is pending.
  * Runs from the daily ops cron — the date gate below makes it fire on the
  * first invocation on/after the 7th (Eastern) once the newest uploaded bank
- * statement covers the 6th, and a rent_reminder_batches
+ * statement reaches the 7th (so all of the 6th is in), and a rent_reminder_batches
  * row (kind 'late_fee') marks the month done so it never runs twice. A
  * tenancy that already carries a late-fee charge that month — manual or
  * automatic — is skipped, so operators hand-charging first never causes a
@@ -66,10 +66,12 @@ export async function applyMonthlyLateFees(
   }
 
   // Payments only reach the ledger once a bank statement holding them is
-  // uploaded, so wait until the newest one covers the grace day: otherwise
-  // a tenant who paid on the 5th or 6th still shows a balance. Checked
-  // before the claim, so a skipped day leaves the month open for tomorrow.
+  // uploaded, so wait until the newest one reaches the day after the grace
+  // day (all of the 6th is in): otherwise a tenant who paid on the 5th or
+  // 6th still shows a balance. Checked before the claim, so a skipped day
+  // leaves the month open for tomorrow.
   const graceDate = `${period}-0${GRACE_DAY}`;
+  const coveredDate = `${period}-0${GRACE_DAY + 1}`;
   const { data: newestBank, error: coverError } = await supabase
     .from("reconciliation_statements")
     .select("max_deposit_date")
@@ -82,10 +84,10 @@ export async function applyMonthlyLateFees(
     return { ran: false, error: coverError.message, period };
   }
   const coversTill = newestBank?.max_deposit_date ?? null;
-  if (!coversTill || coversTill < graceDate) {
+  if (!coversTill || coversTill < coveredDate) {
     return {
       ran: false,
-      reason: `waiting for bank data through ${graceDate}; covers till ${coversTill ?? "no bank statement yet"}`,
+      reason: `waiting for bank data covering all of ${graceDate}; covers till ${coversTill ?? "no bank statement yet"}`,
       period,
     };
   }

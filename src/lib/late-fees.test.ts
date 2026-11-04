@@ -79,24 +79,27 @@ beforeEach(() => {
   mocks.balance = 1_000;
 });
 
-describe("late fees wait for a bank statement covering the 6th", () => {
-  it("covers till the 5th: skips without setting the month's marker or charging", async () => {
-    const { supabase, writes } = fakeSupabase({ coversTill: "2026-11-05" });
+describe("late fees wait for bank data covering all of the 6th", () => {
+  it.each(["2026-11-05", "2026-11-06"])(
+    "covers till %s: skips without setting the month's marker or charging",
+    async (coversTill) => {
+      const { supabase, writes } = fakeSupabase({ coversTill });
 
-    expect(await applyMonthlyLateFees(supabase, TODAY)).toEqual({
-      ran: false,
-      reason: "waiting for bank data through 2026-11-06; covers till 2026-11-05",
-      period: "2026-11",
-    });
-    expect(writes).toEqual([]);
-  });
+      expect(await applyMonthlyLateFees(supabase, TODAY)).toEqual({
+        ran: false,
+        reason: `waiting for bank data covering all of 2026-11-06; covers till ${coversTill}`,
+        period: "2026-11",
+      });
+      expect(writes).toEqual([]);
+    },
+  );
 
   it("no bank statement at all: skips the same way", async () => {
     const { supabase, writes } = fakeSupabase({ coversTill: null });
 
     expect(await applyMonthlyLateFees(supabase, TODAY)).toMatchObject({
       ran: false,
-      reason: "waiting for bank data through 2026-11-06; covers till no bank statement yet",
+      reason: "waiting for bank data covering all of 2026-11-06; covers till no bank statement yet",
     });
     expect(writes).toEqual([]);
   });
@@ -112,7 +115,7 @@ describe("late fees wait for a bank statement covering the 6th", () => {
     expect(writes).toEqual([]);
   });
 
-  it.each(["2026-11-06", "2026-11-20"])(
+  it.each(["2026-11-07", "2026-11-20"])(
     "covers till %s: runs exactly as before",
     async (coversTill) => {
       const { supabase, writes } = fakeSupabase({ coversTill });
@@ -148,9 +151,9 @@ describe("late fees wait for a bank statement covering the 6th", () => {
     },
   );
 
-  it("still applies the $200 threshold once the statement covers the 6th", async () => {
+  it("still applies the $200 threshold once the bank data reaches the 7th", async () => {
     mocks.balance = 200;
-    const { supabase, writes } = fakeSupabase({ coversTill: "2026-11-06" });
+    const { supabase, writes } = fakeSupabase({ coversTill: "2026-11-07" });
 
     expect(await applyMonthlyLateFees(supabase, TODAY)).toMatchObject({ ran: true, charged: 0 });
     expect(writes.filter((w) => w.table === "tenancy_charges")).toEqual([]);
