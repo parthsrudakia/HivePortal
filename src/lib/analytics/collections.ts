@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { todayISO } from "@/lib/date";
 import { rateForMonthISO, type RentChange } from "@/lib/rent";
+import { allLedgerRows } from "@/lib/rent-data";
 
 export type CollectionRow = {
   month: string; // "YYYY-MM"
@@ -141,7 +142,9 @@ async function withRentChanges(
 /** Resolve a property-IDs filter into the tenancies + payments those rooms had.
  *  cache()d per request: /reports calls this from both getCollectionSummary and
  *  getMonthlyCollections with the same filter — the second call reuses the
- *  first's full-table scan instead of repeating it. */
+ *  first's full-table scan instead of repeating it. Payments page through
+ *  allLedgerRows: past the 1,000-row response cap a single select would
+ *  silently drop collections. */
 const loadFilteredHistory = cache(async (propertyIds?: string[]) => {
   const supabase = await createClient();
   if (propertyIds && propertyIds.length > 0) {
@@ -160,30 +163,38 @@ const loadFilteredHistory = cache(async (propertyIds?: string[]) => {
     const tenancyIds = (tenancies ?? []).map((t) => t.id);
     if (tenancyIds.length === 0) return { tenancies: [], payments: [] };
 
-    const { data: payments } = await supabase
-      .from("payments")
-      .select("amount, paid_on, payment_type")
-      .in("payment_type", ["rent", "refund"])
-      .in("tenancy_id", tenancyIds);
+    const payments = await allLedgerRows("payments", (from, to) =>
+      supabase
+        .from("payments")
+        .select("amount, paid_on, payment_type", { count: "exact" })
+        .in("payment_type", ["rent", "refund"])
+        .in("tenancy_id", tenancyIds)
+        .order("id")
+        .range(from, to),
+    );
 
     return {
       tenancies: await withRentChanges(supabase, tenancies ?? []),
-      payments: payments ?? [],
+      payments,
     };
   }
 
-  const [{ data: tenancies }, { data: payments }] = await Promise.all([
+  const [{ data: tenancies }, payments] = await Promise.all([
     supabase
       .from("tenancies")
       .select("id, start_date, move_out_date, paused_at, monthly_rent, first_month_rent"),
-    supabase
-      .from("payments")
-      .select("amount, paid_on, payment_type")
-      .in("payment_type", ["rent", "refund"]),
+    allLedgerRows("payments", (from, to) =>
+      supabase
+        .from("payments")
+        .select("amount, paid_on, payment_type", { count: "exact" })
+        .in("payment_type", ["rent", "refund"])
+        .order("id")
+        .range(from, to),
+    ),
   ]);
   return {
     tenancies: await withRentChanges(supabase, tenancies ?? []),
-    payments: payments ?? [],
+    payments,
   };
 });
 
@@ -326,28 +337,30 @@ export async function getPropertyCollections(
     } | null;
   };
 
-  let q = supabase
-    .from("payments")
-    .select(
-      `amount, paid_on, payment_type,
-       tenancies!inner(
-         rooms!inner(
-           properties!inner(id, building_name, street_address, unit_number)
-         )
-       )`,
-    )
-    .in("payment_type", ["rent", "refund"]);
-
-  if (fromISO) q = q.gte("paid_on", fromISO);
-  q = q.lte("paid_on", toISO ?? todayISO());
-
-  const { data } = await q.returns<PaymentRow[]>();
+  // Paged past the 1,000-row response cap, like loadFilteredHistory.
+  const until = toISO ?? todayISO();
+  const data = await allLedgerRows("payments", (from, to) => {
+    let q = supabase
+      .from("payments")
+      .select(
+        `amount, paid_on, payment_type,
+         tenancies!inner(
+           rooms!inner(
+             properties!inner(id, building_name, street_address, unit_number)
+           )
+         )`,
+        { count: "exact" },
+      )
+      .in("payment_type", ["rent", "refund"]);
+    if (fromISO) q = q.gte("paid_on", fromISO);
+    return q.lte("paid_on", until).order("id").range(from, to).returns<PaymentRow[]>();
+  });
 
   const allow = propertyIds && propertyIds.length > 0 ? new Set(propertyIds) : null;
 
   type Totals = { collected: number; label: string };
   const byProperty = new Map<string, Totals>();
-  for (const row of data ?? []) {
+  for (const row of data) {
     const tenancy = row.tenancies;
     if (!tenancy) continue;
     const room = Array.isArray(tenancy) ? tenancy[0]?.rooms : tenancy.rooms;
