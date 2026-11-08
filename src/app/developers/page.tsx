@@ -3,12 +3,13 @@ import { TenantsApiDocs } from "@/components/docs/tenants-api-docs";
 import { InventoryApiDocs } from "@/components/docs/inventory-api-docs";
 import { UtilitiesApiDocs } from "@/components/docs/utilities-api-docs";
 import { CredentialsApiDocs } from "@/components/docs/credentials-api-docs";
+import { ProjectsApiDocs } from "@/components/docs/projects-api-docs";
 import { DevelopersTabs } from "./tabs";
 
 export const metadata = {
   title: "Developers — Hive",
   description:
-    "API reference for Hive's JSON APIs: tenants, inventory, utility statement intake, and credentials.",
+    "API reference for Hive's JSON APIs: tenants, inventory, utility statement intake, credentials, and projects.",
 };
 
 /**
@@ -94,6 +95,20 @@ export default function DevelopersPage() {
               separate from every other API&apos;s.
             </p>
             <CredentialsApiDocs />
+          </>
+        }
+        projects={
+          <>
+            <h2 className="mt-8 text-2xl tracking-tight text-ink">
+              Projects{" "}
+              <span className="font-display text-accent-text">API</span>
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Read and manage the Projects board: list, create and assign
+              projects, move them through review, comment, and nudge. Acts as
+              the board admin and sends the same emails the board does.
+            </p>
+            <ProjectsApiDocs />
           </>
         }
       />

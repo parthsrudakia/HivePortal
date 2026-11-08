@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-type TabKey = "tenants" | "inventory" | "utilities" | "credentials";
+type TabKey = "tenants" | "inventory" | "utilities" | "credentials" | "projects";
 
 /**
  * Pill-tab switcher for the API references. The active tab is mirrored into
@@ -15,11 +15,13 @@ export function DevelopersTabs({
   inventory,
   utilities,
   credentials,
+  projects,
 }: {
   tenants: ReactNode;
   inventory: ReactNode;
   utilities: ReactNode;
   credentials: ReactNode;
+  projects: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("tenants");
 
@@ -28,7 +30,12 @@ export function DevelopersTabs({
   // deterministic to avoid a hydration mismatch).
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (hash === "inventory" || hash === "utilities" || hash === "credentials")
+    if (
+      hash === "inventory" ||
+      hash === "utilities" ||
+      hash === "credentials" ||
+      hash === "projects"
+    )
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync from the URL hash, which the server render cannot see
       setTab(hash);
   }, []);
@@ -53,15 +60,18 @@ export function DevelopersTabs({
 
   return (
     <>
-      <div className="mt-8 inline-flex gap-1 rounded-full bg-warm/60 p-1">
+      <div className="mt-8 inline-flex flex-wrap gap-1 rounded-3xl bg-warm/60 p-1">
         {pill("tenants", "Tenants API")}
         {pill("inventory", "Inventory API")}
         {pill("utilities", "Utilities API")}
         {pill("credentials", "Credentials API")}
+        {pill("projects", "Projects API")}
       </div>
       <div className={tab === "tenants" ? "" : "hidden"}>{tenants}</div>
       <div className={tab === "inventory" ? "" : "hidden"}>{inventory}</div>
       <div className={tab === "utilities" ? "" : "hidden"}>{utilities}</div>
-      <div className={tab === "credentials" ? "" : "hidden"}>{credentials}</div>    </>
+      <div className={tab === "credentials" ? "" : "hidden"}>{credentials}</div>
+      <div className={tab === "projects" ? "" : "hidden"}>{projects}</div>
+    </>
   );
 }
