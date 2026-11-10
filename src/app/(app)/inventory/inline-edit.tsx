@@ -186,7 +186,7 @@ export function InlinePhotosEdit({
 }
 
 // A room can hold several ads, each posted by a different person. List every
-// ad as an "Open" link with its poster, allow removing any, and add a new one
+// ad as a link labelled with its poster's name, allow removing any, and add a new one
 // inline — each addition is recorded under the current user.
 export function InlineAdEdit({
   roomId,
@@ -220,8 +220,8 @@ export function InlineAdEdit({
   };
 
   return (
-    // Horizontal so a row with ads stays the standard height; the poster's
-    // name lives in the adjacent "Ad Posted" column (and each link's tooltip).
+    // Horizontal so a row with ads stays the standard height. Each link is
+    // labelled with its poster's name (falling back to "Open"/"Ad N").
     <div
       className={`flex items-center justify-center gap-2 ${pending ? "opacity-60" : ""}`}
     >
@@ -231,10 +231,15 @@ export function InlineAdEdit({
             href={ad.url}
             target="_blank"
             rel="noopener noreferrer"
-            title={ad.posted_by?.trim() || undefined}
-            className="text-xs text-purple-700 underline hover:text-purple-900"
+            title={
+              ad.posted_by?.trim()
+                ? `Ad posted by ${ad.posted_by.trim()}`
+                : undefined
+            }
+            className="inline-block max-w-[9rem] truncate align-middle text-xs text-purple-700 underline hover:text-purple-900"
           >
-            {ads.length === 1 ? "Open" : `Ad ${i + 1}`}
+            {ad.posted_by?.trim() ||
+              (ads.length === 1 ? "Open" : `Ad ${i + 1}`)}
           </a>
           <button
             type="button"

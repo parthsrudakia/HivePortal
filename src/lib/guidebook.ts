@@ -126,7 +126,7 @@ Residents widget (name, room, age, profession, social links), rooms with Add ten
 A room is on Inventory when it is **Available**, or **Occupied with an availability date today or later**, and it is not queued for a new tenant and its property is not archived. Reserved, Maintenance and filled rooms are off the list. The dashboard's Inventory card, both downloadable sheets, the assistant's inventory list and the Inventory API all use this same rule.
 
 ### The table
-Columns: Unit (links to the vacancy page), Neighborhood, Room Type (the room's name), Available, Rent, Services, Total, Amenities, Photos, Tenant (the mover-out, else the previous tenant), Listing action, Ad, Ad Posted, FB Ads, Roommates (jumps to the property's residents), Copy listing. Available, Rent, Services, Amenities, Photos, Ads and FB Ads are editable inline. The header is sticky and the left columns are frozen.
+Columns: Unit (links to the vacancy page), Neighborhood, Room Type (the room's name), Available, Rent, Services, Total, Amenities, Photos, Tenant (the mover-out, else the previous tenant), Listing action, Ad (each ad links under its poster's name), FB Ads, Roommates (jumps to the property's residents), Copy listing. Available, Rent, Services, Amenities, Photos, Ads and FB Ads are editable inline. The header is sticky and the left columns are frozen.
 
 **Sorting** defaults to soonest available first ("available now" sorts before dated rooms); ties break by date, then unit, then room name so rows never swap on refresh.
 

@@ -538,7 +538,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
                 <th className="px-3 py-2 font-medium">Tenant</th>
                 <th className="px-3 py-2 font-medium">Listing action</th>
                 <th className="px-3 py-2 font-medium">Ad</th>
-                <th className="px-3 py-2 font-medium">Ad Posted</th>
                 <th className="px-3 py-2 font-medium">FB Ads</th>
                 <th className="px-3 py-2 font-medium">Roommates</th>
                 <th className="px-3 py-2 font-medium" />
@@ -720,28 +719,6 @@ function InventoryRow({
       </td>
       <td className="px-3 py-2.5 text-center align-middle">
         <InlineAdEdit roomId={room.id} ads={room.ads} />
-      </td>
-      <td className="px-3 py-2.5 text-center align-middle text-xs text-ink">
-        {(() => {
-          // Distinct posters across this room's ads, in first-posted order.
-          const posters = Array.from(
-            new Set(
-              room.ads
-                .map((a) => a.posted_by?.trim())
-                .filter((n): n is string => !!n),
-            ),
-          );
-          return posters.length ? (
-            <span
-              className="mx-auto block max-w-[9rem] truncate"
-              title={posters.join(", ")}
-            >
-              {posters.join(", ")}
-            </span>
-          ) : (
-            <span className="text-muted">-</span>
-          );
-        })()}
       </td>
       <td className="px-3 py-2.5 text-center align-middle">
         <InlineFacebookAdsToggle
