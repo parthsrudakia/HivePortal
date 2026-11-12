@@ -84,9 +84,9 @@ export const getEndedTenancies = cache(async () => {
     .from("tenancies")
     .select(
       `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
-       balance_dismissed_at,
+       balance_dismissed_at, room_id,
        tenants(id, full_name),
-       rooms(room_number,
+       rooms(room_number, pending_tenant,
              properties(building_name, street_address, unit_number)),
        payments(amount, paid_on, payment_type)`,
     )
@@ -101,7 +101,7 @@ export const getUpcomingTenancies = cache(async () => {
   return supabase
     .from("tenancies")
     .select(
-      `id, start_date, monthly_rent,
+      `id, start_date, monthly_rent, room_id,
        tenants(id, full_name),
        rooms(room_number,
              properties(building_name, street_address, unit_number))`,

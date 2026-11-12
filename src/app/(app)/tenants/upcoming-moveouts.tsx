@@ -9,7 +9,55 @@ export type UpcomingMoveOutRow = {
   roomLabel: string | null;
   moveOutDate: string;
   monthlyRent: number;
+  /** Past move-outs only: what has happened to the room since. */
+  roomStatus?: RoomStatus;
 };
+
+export type RoomStatus =
+  | { kind: "inventory" }
+  | { kind: "pending" }
+  | {
+      kind: "new" | "transfer";
+      tenantId: string;
+      name: string;
+      startDate: string;
+      upcoming: boolean;
+    };
+
+function RoomStatusLine({ status }: { status: RoomStatus }) {
+  if (status.kind === "inventory") {
+    return (
+      <Link href="/inventory" className="text-accent-text hover:underline">
+        In inventory
+      </Link>
+    );
+  }
+  if (status.kind === "pending") {
+    return (
+      <Link href="/tenants/new" className="text-accent-text hover:underline">
+        Waiting for tenant info on Add tenant
+      </Link>
+    );
+  }
+  const label = status.kind === "transfer" ? "Transferred tenant" : "New tenant";
+  return (
+    <span className="text-ink/80">
+      {label}:{" "}
+      <Link
+        href={`/tenants/${status.tenantId}`}
+        className="text-ink hover:text-accent-text"
+      >
+        {status.name}
+      </Link>
+      {status.upcoming && (
+        <span className="text-muted">
+          {" "}
+          · moves in {formatDate(status.startDate)}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function fmtMoney(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -65,6 +113,12 @@ export function UpcomingMoveOuts({
               <p className="text-xs text-muted">
                 {[r.unitLabel, r.roomLabel].filter(Boolean).join(" · ") || "—"}
               </p>
+              {r.roomStatus && (
+                <p className="mt-1 text-xs">
+                  <span className="text-muted">Room now: </span>
+                  <RoomStatusLine status={r.roomStatus} />
+                </p>
+              )}
             </div>
             <span className="shrink-0 tabular-nums text-muted">
               {fmtMoney(r.monthlyRent)}/mo

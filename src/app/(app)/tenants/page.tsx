@@ -14,7 +14,11 @@ import { isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 import { FormerTenants, type FormerTenantRow } from "./former-tenants";
 import { UpcomingTenants, type UpcomingTenantRow } from "./upcoming-tenants";
-import { UpcomingMoveOuts, type UpcomingMoveOutRow } from "./upcoming-moveouts";
+import {
+  UpcomingMoveOuts,
+  type RoomStatus,
+  type UpcomingMoveOutRow,
+} from "./upcoming-moveouts";
 import { TabNotepad } from "../tab-notepad";
 import {
   TenantsExplorer,
@@ -238,6 +242,7 @@ async function SideListsSection() {
     move_out_date: string | null;
     paused_at: string | null;
     balance_dismissed_at: string | null;
+    room_id: string | null;
     tenants:
       | { id: string; full_name: string }
       | { id: string; full_name: string }[]
@@ -245,6 +250,7 @@ async function SideListsSection() {
     rooms:
       | {
           room_number: string | null;
+          pending_tenant: boolean;
           properties:
             | { building_name: string | null; street_address: string; unit_number: string }
             | { building_name: string | null; street_address: string; unit_number: string }[]
@@ -252,6 +258,7 @@ async function SideListsSection() {
         }
       | {
           room_number: string | null;
+          pending_tenant: boolean;
           properties:
             | { building_name: string | null; street_address: string; unit_number: string }
             | { building_name: string | null; street_address: string; unit_number: string }[]
@@ -299,6 +306,7 @@ async function SideListsSection() {
     id: string;
     start_date: string;
     monthly_rent: number;
+    room_id: string | null;
     tenants:
       | { id: string; full_name: string }
       | { id: string; full_name: string }[]
@@ -364,7 +372,68 @@ async function SideListsSection() {
   // Ended tenancies whose last day fell in the past 30 days, most recent
   // first. Tenants who just moved to another room aren't departures.
   const pastCutoff = addDaysISO(today, -30);
-  const pastMoveOutRows: UpcomingMoveOutRow[] = ((endedData ?? []) as EndedRow[])
+  const endedRows = (endedData ?? []) as EndedRow[];
+
+  // Who holds each room now: active tenancies first, then upcoming move-ins
+  // (an active occupant wins over a future one). A transfer is an incoming
+  // tenant with an ended tenancy in some other room.
+  type Occupant = {
+    tenantId: string;
+    name: string;
+    startDate: string;
+    upcoming: boolean;
+  };
+  const occupantByRoom = new Map<string, Occupant>();
+  for (const t of (upcomingData ?? []) as UpcomingQueryRow[]) {
+    const tenant = one(t.tenants);
+    if (!t.room_id || !tenant) continue;
+    const prev = occupantByRoom.get(t.room_id);
+    if (prev && prev.startDate <= t.start_date) continue;
+    occupantByRoom.set(t.room_id, {
+      tenantId: tenant.id,
+      name: tenant.full_name,
+      startDate: t.start_date,
+      upcoming: true,
+    });
+  }
+  for (const t of activeData ?? []) {
+    const tenant = one(t.tenants);
+    const roomId = one(t.rooms)?.id;
+    if (!roomId || !tenant) continue;
+    occupantByRoom.set(roomId, {
+      tenantId: tenant.id,
+      name: tenant.full_name,
+      startDate: t.start_date,
+      upcoming: false,
+    });
+  }
+  const endedRoomsByTenant = new Map<string, Set<string>>();
+  for (const t of endedRows) {
+    const tid = one(t.tenants)?.id;
+    if (!tid || !t.room_id) continue;
+    const set = endedRoomsByTenant.get(tid) ?? new Set<string>();
+    set.add(t.room_id);
+    endedRoomsByTenant.set(tid, set);
+  }
+  const roomStatusFor = (t: EndedRow): RoomStatus => {
+    const occ = t.room_id ? occupantByRoom.get(t.room_id) : undefined;
+    if (occ) {
+      const priorRooms = endedRoomsByTenant.get(occ.tenantId);
+      const transferred =
+        !!priorRooms && [...priorRooms].some((r) => r !== t.room_id);
+      return {
+        kind: transferred ? "transfer" : "new",
+        tenantId: occ.tenantId,
+        name: occ.name,
+        startDate: occ.startDate,
+        upcoming: occ.upcoming,
+      };
+    }
+    if (one(t.rooms)?.pending_tenant) return { kind: "pending" };
+    return { kind: "inventory" };
+  };
+
+  const pastMoveOutRows: UpcomingMoveOutRow[] = endedRows
     .filter(
       (t) =>
         t.move_out_date &&
@@ -383,6 +452,7 @@ async function SideListsSection() {
         roomLabel: room?.room_number ?? null,
         moveOutDate: t.move_out_date as string,
         monthlyRent: Number(t.monthly_rent),
+        roomStatus: roomStatusFor(t),
       };
     })
     .filter((r) => r.tenantId && !tl.activeTenants.has(r.tenantId))
