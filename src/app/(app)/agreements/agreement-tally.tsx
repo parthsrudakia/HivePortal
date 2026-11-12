@@ -10,6 +10,7 @@ import {
   assignToTenancy,
   clearRequests,
   dismissRequest,
+  dismissRequests,
   getRequestPdfUrl,
   resendRequest,
   undismissRequest,
@@ -32,6 +33,8 @@ export type SigningRequestRow = {
   tenantId: string | null;
   /** True when the profile's tenancies have all ended. */
   tenantIsPast: boolean;
+  /** The profile's live tenancy, if any: already living here or moving in. */
+  liveTenancy: "active" | "upcoming" | null;
 };
 
 export type AssignOption = {
@@ -78,6 +81,9 @@ export function AgreementTally({
   // Per-request assign picker selection and pending replace confirmation.
   const [assignPick, setAssignPick] = useState<Record<string, string>>({});
   const [confirmReplace, setConfirmReplace] = useState<string | null>(null);
+  // Bulk selection (Outstanding / Signed tabs only).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selecting, setSelecting] = useState(false);
 
   const counts = useMemo(() => {
     const outstanding = requests.filter((r) => r.status === "pending").length;
@@ -114,6 +120,47 @@ export function AgreementTally({
             Number(b.assignedTenancyId !== null),
         )
       : visible;
+
+  // Rows that can be bulk-dismissed in the current view. A search spans every
+  // status, so only its pending/signed hits are selectable.
+  const selectable = ordered.filter(
+    (r) => r.status === "pending" || r.status === "signed",
+  );
+  const canSelect =
+    (tokens.length > 0 || filter === "outstanding" || filter === "signed") &&
+    selectable.length > 0;
+  const selectMode = selecting && canSelect;
+  const exitSelect = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+  const selectedVisible = selectable.filter((r) => selected.has(r.id));
+  const allSelected =
+    selectable.length > 0 && selectedVisible.length === selectable.length;
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(selectable.map((r) => r.id)));
+  const dismissSelected = async () => {
+    const ids = selectedVisible.map((r) => r.id);
+    setBusy("bulk");
+    try {
+      const res = await dismissRequests(ids);
+      if (res.ok) {
+        exitSelect();
+        toast.success(
+          `Dismissed ${res.count ?? ids.length} ${(res.count ?? ids.length) === 1 ? "entry" : "entries"}.`,
+        );
+      } else toast.error(res.error ?? "Something went wrong.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const run = async (
     id: string,
@@ -205,30 +252,55 @@ export function AgreementTally({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canSelect && (
+            <button
+              type="button"
+              onClick={() => (selecting ? exitSelect() : setSelecting(true))}
+              className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-wide transition ${
+                selecting
+                  ? "bg-accent text-white hover:bg-accent-dark"
+                  : "border border-accent text-accent-text hover:bg-accent/10"
+              }`}
+            >
+              {selecting ? "Done" : "Select"}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setFilter("outstanding")}
+            onClick={() => {
+              setFilter("outstanding");
+              exitSelect();
+            }}
             className={pillClass(filter === "outstanding")}
           >
             Outstanding ({counts.outstanding})
           </button>
           <button
             type="button"
-            onClick={() => setFilter("signed")}
+            onClick={() => {
+              setFilter("signed");
+              exitSelect();
+            }}
             className={pillClass(filter === "signed")}
           >
             Signed ({counts.signed})
           </button>
           <button
             type="button"
-            onClick={() => setFilter("dismissed")}
+            onClick={() => {
+              setFilter("dismissed");
+              exitSelect();
+            }}
             className={pillClass(filter === "dismissed")}
           >
             Dismissed ({counts.dismissed})
           </button>
           <button
             type="button"
-            onClick={() => setFilter("all")}
+            onClick={() => {
+              setFilter("all");
+              exitSelect();
+            }}
             className={pillClass(filter === "all")}
           >
             All
@@ -292,6 +364,40 @@ export function AgreementTally({
         </div>
       )}
 
+      {selectMode && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warm/50 px-4 py-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ink">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="h-4 w-4 accent-[var(--color-accent)]"
+            />
+            {selectedVisible.length > 0
+              ? `${selectedVisible.length} selected`
+              : "Select all"}
+          </label>
+          {selectedVisible.length > 0 && (
+            <ConfirmModal
+              trigger={
+                <button
+                  type="button"
+                  disabled={busy === "bulk"}
+                  aria-busy={busy === "bulk"}
+                  className="rounded-full bg-ink px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-white transition hover:bg-accent-dark disabled:opacity-40"
+                >
+                  Dismiss selected ({selectedVisible.length})
+                </button>
+              }
+              title={`Dismiss ${selectedVisible.length} ${selectedVisible.length === 1 ? "entry" : "entries"}?`}
+              message="They leave the tally and move to Dismissed, where you can restore them. Outstanding signing links stop working; signed PDFs stay stored."
+              confirmLabel="Dismiss"
+              onConfirm={dismissSelected}
+            />
+          )}
+        </div>
+      )}
+
       {visible.length === 0 ? (
         <p className="mt-6 text-sm text-muted">
           {tokens.length > 0
@@ -307,7 +413,11 @@ export function AgreementTally({
               key={r.id}
               // Each request is its own panel, edge-tinted by status so rows
               // read at a glance instead of blending into one list.
-              className={`flex flex-col gap-3 rounded-xl border-l-4 bg-warm/50 p-4 ${
+              className={`flex flex-col gap-3 rounded-xl border-l-4 p-4 ${
+                r.status === "pending" && r.liveTenancy
+                  ? "bg-accent/10 ring-1 ring-accent/30"
+                  : "bg-warm/50"
+              } ${
                 r.status === "dismissed"
                   ? "border-stone/50 opacity-70"
                   : r.status === "signed"
@@ -318,6 +428,17 @@ export function AgreementTally({
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  {selectMode &&
+                    (r.status === "pending" || r.status === "signed") && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${r.tenantName}`}
+                        checked={selected.has(r.id)}
+                        onChange={() => toggle(r.id)}
+                        className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                      />
+                    )}
                 <div className="min-w-0">
                   <p className="font-medium text-ink">
                     {/* Names with a profile link to it (underlined); names
@@ -332,6 +453,13 @@ export function AgreementTally({
                     ) : (
                       r.tenantName
                     )}
+                    {r.status === "pending" && r.liveTenancy && (
+                      <span className="ml-2 rounded-full bg-accent px-2 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-white">
+                        {r.liveTenancy === "active"
+                          ? "Current tenant"
+                          : "Upcoming tenant"}
+                      </span>
+                    )}
                     {r.tenantIsPast && (
                       <span className="ml-2 rounded-full bg-warm px-2 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-muted">
                         Past
@@ -344,6 +472,7 @@ export function AgreementTally({
                     {r.propertyAddress} · sent{" "}
                     {fmtDate(r.sentAt)}
                   </p>
+                </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {statusBadge(r)}
@@ -359,6 +488,16 @@ export function AgreementTally({
                   </button>
                   {r.status === "pending" && (
                     <>
+                      {/* Prefills Add tenant from the sent agreement; the
+                          request stays outstanding and nothing attaches. */}
+                      {!r.liveTenancy && (
+                        <Link
+                          href={`/tenants/new?agreement=${r.id}`}
+                          className="rounded-full bg-ink px-3 py-1 text-xs font-medium text-white transition hover:bg-accent-dark"
+                        >
+                          Add tenant
+                        </Link>
+                      )}
                       <button
                         type="button"
                         disabled={busy === r.id} aria-busy={busy === r.id}

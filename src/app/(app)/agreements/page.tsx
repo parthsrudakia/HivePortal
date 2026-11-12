@@ -170,7 +170,12 @@ export default async function AgreementsPage() {
   // that resolve to nobody render as plain, unlinked text in the tally.
   const tenantByTenancy = new Map<string, string>();
   const tenantHasCurrent = new Map<string, boolean>();
+  // Strongest live tenancy per tenant: active beats upcoming.
+  const tenantLive = new Map<string, "active" | "upcoming">();
   for (const t of tenancyRows ?? []) {
+    if (t.status === "active") tenantLive.set(t.tenant_id, "active");
+    else if (t.status === "upcoming" && !tenantLive.has(t.tenant_id))
+      tenantLive.set(t.tenant_id, "upcoming");
     tenantByTenancy.set(t.id, t.tenant_id);
     tenantHasCurrent.set(
       t.tenant_id,
@@ -218,6 +223,7 @@ export default async function AgreementsPage() {
         tenantId !== null &&
         tenantHasCurrent.has(tenantId) &&
         !tenantHasCurrent.get(tenantId),
+      liveTenancy: tenantId ? (tenantLive.get(tenantId) ?? null) : null,
     };
   });
 

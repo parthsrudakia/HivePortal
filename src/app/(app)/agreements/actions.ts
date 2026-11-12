@@ -10,6 +10,7 @@ import {
   resendAgreementRequest,
 } from "@/lib/agreement-send";
 import { assertSection } from "@/lib/section-access";
+import { zUuidArray } from "@/lib/validation";
 
 // Matches the pad's client-side cap; a real signature PNG is a few KB.
 const MAX_DATA_URL_CHARS = 400_000;
@@ -175,6 +176,29 @@ export async function dismissRequest(requestId: string): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
   revalidatePath("/agreements");
   return { ok: true };
+}
+
+/**
+ * Dismiss several tally entries at once. Only outstanding (pending) and
+ * signed entries move — anything already dismissed or cleared is skipped.
+ */
+export async function dismissRequests(
+  requestIds: string[],
+): Promise<ActionResult & { count?: number }> {
+  await assertSection("agreements");
+  const { supabase, user } = await requireUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const parsed = zUuidArray.min(1).max(500).safeParse(requestIds);
+  if (!parsed.success) return { ok: false, error: "Nothing selected." };
+  const { data, error } = await supabase
+    .from("agreement_requests")
+    .update({ status: "dismissed", dismissed_at: new Date().toISOString() })
+    .in("id", parsed.data)
+    .in("status", ["pending", "signed"])
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/agreements");
+  return { ok: true, count: data?.length ?? 0 };
 }
 
 /** Bring a dismissed entry back — to signed if it was signed, else pending. */

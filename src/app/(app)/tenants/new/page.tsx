@@ -46,7 +46,7 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
   const supabase = await createClient();
 
   // Coming from the signing tally's "Add a tenant" button: prefill the form
-  // from the signed agreement and attach its PDF on save.
+  // from the agreement, and attach its PDF on save when it's signed.
   let agreementPrefill = null;
   // The room the agreement was sent for (set on every agreement sent since
   // the room became mandatory) preselects the room picker unless ?room_id=
@@ -58,11 +58,15 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
       .select("id, status, tenant_name, recipient_email, signed_pdf_path, room_id, input")
       .eq("id", agreementId)
       .maybeSingle();
-    if (request?.status === "signed" && request.signed_pdf_path) {
+    // An outstanding (pending) request prefills too, but is not attached or
+    // assigned — it stays in the tally until it's signed.
+    const signed = request?.status === "signed" && !!request.signed_pdf_path;
+    if (request && (signed || request.status === "pending")) {
       agreementRoomId = request.room_id ?? "";
       const input = (request.input ?? {}) as AgreementInputSnapshot;
       agreementPrefill = {
         agreementRequestId: request.id,
+        signed,
         fullName: request.tenant_name,
         email: request.recipient_email,
         monthlyRent: input.rent ?? "",
