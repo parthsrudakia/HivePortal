@@ -9,7 +9,7 @@ import { BalanceFilter } from "./balance-filter";
 import { RentReminderButton } from "./rent-reminder-button";
 import { computeLedger } from "@/lib/rent";
 import { LedgerDataError, tenantLedger } from "@/lib/rent-data";
-import { todayISO } from "@/lib/date";
+import { addDaysISO, todayISO } from "@/lib/date";
 import { isMaster } from "@/lib/access";
 import { OverageAlertsPopup, type OverageAlert } from "./overage-alerts";
 import { FormerTenants, type FormerTenantRow } from "./former-tenants";
@@ -361,10 +361,38 @@ async function SideListsSection() {
     .filter((r) => r.tenantId)
     .sort((a, b) => a.moveOutDate.localeCompare(b.moveOutDate));
 
+  // Ended tenancies whose last day fell in the past 30 days, most recent
+  // first. Tenants who just moved to another room aren't departures.
+  const pastCutoff = addDaysISO(today, -30);
+  const pastMoveOutRows: UpcomingMoveOutRow[] = ((endedData ?? []) as EndedRow[])
+    .filter(
+      (t) =>
+        t.move_out_date &&
+        t.move_out_date >= pastCutoff &&
+        t.move_out_date < today,
+    )
+    .map((t) => {
+      const tenant = one(t.tenants);
+      const room = one(t.rooms);
+      const property = one(room?.properties ?? null);
+      return {
+        tenancyId: t.id,
+        tenantId: tenant?.id ?? "",
+        name: tenant?.full_name ?? "—",
+        unitLabel: property ? unitLabel(property) : null,
+        roomLabel: room?.room_number ?? null,
+        moveOutDate: t.move_out_date as string,
+        monthlyRent: Number(t.monthly_rent),
+      };
+    })
+    .filter((r) => r.tenantId && !tl.activeTenants.has(r.tenantId))
+    .sort((a, b) => b.moveOutDate.localeCompare(a.moveOutDate));
+
   return (
     <>
       <UpcomingTenants rows={upcomingRows} />
       <UpcomingMoveOuts rows={moveOutRows} />
+      <UpcomingMoveOuts rows={pastMoveOutRows} past />
       <FormerTenants
         rows={formerRows}
         canDismiss={await hasPermission("ledger")}

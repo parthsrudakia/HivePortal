@@ -21,8 +21,17 @@ function fmtMoney(n: number) {
  * has passed, so these tenants remain in the tracker; this section surfaces
  * who is leaving soon. (Distinct from "Moved out with balance", which lists
  * already-departed tenants who still owe.) Collapsed by default.
+ *
+ * With `past`, the same list renders as "Past move-outs" — tenants whose
+ * move-out fell in the last 30 days, regardless of balance.
  */
-export function UpcomingMoveOuts({ rows }: { rows: UpcomingMoveOutRow[] }) {
+export function UpcomingMoveOuts({
+  rows,
+  past = false,
+}: {
+  rows: UpcomingMoveOutRow[];
+  past?: boolean;
+}) {
   if (rows.length === 0) return null;
 
   return (
@@ -32,10 +41,12 @@ export function UpcomingMoveOuts({ rows }: { rows: UpcomingMoveOutRow[] }) {
           <span className="text-sm text-muted transition-transform group-open:rotate-90">
             ▸
           </span>
-          Upcoming{" "}
+          {past ? "Past" : "Upcoming"}{" "}
           <span className="font-display text-accent-text">move-outs</span>
         </h2>
-        <span className="text-xs text-muted">{rows.length} scheduled</span>
+        <span className="text-xs text-muted">
+          {rows.length} {past ? "in the last 30 days" : "scheduled"}
+        </span>
       </summary>
 
       <ul className="mt-4 flex flex-col gap-1.5">
@@ -59,7 +70,7 @@ export function UpcomingMoveOuts({ rows }: { rows: UpcomingMoveOutRow[] }) {
               {fmtMoney(r.monthlyRent)}/mo
             </span>
             <span className="shrink-0 rounded-full bg-warm px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-ink/70">
-              Moves out {formatDate(r.moveOutDate)}
+              {past ? "Moved out" : "Moves out"} {formatDate(r.moveOutDate)}
             </span>
           </li>
         ))}
