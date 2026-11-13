@@ -266,17 +266,17 @@ export default async function TenantDetailPage({
   const ledgerEntries = ledgerTenancy
     ? buildTenantLedgerEntries(ledgerInputs, today)
     : [];
-  // Each summary row shows the bucket's charges with the payments typed to
-  // that bucket beneath, so the deposit line reads as "what was charged, what
-  // was paid toward it", not a bare total. (A deposit that arrived via Zelle
-  // is typed 'rent' by recon, so "paid" only counts explicit deposit payments
-  // and credit directed to the deposit.)
-  const summaryRows = ledger
+  // The deposit row shows only what was charged. A "paid" figure here misled:
+  // a deposit usually arrives in one transfer with the first rent (typed
+  // 'rent' or 'other'), so payments typed to the deposit bucket rarely match
+  // what was actually collected. The overall balance below is the truth.
+  const summaryRows: { label: string; amount: number; detail: string | null }[] =
+    ledger
     ? [
         {
-          label: "Security deposit",
+          label: "Security deposit charged",
           amount: ledger.deposit.owed,
-          detail: `${fmtMoney(ledger.deposit.owed)} charged · ${fmtMoney(ledger.deposit.paid)} paid`,
+          detail: null,
         },
         {
           label: "Late fees",
