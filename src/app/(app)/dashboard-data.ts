@@ -9,6 +9,7 @@ import { cache } from "react";
 import { getCachedClient } from "@/lib/supabase/server";
 import {
   LedgerDataError,
+  allLedgerRows,
   fetchLedgerSidecars,
   fetchTenantLedgers,
   tenantLedger,
@@ -113,11 +114,18 @@ export const getDashTenancies = cache(async () => {
     .eq("status", "active");
 });
 
+// Paged past the 1,000-row response cap. Money integrity: a failed read
+// throws (LedgerDataError) rather than reporting $0 collected and every
+// tenant as owing.
 export const getAllPayments = cache(async () => {
   const supabase = await getCachedClient();
-  return supabase
-    .from("payments")
-    .select("tenancy_id, amount, paid_on, payment_type");
+  return allLedgerRows("payments", (from, to) =>
+    supabase
+      .from("payments")
+      .select("tenancy_id, amount, paid_on, payment_type", { count: "exact" })
+      .order("id")
+      .range(from, to),
+  );
 });
 
 export const getRoomAds = cache(async () => {
@@ -136,16 +144,10 @@ export const getDashSidecars = cache(async () =>
 // payments — mirrors the Rent Tracker KPIs: Zelle can't tell deposits from
 // rent, so the applied charge is what marks that money as deposit.
 export const getPaymentsThisCycle = cache(async () => {
-  const [paymentsRes, { charges }] = await Promise.all([
+  const [data, { charges }] = await Promise.all([
     getAllPayments(),
     getDashSidecars(),
   ]);
-  // Money integrity: a failed payments read throws rather than reporting
-  // $0 collected and every tenant as owing.
-  if (paymentsRes.error) {
-    throw new LedgerDataError("payments", paymentsRes.error.message);
-  }
-  const data = paymentsRes.data;
   const today = todayISO();
   const tm = currentRentCycle();
   const inCycle = (d: string | null | undefined) =>
@@ -155,7 +157,7 @@ export const getPaymentsThisCycle = cache(async () => {
     { amount: number; paid_on: string; payment_type: string }[]
   >();
   const rentPaidByTenancy = new Map<string, number>();
-  for (const pmt of data ?? []) {
+  for (const pmt of data) {
     const list = paymentsByTenancy.get(pmt.tenancy_id);
     if (list) list.push(pmt);
     else paymentsByTenancy.set(pmt.tenancy_id, [pmt]);
