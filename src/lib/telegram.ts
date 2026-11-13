@@ -1,4 +1,7 @@
-/** Minimal Telegram Bot API client — only what the webhook needs. */
+/**
+ * Minimal Telegram Bot API client — only what the webhooks need. Calls default
+ * to the ops bot (TELEGRAM_BOT_TOKEN); the listings bot passes its own `token`.
+ */
 
 const API_BASE = "https://api.telegram.org";
 
@@ -34,10 +37,10 @@ export function chunkMessage(text: string, max = 4000): string[] {
 async function postChunk(
   chatId: number,
   chunk: string,
-  opts: { reply_to_message_id?: number },
+  opts: { reply_to_message_id?: number; token?: string },
   parseMode?: "HTML",
 ): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/bot${token()}/sendMessage`, {
+  const res = await fetch(`${API_BASE}/bot${opts.token ?? token()}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -66,7 +69,11 @@ async function postChunk(
 export async function sendMessage(
   chatId: number,
   text: string,
-  opts: { reply_to_message_id?: number; parse_mode?: "HTML" } = {},
+  opts: {
+    reply_to_message_id?: number;
+    parse_mode?: "HTML";
+    token?: string;
+  } = {},
 ): Promise<boolean> {
   let ok = true;
   for (const chunk of chunkMessage(text)) {
@@ -103,8 +110,12 @@ export async function sendDocument(
   return { ok: true };
 }
 
-export async function sendChatAction(chatId: number, action: "typing") {
-  await fetch(`${API_BASE}/bot${token()}/sendChatAction`, {
+export async function sendChatAction(
+  chatId: number,
+  action: "typing",
+  botToken?: string,
+) {
+  await fetch(`${API_BASE}/bot${botToken ?? token()}/sendChatAction`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, action }),

@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       agreement_addresses: {
@@ -838,6 +863,135 @@ export type Database = {
           name?: string
           notes?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      listing_bot_messages: {
+        Row: {
+          chat_id: number
+          content: string
+          created_at: string
+          id: number
+          role: string
+        }
+        Insert: {
+          chat_id: number
+          content: string
+          created_at?: string
+          id?: number
+          role: string
+        }
+        Update: {
+          chat_id?: number
+          content?: string
+          created_at?: string
+          id?: number
+          role?: string
+        }
+        Relationships: []
+      }
+      listing_bot_reminders: {
+        Row: {
+          created_at: string
+          created_by: number | null
+          enabled: boolean
+          fail_count: number
+          id: number
+          include: string
+          last_error: string | null
+          last_run_at: string | null
+          message: string
+          next_run_at: string | null
+          schedule: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          enabled?: boolean
+          fail_count?: number
+          id?: number
+          include?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          message: string
+          next_run_at?: string | null
+          schedule: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          enabled?: boolean
+          fail_count?: number
+          id?: number
+          include?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          message?: string
+          next_run_at?: string | null
+          schedule?: Json
+        }
+        Relationships: []
+      }
+      listing_bot_snapshots: {
+        Row: {
+          data: Json
+          room_id: string
+          updated_at: string
+        }
+        Insert: {
+          data: Json
+          room_id: string
+          updated_at?: string
+        }
+        Update: {
+          data?: Json
+          room_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      listing_bot_state: {
+        Row: {
+          dirty_at: string | null
+          group_chat_id: number | null
+          group_title: string | null
+          id: boolean
+          processing_at: string | null
+          seeded_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          dirty_at?: string | null
+          group_chat_id?: number | null
+          group_title?: string | null
+          id?: boolean
+          processing_at?: string | null
+          seeded_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          dirty_at?: string | null
+          group_chat_id?: number | null
+          group_title?: string | null
+          id?: boolean
+          processing_at?: string | null
+          seeded_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      listing_bot_updates: {
+        Row: {
+          received_at: string
+          update_id: number
+        }
+        Insert: {
+          received_at?: string
+          update_id: number
+        }
+        Update: {
+          received_at?: string
+          update_id?: number
         }
         Relationships: []
       }
@@ -2643,6 +2797,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       credential_category: [

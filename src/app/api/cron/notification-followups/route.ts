@@ -10,7 +10,9 @@
  *   6. auto-dismiss duplicate signing requests (same person, within 15 days),
  *   7. retry undelivered "agreement signed" Telegram alerts,
  *   8. send any "Other" charge emails the per-minute pg_cron missed,
- *   9. check the Gmail (NY) and Outlook (work) mailboxes can still sign in.
+ *   9. check the Gmail (NY) and Outlook (work) mailboxes can still sign in,
+ *  10. listings bot safety net: post any inventory change / reminder the
+ *      per-minute pg_cron missed (rooms also change with the date alone).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -25,6 +27,7 @@ import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
 import { retrySignedAgreementAlerts } from "@/lib/agreement-notify";
 import { flushChargeNotices } from "@/lib/charge-notices";
 import { runMailboxHealthCheck } from "@/lib/mailbox-health";
+import { runListingsBot } from "@/lib/listings-bot/run";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -116,7 +119,13 @@ export async function GET(req: NextRequest) {
     error: e instanceof Error ? e.message : "mailbox health check failed",
   }));
 
+  // Listings bot (Telegram group): normally driven by pg_cron within minutes
+  // of a change. This daily pass also catches rooms that entered or left
+  // inventory only because the date rolled over. Never throws.
+  const listingsBot = await runListingsBot();
+
   return NextResponse.json({
+    listingsBot,
     tenancyLifecycle,
     chargeNotices,
     signedAlerts,
