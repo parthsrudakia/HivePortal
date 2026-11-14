@@ -12,7 +12,13 @@ export type UpcomingMoveOutRow = {
   /** Past move-outs only: what has happened to the room since. */
   roomStatus?: RoomStatus;
   /** Past move-outs only: deposit to give back (deposit charged ± balance). */
-  refund?: { deposit: number; balance: number; toReturn: number };
+  refund?: {
+    deposit: number;
+    balance: number;
+    toReturn: number;
+    /** False when the ledger has no deposit charge — needs a manual check. */
+    hasDepositCharge: boolean;
+  };
 };
 
 export type RoomStatus =
@@ -68,10 +74,12 @@ function fmtMoney(n: number) {
 /** "To return $1,300" with the deposit / balance it comes from. */
 function RefundCell({
   refund,
+  tenantId,
 }: {
   refund: NonNullable<UpcomingMoveOutRow["refund"]>;
+  tenantId: string;
 }) {
-  const { deposit, balance, toReturn } = refund;
+  const { deposit, balance, toReturn, hasDepositCharge } = refund;
   const headline =
     toReturn > 0.005 ? (
       <span className="font-medium text-green-700">To return {fmtMoney(toReturn)}</span>
@@ -92,6 +100,14 @@ function RefundCell({
       <span className="text-xs text-muted">
         Deposit {fmtMoney(deposit)} {balancePart}
       </span>
+      {!hasDepositCharge && (
+        <Link
+          href={`/tenants/${tenantId}`}
+          className="mt-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:underline"
+        >
+          ⚠ No deposit charge in ledger — check the full ledger
+        </Link>
+      )}
     </span>
   );
 }
@@ -153,7 +169,7 @@ export function UpcomingMoveOuts({
               )}
             </div>
             {past && r.refund ? (
-              <RefundCell refund={r.refund} />
+              <RefundCell refund={r.refund} tenantId={r.tenantId} />
             ) : (
               <span className="shrink-0 tabular-nums text-muted">
                 {fmtMoney(r.monthlyRent)}/mo

@@ -700,18 +700,30 @@ export function buildTenantLedgerEntries(
  * is the exception: it writes the balance off on the basis that the deposit
  * was applied toward it, so it is added back here rather than read as
  * forgiven debt. Negative result = they owe beyond the deposit.
+ *
+ * `hasDepositCharge` is false when no deposit was ever charged: the figure
+ * then rests on the balance alone and the ledger needs a manual check.
  */
 export function depositReturn(
   inputs: TenancyLedgerInput[],
   netBalance: number,
   today: string,
-): { deposit: number; balance: number; toReturn: number } {
+): {
+  deposit: number;
+  balance: number;
+  toReturn: number;
+  hasDepositCharge: boolean;
+} {
   let deposit = 0;
   let settled = 0;
+  let hasDepositCharge = false;
   for (const input of inputs) {
     for (const c of input.charges) {
       if (c.charged_on > today) continue;
-      if (c.kind === "security_deposit") deposit += Number(c.amount);
+      if (c.kind === "security_deposit") {
+        deposit += Number(c.amount);
+        if (Number(c.amount) > 0) hasDepositCharge = true;
+      }
       else if (c.kind === "settlement") settled += Number(c.amount);
     }
   }
@@ -721,5 +733,6 @@ export function depositReturn(
     deposit,
     balance,
     toReturn: Math.round((deposit - balance) * 100) / 100,
+    hasDepositCharge,
   };
 }

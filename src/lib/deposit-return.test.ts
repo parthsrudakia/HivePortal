@@ -26,7 +26,7 @@ const today = "2026-11-15";
 describe("depositReturn", () => {
   it("returns the full deposit when the account is square", () => {
     expect(depositReturn(inputWith([{ kind: "security_deposit", amount: 1500 }]), 0, today))
-      .toEqual({ deposit: 1500, balance: 0, toReturn: 1500 });
+      .toEqual({ deposit: 1500, balance: 0, toReturn: 1500, hasDepositCharge: true });
   });
 
   it("deducts what they still owe and adds any credit", () => {
@@ -64,6 +64,7 @@ describe("depositReturn", () => {
       deposit: 1500,
       balance: 400,
       toReturn: 1100,
+      hasDepositCharge: true,
     });
   });
 
@@ -72,5 +73,14 @@ describe("depositReturn", () => {
       { kind: "security_deposit", amount: 1500, charged_on: "2026-12-01" },
     ]);
     expect(depositReturn(inputs, 0, today).toReturn).toBe(0);
+  });
+
+  it("flags a ledger with no deposit charge", () => {
+    expect(depositReturn(inputWith([]), 0, today).hasDepositCharge).toBe(false);
+    // A deposit applied (negative) without the charge itself still flags.
+    expect(
+      depositReturn(inputWith([{ kind: "security_deposit", amount: -300 }]), 0, today)
+        .hasDepositCharge,
+    ).toBe(false);
   });
 });
