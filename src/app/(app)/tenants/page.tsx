@@ -7,7 +7,7 @@ import { SearchInput } from "@/components/search-input";
 import { KpiRowSkeleton, TableSkeleton } from "@/components/section-skeletons";
 import { BalanceFilter } from "./balance-filter";
 import { RentReminderButton } from "./rent-reminder-button";
-import { computeLedger } from "@/lib/rent";
+import { computeLedger, depositReturn } from "@/lib/rent";
 import { LedgerDataError, tenantLedger } from "@/lib/rent-data";
 import { addDaysISO, todayISO } from "@/lib/date";
 import { isMaster } from "@/lib/access";
@@ -456,6 +456,14 @@ async function SideListsSection() {
         moveOutDate: t.move_out_date as string,
         monthlyRent: Number(t.monthly_rent),
         roomStatus: roomStatusFor(t),
+        // Tenant-wide, like the balance: deposit charged ± what's owed.
+        refund: tenant?.id
+          ? depositReturn(
+              tl.inputs.get(tenant.id) ?? [],
+              tl.ledgers.get(tenant.id)?.netBalance ?? 0,
+              today,
+            )
+          : undefined,
       };
     })
     .filter((r) => r.tenantId && !tl.activeTenants.has(r.tenantId))

@@ -689,3 +689,37 @@ export function buildTenantLedgerEntries(
     return { ...r, balance };
   });
 }
+
+/**
+ * What a departed tenant should get back: the security deposit charged,
+ * minus whatever they still owe (or plus any credit).
+ *
+ * The ledger never applies the deposit on its own — a paid deposit simply
+ * nets its own charge to zero — so the deposit is still "held" and the net
+ * balance is what's owed on top. A 'settlement' (the move-out Settle button)
+ * is the exception: it writes the balance off on the basis that the deposit
+ * was applied toward it, so it is added back here rather than read as
+ * forgiven debt. Negative result = they owe beyond the deposit.
+ */
+export function depositReturn(
+  inputs: TenancyLedgerInput[],
+  netBalance: number,
+  today: string,
+): { deposit: number; balance: number; toReturn: number } {
+  let deposit = 0;
+  let settled = 0;
+  for (const input of inputs) {
+    for (const c of input.charges) {
+      if (c.charged_on > today) continue;
+      if (c.kind === "security_deposit") deposit += Number(c.amount);
+      else if (c.kind === "settlement") settled += Number(c.amount);
+    }
+  }
+  const balance = Math.round((netBalance + settled) * 100) / 100;
+  deposit = Math.round(deposit * 100) / 100;
+  return {
+    deposit,
+    balance,
+    toReturn: Math.round((deposit - balance) * 100) / 100,
+  };
+}

@@ -11,6 +11,8 @@ export type UpcomingMoveOutRow = {
   monthlyRent: number;
   /** Past move-outs only: what has happened to the room since. */
   roomStatus?: RoomStatus;
+  /** Past move-outs only: deposit to give back (deposit charged ± balance). */
+  refund?: { deposit: number; balance: number; toReturn: number };
 };
 
 export type RoomStatus =
@@ -61,6 +63,37 @@ function RoomStatusLine({ status }: { status: RoomStatus }) {
 
 function fmtMoney(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+/** "To return $1,300" with the deposit / balance it comes from. */
+function RefundCell({
+  refund,
+}: {
+  refund: NonNullable<UpcomingMoveOutRow["refund"]>;
+}) {
+  const { deposit, balance, toReturn } = refund;
+  const headline =
+    toReturn > 0.005 ? (
+      <span className="font-medium text-green-700">To return {fmtMoney(toReturn)}</span>
+    ) : toReturn < -0.005 ? (
+      <span className="font-medium text-red-700">Owes {fmtMoney(-toReturn)}</span>
+    ) : (
+      <span className="text-muted">Nothing to return</span>
+    );
+  const balancePart =
+    balance > 0.005
+      ? `− ${fmtMoney(balance)} owed`
+      : balance < -0.005
+        ? `+ ${fmtMoney(-balance)} credit`
+        : "no balance";
+  return (
+    <span className="flex shrink-0 flex-col items-end text-right tabular-nums">
+      {headline}
+      <span className="text-xs text-muted">
+        Deposit {fmtMoney(deposit)} {balancePart}
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -115,14 +148,17 @@ export function UpcomingMoveOuts({
               </p>
               {r.roomStatus && (
                 <p className="mt-1 text-xs">
-                  <span className="text-muted">Room now: </span>
                   <RoomStatusLine status={r.roomStatus} />
                 </p>
               )}
             </div>
-            <span className="shrink-0 tabular-nums text-muted">
-              {fmtMoney(r.monthlyRent)}/mo
-            </span>
+            {past && r.refund ? (
+              <RefundCell refund={r.refund} />
+            ) : (
+              <span className="shrink-0 tabular-nums text-muted">
+                {fmtMoney(r.monthlyRent)}/mo
+              </span>
+            )}
             <span className="shrink-0 rounded-full bg-warm px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-ink/70">
               {past ? "Moved out" : "Moves out"} {formatDate(r.moveOutDate)}
             </span>
