@@ -8,6 +8,8 @@ type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 export type ReminderInfo = {
   /** Active tenants who still owe rent for the current month. */
   outstandingCount: number;
+  /** Those same tenants, for the bulk reminder's exclude filter. */
+  outstandingTenants: { id: string; name: string; balance: number }[];
   /** When the monthly "to all" reminder last went out (cron). */
   lastGeneralText: string | null;
   /** When balance reminders last went out (any channel), with recipient count. */
@@ -93,7 +95,7 @@ export async function getReminderInfo(
     fetchTenantLedgers(supabase),
   ]);
 
-  let outstandingCount = 0;
+  const owing = new Map<string, number>();
   for (const row of tenancies ?? []) {
     if (row.move_out_date && row.move_out_date <= today) continue;
     if (row.start_date > today) continue;
@@ -109,7 +111,21 @@ export async function getReminderInfo(
         rentChanges.get(row.id) ?? [],
       ),
     );
-    if (netBalance > 0.01) outstandingCount++;
+    if (netBalance > 0.01) owing.set(row.tenant_id, netBalance);
+  }
+  const outstandingCount = owing.size;
+
+  // Names for the exclude filter. A failed lookup just shows a blank picker;
+  // it never touches the count or the send itself.
+  let outstandingTenants: ReminderInfo["outstandingTenants"] = [];
+  if (owing.size > 0) {
+    const { data: names } = await supabase
+      .from("tenants")
+      .select("id, full_name")
+      .in("id", [...owing.keys()]);
+    outstandingTenants = (names ?? [])
+      .map((t) => ({ id: t.id, name: t.full_name, balance: owing.get(t.id) ?? 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   type Batch = { created_at: string; recipient_count: number; channel: string };
@@ -129,6 +145,7 @@ export async function getReminderInfo(
 
   return {
     outstandingCount,
+    outstandingTenants,
     lastGeneralText,
     lastBalanceText: describe(batches[0]),
     lastBalanceEmailText: describe(lastEmail),

@@ -13,6 +13,9 @@ import {
   ReactivateTenancyButton,
 } from "./tenant-actions";
 import { LeaseDownload } from "./lease-download";
+import { AgreementResend } from "./agreement-resend";
+import { BalanceReminderButtons } from "./balance-reminder-buttons";
+import { isUnsignedLeasePath } from "@/lib/lease-path";
 import { LeaseDateEdit } from "./lease-end-edit";
 import { RentAmountEdit } from "./rent-edit";
 import { TenantBackLink } from "./tenant-back-link";
@@ -28,7 +31,7 @@ import { ledgerRows } from "@/lib/rent-data";
 
 import { pauseTenancy, resumeTenancy } from "../actions";
 import { fetchAssignableRooms, type RoomOption } from "../room-options";
-import { hasPermission } from "@/lib/section-access";
+import { getBlockedSections, hasPermission } from "@/lib/section-access";
 import { todayISO } from "@/lib/date";
 import { linkActive } from "@/lib/emergency-contact";
 
@@ -192,6 +195,51 @@ export default async function TenantDetailPage({
     .maybeSingle();
   if (emergencyError) throw emergencyError;
   const emergencyLinkOpen = linkActive(emergency?.expires_at ?? null);
+
+  // An agreement this tenant was sent but hasn't signed yet: linked to one of
+  // their tenancies (profile created from the outstanding tally) or sent to
+  // their email. Surfaces the tally's resend / renew button on the profile.
+  // Resending is an Agreements action, so it's only offered with that access.
+  let pendingAgreement: { id: string; sentAt: string; expired: boolean } | null =
+    null;
+  if (!(await getBlockedSections()).has("agreements")) {
+    const { data: pendingRows } = await supabase
+      .from("agreement_requests")
+      .select(
+        "id, status, sent_at, signed_at, expires_at, assigned_tenancy_id, recipient_email",
+      )
+      .in("status", ["pending", "signed"])
+      .order("sent_at", { ascending: false });
+    const tenantEmail = tenant.email?.trim().toLowerCase() ?? "";
+    const ownTenancyIds = new Set(tenancies.map((t) => t.id));
+    const mine = (pendingRows ?? []).filter(
+      (r) =>
+        (r.assigned_tenancy_id && ownTenancyIds.has(r.assigned_tenancy_id)) ||
+        (tenantEmail !== "" &&
+          r.recipient_email.trim().toLowerCase() === tenantEmail),
+    );
+    const candidate = mine.find((r) => r.status === "pending");
+    // Once they've signed through a signing link there is nothing left to
+    // chase: an unsigned request sent before that signature is a stale
+    // duplicate. Only a request sent after it (e.g. a renewal) still counts.
+    const row =
+      candidate &&
+      !mine.some(
+        (r) =>
+          r.status === "signed" &&
+          r.signed_at !== null &&
+          Date.parse(r.signed_at) >= Date.parse(candidate.sent_at),
+      )
+        ? candidate
+        : null;
+    if (row) {
+      pendingAgreement = {
+        id: row.id,
+        sentAt: row.sent_at,
+        expired: !linkActive(row.expires_at),
+      };
+    }
+  }
 
   // Ledger charges (add/delete) are operator-only; payments stay open to all.
   const ledgerAdmin = await hasPermission("ledger");
@@ -500,8 +548,21 @@ export default async function TenantDetailPage({
                       variant="primary"
                     />
                   ))}
+                {ledgerAdmin &&
+                  !active.paused_at &&
+                  (ledger?.netBalance ?? 0) > 0.01 && (
+                    <BalanceReminderButtons
+                      tenantId={tenant.id}
+                      tenantName={tenant.full_name}
+                      hasEmail={!!tenant.email?.trim()}
+                      hasPhone={!!tenant.phone?.trim()}
+                    />
+                  )}
                 {active.lease_pdf_path && (
-                  <LeaseDownload tenancyId={active.id} />
+                  <LeaseDownload
+                    tenancyId={active.id}
+                    unsigned={isUnsignedLeasePath(active.lease_pdf_path)}
+                  />
                 )}
               </div>
             </>
@@ -519,10 +580,43 @@ export default async function TenantDetailPage({
                   />
                 </div>
               )}
+              {/* A moved-out tenant who still owes can be reminded too. */}
+              {ledgerAdmin &&
+                upcoming.length === 0 &&
+                past.length > 0 &&
+                (ledger?.netBalance ?? 0) > 0.01 && (
+                  <div className="mt-4 flex flex-wrap items-center gap-4">
+                    <BalanceReminderButtons
+                      tenantId={tenant.id}
+                      tenantName={tenant.full_name}
+                      hasEmail={!!tenant.email?.trim()}
+                      hasPhone={!!tenant.phone?.trim()}
+                    />
+                  </div>
+                )}
             </>
           )}
         </div>
       </div>
+
+      {pendingAgreement && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-6 shadow-sm">
+          <div>
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              Agreement
+            </h2>
+            <p className="mt-1 text-sm text-ink">
+              Sent {formatDate(etDate(pendingAgreement.sentAt))}, not signed
+              yet
+              {pendingAgreement.expired ? " — the signing link has expired." : "."}
+            </p>
+          </div>
+          <AgreementResend
+            requestId={pendingAgreement.id}
+            expired={pendingAgreement.expired}
+          />
+        </div>
+      )}
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
@@ -588,8 +682,16 @@ export default async function TenantDetailPage({
                     {fmtMoney(t.monthly_rent)}/mo
                   </p>
                 </div>
-                <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-medium uppercase tracking-wide text-accent-text">
-                  Reserved
+                <span className="flex shrink-0 flex-wrap items-center gap-3">
+                  {t.lease_pdf_path && (
+                    <LeaseDownload
+                      tenancyId={t.id}
+                      unsigned={isUnsignedLeasePath(t.lease_pdf_path)}
+                    />
+                  )}
+                  <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-medium uppercase tracking-wide text-accent-text">
+                    Reserved
+                  </span>
                 </span>
               </li>
             ))}
@@ -793,7 +895,12 @@ export default async function TenantDetailPage({
                   </p>
                 </div>
                 <span className="flex shrink-0 flex-wrap items-center gap-3">
-                  {t.lease_pdf_path && <LeaseDownload tenancyId={t.id} />}
+                  {t.lease_pdf_path && (
+                    <LeaseDownload
+                      tenancyId={t.id}
+                      unsigned={isUnsignedLeasePath(t.lease_pdf_path)}
+                    />
+                  )}
                   {ledgerAdmin && (
                     <ReactivateTenancyButton
                       tenancyId={t.id}

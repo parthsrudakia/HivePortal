@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { getLeaseDownloadUrl } from "../actions";
 
-export function LeaseDownload({ tenancyId }: { tenancyId: string }) {
+export function LeaseDownload({
+  tenancyId,
+  unsigned = false,
+}: {
+  tenancyId: string;
+  /** The PDF on file is the agreement as sent, not yet signed. */
+  unsigned?: boolean;
+}) {
   const [pending, setPending] = useState(false);
 
   return (
@@ -24,7 +31,7 @@ export function LeaseDownload({ tenancyId }: { tenancyId: string }) {
       }}
       className="rounded-full border border-stone bg-white px-3 py-1 text-xs uppercase tracking-wide text-ink hover:bg-warm disabled:opacity-50"
     >
-      {pending ? "Opening…" : "Lease PDF ↗"}
+      {pending ? "Opening…" : unsigned ? "Lease PDF (unsigned) ↗" : "Lease PDF ↗"}
     </button>
   );
 }

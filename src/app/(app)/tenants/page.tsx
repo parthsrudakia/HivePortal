@@ -101,6 +101,7 @@ async function RentKpisSection() {
   );
   const {
     outstandingCount,
+    outstandingTenants,
     lastBalanceText,
     lastBalanceEmailText,
     lastBalanceSmsText,
@@ -153,8 +154,9 @@ async function RentKpisSection() {
           </div>
         )}
         {/* Outstanding card: the total is admin-only, but the balance
-            reminders + last-sent stay visible to everyone. */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
+            reminders + last-sent stay visible to everyone. Raised above the
+            sections below so the exclude picker isn't painted over. */}
+        <div className="relative z-10 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone/30 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-accent/40">
           {admin ? (
             <>
               <p className="text-xs font-medium uppercase tracking-wide text-muted">
@@ -172,6 +174,7 @@ async function RentKpisSection() {
           <RentReminderButton
             minimal
             outstandingCount={outstandingCount}
+            outstandingTenants={outstandingTenants}
             lastGeneralText={null}
             lastBalanceText={lastBalanceText}
             lastBalanceEmailText={lastBalanceEmailText}

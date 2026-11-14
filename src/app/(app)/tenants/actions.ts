@@ -37,6 +37,7 @@ import {
 } from "@/lib/tenancy-create";
 import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
+import { UNSIGNED_LEASE_SUFFIX } from "@/lib/lease-path";
 import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
 import { assertSection, hasPermission } from "@/lib/section-access";
 
@@ -132,7 +133,9 @@ export async function createTenant(
   ).trim();
   const leaseFile = formData.get("lease_pdf");
   // Present when the form was opened from the signing tally's "Add a tenant"
-  // button — the request's signed PDF becomes the tenancy's lease PDF.
+  // button — the request's PDF becomes the tenancy's lease PDF: the signed
+  // copy when it's signed, otherwise the unsigned agreement that was sent
+  // (swapped for the signed copy automatically once the tenant signs).
   const agreement_request_id =
     String(formData.get("agreement_request_id") ?? "").trim() || null;
 
@@ -267,27 +270,35 @@ export async function createTenant(
 
     let lease_pdf_path: string | null = null;
     if (agreement_request_id) {
-      // Copy the request's signed PDF into the leases bucket (the request's
-      // own copy stays immutable), same as the tally's Assign flow.
+      // Copy the request's PDF into the leases bucket (the request's own
+      // copy stays immutable), same as the tally's Assign flow. A signed
+      // request attaches its signed copy; an outstanding one attaches the
+      // unsigned agreement as sent.
       const { data: request } = await supabase
         .from("agreement_requests")
-        .select("id, status, signed_pdf_path")
+        .select("id, status, signed_pdf_path, unsigned_pdf_path")
         .eq("id", agreement_request_id)
         .maybeSingle();
-      if (!request || request.status !== "signed" || !request.signed_pdf_path) {
+      const isSigned = request?.status === "signed" && !!request.signed_pdf_path;
+      const sourcePath = isSigned
+        ? request?.signed_pdf_path
+        : request?.status === "pending"
+          ? request.unsigned_pdf_path
+          : null;
+      if (!request || !sourcePath) {
         await rollbackTenant();
         return {
-          error: "That signed agreement could not be found — it may have been cleared.",
+          error: "That agreement could not be found — it may have been cleared.",
         };
       }
       const { data: pdfBlob, error: downloadError } = await supabase.storage
         .from(AGREEMENTS_BUCKET)
-        .download(request.signed_pdf_path);
+        .download(sourcePath);
       if (downloadError || !pdfBlob) {
         await rollbackTenant();
-        return { error: "The signed agreement PDF could not be read from storage." };
+        return { error: "The agreement PDF could not be read from storage." };
       }
-      const filename = `${tenantId}/${Date.now()}-signed-agreement.pdf`;
+      const filename = `${tenantId}/${Date.now()}-${isSigned ? "signed-agreement" : UNSIGNED_LEASE_SUFFIX}.pdf`;
       const { error: upErr } = await supabase.storage
         .from("leases")
         .upload(filename, Buffer.from(await pdfBlob.arrayBuffer()), {
@@ -295,7 +306,7 @@ export async function createTenant(
         });
       if (upErr) {
         await rollbackTenant();
-        return { error: `Failed to attach the signed agreement: ${upErr.message}` };
+        return { error: `Failed to attach the agreement: ${upErr.message}` };
       }
       lease_pdf_path = filename;
     } else if (leaseFile instanceof File && leaseFile.size > 0) {
@@ -378,7 +389,8 @@ export async function createTenant(
 
     // Point the signing tally at the tenancy so the request shows as
     // assigned instead of resurfacing in the assign picker. Best-effort,
-    // matching the tally's own Assign flow.
+    // matching the tally's own Assign flow. For an outstanding request this
+    // link is also what routes the signed copy here when the tenant signs.
     if (agreement_request_id && tenancy) {
       await supabase
         .from("agreement_requests")
@@ -1573,6 +1585,13 @@ export async function deleteCharge(formData: FormData) {
 // plus any deposit / late-fee amounts owed) is positive. Meant to be
 // run after the month's reconciliation has posted payments. Records a batch row
 // so the page can show when these last went out.
+//
+// With a `tenant_id` field it reminds just that tenant (the buttons on the
+// tenant profile): same balance, wording and NY / non-NY sender, but no batch
+// row — the "last sent" stamp on the Rent Tracker is about the bulk run. A
+// moved-out tenant who still owes can be reminded this way too, through
+// their most recent tenancy, with wording that drops the rent / late-fee
+// framing; the bulk run stays active-tenants-only.
 
 export async function sendBalanceReminders(
   _prev: ReminderState,
@@ -1583,6 +1602,12 @@ export async function sendBalanceReminders(
   const channel = String(formData.get("channel") ?? "both");
   const doEmail = channel === "email" || channel === "both";
   const doSms = channel === "sms" || channel === "both";
+  const onlyTenantId = String(formData.get("tenant_id") ?? "").trim() || null;
+  // Bulk run only: tenants the operator unticked in the exclude filter.
+  const excludeIds = String(formData.get("exclude_tenant_ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const supabase = await createClient();
   const user = await getSessionUser();
@@ -1590,6 +1615,11 @@ export async function sendBalanceReminders(
   // An unknown channel would send nothing yet still log a batch row.
   if (!isValid(z.enum(["email", "sms", "both"]), channel))
     return { error: "Invalid channel." };
+  if (onlyTenantId && !isValid(zUuid, onlyTenantId))
+    return { error: "Invalid tenant id." };
+  if (excludeIds.length > 0 && !isValid(zUuidArray, excludeIds))
+    return { error: "Invalid excluded tenant list." };
+  const excluded = new Set(onlyTenantId ? [] : excludeIds);
 
   const now = new Date();
   const y = now.getFullYear();
@@ -1604,12 +1634,14 @@ export async function sendBalanceReminders(
   type ReminderTenancy = {
     id: string;
     tenant_id: string;
+    status: string;
     monthly_rent: number;
     first_month_rent: number | null;
     security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
     paused_at: string | null;
+    balance_dismissed_at: string | null;
     tenants:
       | { full_name: string; email: string | null; phone: string | null }
       | { full_name: string; email: string | null; phone: string | null }[]
@@ -1627,18 +1659,29 @@ export async function sendBalanceReminders(
     }[];
   };
 
-  const { data, error } = await supabase
+  let tenancyQuery = supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, tenant_id, status, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, balance_dismissed_at,
        tenants(full_name, email, phone),
        rooms(properties(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,
     )
-    .eq("status", "active")
-    .returns<ReminderTenancy[]>();
+    .order("start_date", { ascending: false });
+  tenancyQuery = onlyTenantId
+    ? tenancyQuery.eq("tenant_id", onlyTenantId).in("status", ["active", "ended"])
+    : tenancyQuery.eq("status", "active");
+  const { data: tenancyRows, error } =
+    await tenancyQuery.returns<ReminderTenancy[]>();
 
   if (error) return { error: error.message };
+  // One tenant: their active tenancy, else the most recent one they left.
+  let data = tenancyRows ?? [];
+  if (onlyTenantId) {
+    const picked = data.find((t) => t.status === "active") ?? data[0];
+    if (!picked) return { error: "This tenant has no tenancy to remind." };
+    data = [picked];
+  }
 
   const [{ charges, allocations, rentChanges }, tl] = await Promise.all([
     fetchLedgerSidecars(supabase),
@@ -1650,16 +1693,40 @@ export async function sendBalanceReminders(
   let queued = 0;
   let failed = 0;
   let texted = 0;
+  // Single-tenant sends explain why nothing went out.
+  let skipReason: string | null = null;
+  let excludedCount = 0;
   for (const row of data ?? []) {
+    if (excluded.has(row.tenant_id)) {
+      excludedCount++;
+      continue;
+    }
     const tenant = one(row.tenants);
     const email = tenant?.email?.trim();
-    if (!email) continue;
+    // The bulk run only covers tenants with an email on file; a single
+    // tenant can still be texted without one.
+    if (!email && !onlyTenantId) continue;
+    // A former tenant settling up — only ever reached from their profile.
+    const movedOut = row.status === "ended";
+    if (movedOut && row.balance_dismissed_at) {
+      skipReason = "This balance was dismissed — restore it to send a reminder.";
+      continue;
+    }
     // Skip tenancies that have already ended this month.
-    if (row.move_out_date && row.move_out_date <= today) continue;
+    if (!movedOut && row.move_out_date && row.move_out_date <= today) {
+      skipReason = "This tenant has already moved out.";
+      continue;
+    }
     // Skip tenancies that haven't started yet.
-    if (row.start_date > today) continue;
+    if (row.start_date > today) {
+      skipReason = "This tenancy hasn't started yet.";
+      continue;
+    }
     // Paused tenancies are excluded from all reminders, email and SMS.
-    if (row.paused_at) continue;
+    if (row.paused_at) {
+      skipReason = "This tenancy is paused — resume it to send reminders.";
+      continue;
+    }
 
     // Tenant-wide: one ledger per tenant across every room they've had.
     const { netBalance } = tenantLedger(tl, row.tenant_id, () =>
@@ -1672,19 +1739,24 @@ export async function sendBalanceReminders(
         rentChanges.get(row.id) ?? [],
       ),
     );
-    if (netBalance <= 0.01) continue;
+    if (netBalance <= 0.01) {
+      skipReason = "This tenant has no outstanding balance.";
+      continue;
+    }
     processed++;
 
     // With this month's late fee already posted, "avoid a late fee" would be
     // a false promise — the templates switch to fee-included wording.
-    const lateFeeCharged = (charges.get(row.id) ?? []).some(
-      (c) =>
-        c.kind === "late_fee" &&
-        c.charged_on >= `${today.slice(0, 7)}-01` &&
-        c.charged_on <= today,
-    );
+    const lateFeeCharged =
+      !movedOut &&
+      (charges.get(row.id) ?? []).some(
+        (c) =>
+          c.kind === "late_fee" &&
+          c.charged_on >= `${today.slice(0, 7)}-01` &&
+          c.charged_on <= today,
+      );
 
-    if (doEmail) {
+    if (doEmail && email) {
       // Mini ledger: the open lines behind the balance, plus statement links
       // for any utility charge in it. Best-effort — a breakdown failure never
       // blocks the reminder itself.
@@ -1714,6 +1786,7 @@ export async function sendBalanceReminders(
             detail,
             lateFeeCharged,
             tenant?.full_name,
+            movedOut,
           )
         : await sendBalanceReminderOutlook(
             email,
@@ -1722,6 +1795,7 @@ export async function sendBalanceReminders(
             detail,
             lateFeeCharged,
             tenant?.full_name,
+            movedOut,
           );
       if (res.ok) {
         if ("queued" in res) queued++;
@@ -1735,15 +1809,46 @@ export async function sendBalanceReminders(
     if (doSms && phone) {
       const smsRes = await sendBalanceText(
         phone,
-        balanceReminderText(netBalance, monthLabel, lateFeeCharged, tenant?.full_name),
+        balanceReminderText(
+          netBalance,
+          monthLabel,
+          lateFeeCharged,
+          tenant?.full_name,
+          movedOut,
+        ),
         { type: "rent_balance", context: `${tenant?.full_name ?? "Tenant"} · ${monthLabel}` },
       );
       if (smsRes.ok) texted++;
     }
   }
 
+  if (onlyTenantId) {
+    if (processed === 0) return { error: skipReason ?? "Nothing to send." };
+    const tenant = one(data[0]?.tenants ?? null);
+    const done: string[] = [];
+    if (sent > 0) done.push("Balance reminder emailed.");
+    if (queued > 0)
+      done.push("Email queued for tomorrow — Resend daily limit reached.");
+    if (texted > 0) done.push("Balance reminder texted.");
+    revalidatePath(`/tenants/${onlyTenantId}`);
+    if (done.length > 0) return { success: done.join(" ") };
+    if (failed > 0) return { error: "The reminder email failed to send." };
+    if (doEmail && !tenant?.email?.trim())
+      return { error: "No email address on file for this tenant." };
+    return {
+      error: tenant?.phone?.trim()
+        ? "The text could not be sent — the number may be unsupported or opted out."
+        : "No phone number on file for this tenant.",
+    };
+  }
+
   if (processed === 0) {
-    return { success: "No tenants have an outstanding balance this month." };
+    return {
+      success:
+        excludedCount > 0
+          ? "Nothing sent — every tenant with a balance was excluded."
+          : "No tenants have an outstanding balance this month.",
+    };
   }
 
   // Record the batch so the page can show when balance reminders last ran.
@@ -1764,6 +1869,7 @@ export async function sendBalanceReminders(
     );
   if (texted > 0) parts.push(`Texted ${texted}.`);
   if (failed > 0) parts.push(`${failed} failed to send.`);
+  if (excludedCount > 0) parts.push(`${excludedCount} excluded.`);
   if (parts.length === 0) {
     parts.push(
       doSms

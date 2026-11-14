@@ -107,9 +107,18 @@ export function balanceReminderText(
   lateFeeCharged = false,
   /** Texts greet the tenant by first name; the Gmail email passes none. */
   tenantName?: string | null,
+  /** A former tenant settling up: no "rent" framing and no late-fee warning. */
+  movedOut = false,
 ): string {
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const hi = greeting(tenantName);
+  if (movedOut)
+    return `${hi}
+
+My records show an outstanding balance of ${amount} on your account from your stay with us. Please submit payment as soon as possible. If you've already paid, let me know.
+
+Thanks
+Vinny`;
   const avoid = warnsOfLateFee() ? " to avoid a $50 late fee" : "";
   return lateFeeCharged
     ? `${hi}
@@ -559,12 +568,17 @@ export function balanceReminderGmailEmail(
   detail?: BalanceDetail,
   lateFeeCharged = false,
   tenantName?: string | null,
+  movedOut = false,
 ): { subject: string; text: string } {
-  const subject = `Rent balance due — ${monthLabel}`;
+  const subject = movedOut
+    ? "Outstanding balance on your account"
+    : `Rent balance due — ${monthLabel}`;
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  const closing = lateFeeCharged
-    ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let me know."
-    : `Please submit payment as soon as possible${warnsOfLateFee() ? " to avoid a $50 late fee" : ""}. If you've already paid, let me know.`;
+  const closing = movedOut
+    ? "Please submit payment as soon as possible. If you've already paid, let me know."
+    : lateFeeCharged
+      ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let me know."
+      : `Please submit payment as soon as possible${warnsOfLateFee() ? " to avoid a $50 late fee" : ""}. If you've already paid, let me know.`;
   const text = detail
     ? `${greeting(tenantName)}
 
@@ -576,7 +590,7 @@ ${closing}
 
 Thanks
 Vinny`
-    : balanceReminderText(amountDue, monthLabel, lateFeeCharged, tenantName);
+    : balanceReminderText(amountDue, monthLabel, lateFeeCharged, tenantName, movedOut);
   return { subject, text };
 }
 
@@ -587,6 +601,7 @@ export async function sendBalanceReminderGmail(
   detail?: BalanceDetail,
   lateFeeCharged = false,
   tenantName?: string | null,
+  movedOut = false,
 ): Promise<SendResult> {
   const { subject, text } = balanceReminderGmailEmail(
     amountDue,
@@ -594,6 +609,7 @@ export async function sendBalanceReminderGmail(
     detail,
     lateFeeCharged,
     tenantName,
+    movedOut,
   );
   const tracked = trackedPlainText(text);
   const result = await sendGmailMessage({ to, subject, text, html: tracked.html });
@@ -845,13 +861,19 @@ export function balanceReminderEmail(
   detail?: BalanceDetail,
   lateFeeCharged = false,
   tenantName?: string | null,
+  /** A former tenant settling up: no "rent" framing and no late-fee warning. */
+  movedOut = false,
 ): { subject: string; text: string; html: string } {
   const hi = greeting(tenantName);
   const amount = `$${amountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  const subject = `Rent balance due — ${monthLabel}`;
+  const subject = movedOut
+    ? "Outstanding balance on your account"
+    : `Rent balance due — ${monthLabel}`;
+  const balanceNoun = movedOut ? "outstanding balance" : "outstanding rent balance";
   // Once this month's late fee is on the account, "avoid a late fee" is a
   // false promise — acknowledge the fee instead. After the 5th, no warning.
-  const warn = warnsOfLateFee();
+  // A former tenant accrues no late fee, so never warns.
+  const warn = warnsOfLateFee() && !movedOut;
   const closingText = lateFeeCharged
     ? "A $50 late fee has already been applied to your account and is included in the balance above. Please submit payment as soon as possible. If you've already paid, let us know."
     : `Please submit payment as soon as possible${warn ? " to avoid a $50 late fee" : ""}. If you've already paid, let us know.`;
@@ -873,14 +895,14 @@ Our records show an outstanding rent balance of ${amount} on your account, which
 Thanks`
       : `${hi}
 
-Our records show an outstanding rent balance of ${amount} on your account. Please submit payment as soon as possible${warn ? " to avoid a $50 late fee" : ""}. If you've already paid, let us know.
+Our records show an ${balanceNoun} of ${amount} on your account. Please submit payment as soon as possible${warn ? " to avoid a $50 late fee" : ""}. If you've already paid, let us know.
 
 Thanks`;
   const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
   <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
     <div style="height:6px; background:#d4920b;"></div>
     <div style="padding:24px 20px;">
-      <h1 style="margin:0 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">Rent reminder</h1>
+      <h1 style="margin:0 0 4px; font-size:22px; line-height:1.25; color:#1a1a18; font-weight:600;">${movedOut ? "Balance reminder" : "Rent reminder"}</h1>
       <p style="margin:0; font-size:15px; color:#8a8378;">${monthLabel}</p>
       <div style="margin:20px 0; background:#f5f2ed; border-radius:12px; padding:16px 18px;">
         <p style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8378;">Outstanding balance</p>
@@ -907,6 +929,7 @@ export async function sendBalanceReminder(
   detail?: BalanceDetail,
   lateFeeCharged = false,
   tenantName?: string | null,
+  movedOut = false,
 ): Promise<SendResult> {
   const { subject, text, html } = balanceReminderEmail(
     amountDue,
@@ -914,6 +937,7 @@ export async function sendBalanceReminder(
     detail,
     lateFeeCharged,
     tenantName,
+    movedOut,
   );
   return sendViaResend(
     { to, from: resendFrom(), replyTo: process.env.RESEND_REPLY_TO, subject, text, html },
@@ -930,15 +954,25 @@ export async function sendBalanceReminderOutlook(
   detail?: BalanceDetail,
   lateFeeCharged = false,
   tenantName?: string | null,
+  movedOut = false,
 ): Promise<SendResult> {
   if (!outlookConfigured())
-    return sendBalanceReminder(to, amountDue, monthLabel, detail, lateFeeCharged, tenantName);
+    return sendBalanceReminder(
+      to,
+      amountDue,
+      monthLabel,
+      detail,
+      lateFeeCharged,
+      tenantName,
+      movedOut,
+    );
   const { subject, text, html } = balanceReminderEmail(
     amountDue,
     monthLabel,
     detail,
     lateFeeCharged,
     tenantName,
+    movedOut,
   );
   const tracked = addTrackingPixel(html);
   const result = await sendOutlookMessage({ to, subject, text, html: tracked.html });

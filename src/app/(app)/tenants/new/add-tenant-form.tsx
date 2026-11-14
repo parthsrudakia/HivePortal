@@ -12,9 +12,9 @@ type RoomOption = {
   total_rent: number | null;
 };
 
-// Prefill carried over from an agreement in the /agreements tally. A signed
-// one attaches its PDF on save; an outstanding (unsigned) one only prefills —
-// the request stays in the tally and is assigned once it's signed.
+// Prefill carried over from an agreement in the /agreements tally. Its PDF
+// attaches on save: the signed copy when signed, otherwise the unsigned
+// agreement as sent — replaced by the signed copy once the tenant signs.
 export type AgreementPrefill = {
   agreementRequestId: string;
   signed: boolean;
@@ -52,11 +52,19 @@ export function AddTenantForm({
   return (
     <form action={action} className="flex flex-col gap-8">
       {agreementPrefill && !agreementPrefill.signed && (
-        <p className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-ink">
-          Prefilled from the agreement sent to {agreementPrefill.fullName}.
-          It isn&rsquo;t signed yet, so nothing is attached — it stays in the
-          Outstanding tally; assign it to this tenant from there once signed.
-        </p>
+        <>
+          <input
+            type="hidden"
+            name="agreement_request_id"
+            value={agreementPrefill.agreementRequestId}
+          />
+          <p className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-ink">
+            Prefilled from the agreement sent to {agreementPrefill.fullName}.
+            It isn&rsquo;t signed yet — pick a room below and the unsigned
+            agreement attaches to the tenancy. The signed copy replaces it
+            automatically once they sign.
+          </p>
+        </>
       )}
       {agreementPrefill?.signed && (
         <>

@@ -87,4 +87,23 @@ describe("balance text greeting", () => {
       expect(balanceReminderText(850, "October 2026", false, "A")).toContain("to avoid a $50 late fee");
     });
   });
+
+  describe("moved-out wording", () => {
+    it("drops the rent and late-fee framing on every channel", () => {
+      const outputs = [
+        balanceReminderText(850, "October 2026", false, "A", true),
+        balanceReminderEmail(850, "October 2026", undefined, false, "A", true).text,
+        balanceReminderEmail(850, "October 2026", undefined, false, "A", true).html,
+        balanceReminderGmailEmail(850, "October 2026", undefined, false, "A", true).text,
+      ];
+      for (const out of outputs) {
+        expect(out).toContain("$850");
+        expect(out).not.toMatch(/late fee/i);
+        expect(out).not.toMatch(/rent/i);
+      }
+      expect(
+        balanceReminderGmailEmail(850, "October 2026", undefined, false, "A", true).subject,
+      ).toBe("Outstanding balance on your account");
+    });
+  });
 });

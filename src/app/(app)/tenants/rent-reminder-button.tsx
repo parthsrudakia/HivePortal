@@ -1,10 +1,15 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { sendBalanceReminders, type ReminderState } from "./actions";
+import {
+  ReminderExcludeFilter,
+  type OwingTenant,
+} from "./reminder-exclude-filter";
 
 export function RentReminderButton({
   outstandingCount,
+  outstandingTenants = [],
   lastGeneralText,
   lastBalanceText,
   lastBalanceEmailText = null,
@@ -12,6 +17,8 @@ export function RentReminderButton({
   minimal = false,
 }: {
   outstandingCount: number;
+  /** Owing tenants, for the shared exclude filter. */
+  outstandingTenants?: OwingTenant[];
   lastGeneralText: string | null;
   lastBalanceText: string | null;
   lastBalanceEmailText?: string | null;
@@ -26,7 +33,10 @@ export function RentReminderButton({
     undefined,
   );
 
-  const n = outstandingCount;
+  // One exclude list for both channels.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const excludedOwing = outstandingTenants.filter((t) => excluded.has(t.id)).length;
+  const n = Math.max(0, outstandingCount - excludedOwing);
   const suffix = n ? ` (${n})` : "";
   // A balance-reminder form for one channel. `verb` drives the confirm prompt.
   const channelForm = (
@@ -41,7 +51,9 @@ export function RentReminderButton({
         if (
           n === 0 ||
           !window.confirm(
-            `${verb} rent balance reminders to ${n} tenant${n === 1 ? "" : "s"}?`,
+            `${verb} rent balance reminders to ${n} tenant${n === 1 ? "" : "s"}?${
+              excludedOwing > 0 ? ` ${excludedOwing} excluded.` : ""
+            }`,
           )
         ) {
           e.preventDefault();
@@ -49,6 +61,11 @@ export function RentReminderButton({
       }}
     >
       <input type="hidden" name="channel" value={channel} />
+      <input
+        type="hidden"
+        name="exclude_tenant_ids"
+        value={[...excluded].join(",")}
+      />
       <button
         type="submit"
         disabled={pending || n === 0} aria-busy={pending}
@@ -83,7 +100,13 @@ export function RentReminderButton({
   if (minimal) {
     return (
       <div className="mt-4 border-t border-stone/30 pt-3">
-        <div className="flex flex-col items-start gap-1">
+        <ReminderExcludeFilter
+          tenants={outstandingTenants}
+          excluded={excluded}
+          onChange={setExcluded}
+          disabled={pending}
+        />
+        <div className="mt-2 flex flex-col items-start gap-1">
           {channelForm("email", "Email balance reminders", "Email")}
           {channelForm("sms", "Text balance reminders", "Text")}
         </div>

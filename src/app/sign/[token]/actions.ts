@@ -22,6 +22,8 @@ import {
 } from "@/lib/email";
 import { logEmail } from "@/lib/email-log";
 import { notifyOperators } from "@/lib/telegram";
+import { autoAttachSignedAgreement } from "@/lib/agreement-attach";
+import { revalidatePath } from "next/cache";
 
 // Matches the client-side cap in sign-form.tsx; server actions reject bodies
 // over ~1MB anyway, this just gives a friendlier error first.
@@ -147,6 +149,15 @@ export async function submitSignature(
     .update({ signed_pdf_path: signedPath })
     .eq("id", request.id);
 
+  // If this tenant already has a profile with a tenancy in this room, save
+  // the signed copy to it now. Best-effort: when nothing matches cleanly it
+  // stays in the tally for a manual assign.
+  const attach = await autoAttachSignedAgreement(supabase, request.id);
+  if (attach.attached) {
+    revalidatePath("/agreements");
+    revalidatePath(`/tenants/${attach.tenantId}`);
+  }
+
   // Email the signed copy back on the same channel as the original send. A
   // failure here does NOT undo the signing — the PDF is stored and the
   // operator can re-send it from the portal.
@@ -211,6 +222,9 @@ export async function submitSignature(
       result.ok
         ? `Signed copy emailed to ${request.recipient_email}.`
         : `⚠️ Emailing the signed copy failed — re-send it from the portal.`,
+      attach.attached
+        ? `Saved to their profile.`
+        : `Not saved to a profile yet — assign it from Agreements.`,
     ].join("\n"),
   );
   if (notified) {

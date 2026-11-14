@@ -58,8 +58,9 @@ export default async function NewTenantPage({ searchParams }: PageProps) {
       .select("id, status, tenant_name, recipient_email, signed_pdf_path, room_id, input")
       .eq("id", agreementId)
       .maybeSingle();
-    // An outstanding (pending) request prefills too, but is not attached or
-    // assigned — it stays in the tally until it's signed.
+    // An outstanding (pending) request prefills too and attaches its
+    // unsigned PDF; it stays in the tally until it's signed, when the signed
+    // copy takes the unsigned one's place on the profile.
     const signed = request?.status === "signed" && !!request.signed_pdf_path;
     if (request && (signed || request.status === "pending")) {
       agreementRoomId = request.room_id ?? "";
