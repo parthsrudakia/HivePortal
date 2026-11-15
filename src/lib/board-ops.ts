@@ -218,17 +218,7 @@ export async function approveBoardTask(
   const { error } = await tasks().update({ ...patch, ...touch() }).eq("id", taskId);
   if (error) return fail(error.message, 500);
 
-  if (task.assigned_to) {
-    const sb = boardAdmin();
-    await sendBoardEmail(sb, await listBoardMembers(sb), {
-      toUserId: task.assigned_to,
-      subject: `Project Approved: ${task.title}`,
-      badge: "Approved",
-      heading: task.title,
-      lines: ["Great work! The project has been marked as completed."],
-      taskTitle: task.title,
-    });
-  }
+  // Approval intentionally sends no email to the assignee.
   refresh();
   return {
     ok: true,

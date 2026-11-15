@@ -133,7 +133,7 @@ export function ProjectsApiDocs() {
         <ParamTable
           header={["Endpoint", "Body", "Effect"]}
           rows={[
-            ["POST /api/projects/:id/approve", "—", "completed (recurring: rolls to next month); emails assignee"],
+            ["POST /api/projects/:id/approve", "—", "completed (recurring: rolls to next month); no email sent"],
             ["POST /api/projects/:id/reject", "{ reason? }", "back to in progress; reason saved as a comment; emails assignee"],
             ["POST /api/projects/:id/comments", "{ text, author? }", "adds a comment (author label defaults to \"API\"); emails assignee"],
             ["POST /api/projects/:id/nudge", "—", "reminder email to the assignee; max 2 per task per day"],
