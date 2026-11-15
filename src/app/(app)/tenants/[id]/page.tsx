@@ -329,10 +329,7 @@ export default async function TenantDetailPage({
         {
           label: "Late fees",
           amount: ledger.lateFee.owed,
-          detail:
-            ledger.lateFee.owed > 0
-              ? `${fmtMoney(ledger.lateFee.owed)} charged · ${fmtMoney(ledger.lateFee.paid)} paid`
-              : null,
+          detail: null,
         },
       ]
     : [];
