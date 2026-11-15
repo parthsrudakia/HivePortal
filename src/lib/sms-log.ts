@@ -6,6 +6,7 @@ export type SmsType =
   | "cleaning_reminder"
   | "cleaner_weekly"
   | "cleaner_update"
+  | "agreement_nudge"
   | "manual";
 
 export const SMS_TYPE_LABELS: Record<SmsType, string> = {
@@ -14,6 +15,7 @@ export const SMS_TYPE_LABELS: Record<SmsType, string> = {
   cleaning_reminder: "Cleaning reminder",
   cleaner_weekly: "Cleaner weekly schedule",
   cleaner_update: "Cleaner schedule update",
+  agreement_nudge: "Agreement signing nudge",
   manual: "Manual / other",
 };
 

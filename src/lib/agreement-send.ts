@@ -21,6 +21,7 @@ import { agreementEmailTemplate, gmailAgreementBody } from "@/lib/email";
 import { logEmail } from "@/lib/email-log";
 import { composeFullAddress } from "@/lib/agreement-address";
 import { roomLabel } from "@/lib/room-label";
+import { maybeNudgeAgreement } from "@/lib/agreement-nudge";
 
 export const AGREEMENTS_BUCKET = "agreements";
 export const OPERATOR_SIGNATURE_PATH = "operator/signature.png";
@@ -266,6 +267,9 @@ type RequestRow = {
   input: AgreementInput;
   unsigned_pdf_path: string;
   expires_at: string;
+  assigned_tenancy_id: string | null;
+  send_count: number | null;
+  nudge_texted_at: string | null;
 };
 
 /** "Room 3 · <address>" for logs and alerts; just the address when a legacy
@@ -575,5 +579,26 @@ export async function resendAgreementRequest(
     signUrl: signPageUrl(newToken),
   });
   if (!result.ok) return { ok: false, error: result.error };
+
+  // Count the send; the 3rd one also texts a current tenant (once).
+  // Best-effort: the email already went out, so nothing here fails the resend.
+  const sendCount = (row.send_count ?? 1) + 1;
+  const { error: countError } = await supabase
+    .from("agreement_requests")
+    .update({ send_count: sendCount })
+    .eq("id", requestId);
+  if (!countError) {
+    const nudge = await maybeNudgeAgreement(supabase, {
+      id: row.id,
+      tenant_name: row.tenant_name,
+      recipient_email: row.recipient_email,
+      assigned_tenancy_id: row.assigned_tenancy_id,
+      send_count: sendCount,
+      nudge_texted_at: row.nudge_texted_at,
+    });
+    if (!nudge.texted && sendCount >= 3) {
+      console.warn(`[agreement-nudge] ${row.id}: ${nudge.reason}`);
+    }
+  }
   return { ok: true };
 }

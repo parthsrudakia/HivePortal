@@ -76,12 +76,14 @@ export type Database = {
           id: string
           include_letterhead: boolean
           input: Json
+          nudge_texted_at: string | null
           operator_notified_at: string | null
           property_address: string
           property_id: string | null
           recipient_email: string
           room_id: string | null
           room_number: string | null
+          send_count: number
           sent_at: string
           sign_ip: string | null
           signed_at: string | null
@@ -102,12 +104,14 @@ export type Database = {
           id?: string
           include_letterhead: boolean
           input: Json
+          nudge_texted_at?: string | null
           operator_notified_at?: string | null
           property_address: string
           property_id?: string | null
           recipient_email: string
           room_id?: string | null
           room_number?: string | null
+          send_count?: number
           sent_at?: string
           sign_ip?: string | null
           signed_at?: string | null
@@ -128,12 +132,14 @@ export type Database = {
           id?: string
           include_letterhead?: boolean
           input?: Json
+          nudge_texted_at?: string | null
           operator_notified_at?: string | null
           property_address?: string
           property_id?: string | null
           recipient_email?: string
           room_id?: string | null
           room_number?: string | null
+          send_count?: number
           sent_at?: string
           sign_ip?: string | null
           signed_at?: string | null
