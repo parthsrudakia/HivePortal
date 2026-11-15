@@ -13,6 +13,7 @@ import {
   ReactivateTenancyButton,
 } from "./tenant-actions";
 import { LeaseDownload } from "./lease-download";
+import { LeaseUpload } from "./lease-upload";
 import { AgreementResend } from "./agreement-resend";
 import { BalanceReminderButtons } from "./balance-reminder-buttons";
 import { isUnsignedLeasePath } from "@/lib/lease-path";
@@ -561,6 +562,10 @@ export default async function TenantDetailPage({
                     unsigned={isUnsignedLeasePath(active.lease_pdf_path)}
                   />
                 )}
+                <LeaseUpload
+                  tenancyId={active.id}
+                  hasLease={!!active.lease_pdf_path}
+                />
               </div>
             </>
           ) : (
@@ -686,6 +691,10 @@ export default async function TenantDetailPage({
                       unsigned={isUnsignedLeasePath(t.lease_pdf_path)}
                     />
                   )}
+                  <LeaseUpload
+                    tenancyId={t.id}
+                    hasLease={!!t.lease_pdf_path}
+                  />
                   <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-medium uppercase tracking-wide text-accent-text">
                     Reserved
                   </span>
@@ -898,6 +907,10 @@ export default async function TenantDetailPage({
                       unsigned={isUnsignedLeasePath(t.lease_pdf_path)}
                     />
                   )}
+                  <LeaseUpload
+                    tenancyId={t.id}
+                    hasLease={!!t.lease_pdf_path}
+                  />
                   {ledgerAdmin && (
                     <ReactivateTenancyButton
                       tenancyId={t.id}

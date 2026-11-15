@@ -37,7 +37,7 @@ import {
 } from "@/lib/tenancy-create";
 import { LEDGER_ADMIN_ERROR } from "@/lib/access";
 import { AGREEMENTS_BUCKET } from "@/lib/agreement-send";
-import { UNSIGNED_LEASE_SUFFIX } from "@/lib/lease-path";
+import { UNSIGNED_LEASE_SUFFIX, isUnsignedLeasePath } from "@/lib/lease-path";
 import { findExistingTenant, mergeTenantProfile } from "@/lib/tenant-identity";
 import { assertSection, hasPermission } from "@/lib/section-access";
 
@@ -437,6 +437,59 @@ export async function getLeaseDownloadUrl(
     .createSignedUrl(tenancy.lease_pdf_path, 60);
   if (signErr) return { error: signErr.message };
   return { url: data.signedUrl };
+}
+
+// Attach (or replace) the lease PDF on an existing tenancy from the profile.
+// The previous file, if any, stays in the bucket — only an unsigned
+// placeholder is removed, mirroring the signed-agreement auto-attach.
+export async function uploadLeasePdf(
+  formData: FormData,
+): Promise<{ error?: string }> {
+  await assertSection("tenants");
+  const tenancyId = String(formData.get("tenancy_id") ?? "");
+  if (!isValid(zUuid, tenancyId)) return { error: "Invalid tenancy id." };
+  const file = formData.get("lease_pdf");
+  if (!(file instanceof File) || file.size === 0)
+    return { error: "Choose a PDF to upload." };
+  if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name))
+    return { error: "Lease file must be a PDF." };
+  if (file.size > MAX_LEASE_PDF_BYTES)
+    return { error: "Lease PDF must be 20 MB or smaller." };
+
+  const supabase = await createClient();
+  const { data: tenancy, error } = await supabase
+    .from("tenancies")
+    .select("id, tenant_id, lease_pdf_path")
+    .eq("id", tenancyId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!tenancy) return { error: "Tenancy not found." };
+
+  const safeName = file.name.replace(/[^\w.\-]/g, "_") || "lease.pdf";
+  const path = `${tenancy.tenant_id}/${Date.now()}-${safeName}`;
+  const { error: upErr } = await supabase.storage
+    .from("leases")
+    .upload(path, Buffer.from(await file.arrayBuffer()), {
+      contentType: "application/pdf",
+      upsert: false,
+    });
+  if (upErr) return { error: `Failed to upload lease PDF: ${upErr.message}` };
+
+  const { error: updErr } = await supabase
+    .from("tenancies")
+    .update({ lease_pdf_path: path })
+    .eq("id", tenancy.id);
+  if (updErr) {
+    await supabase.storage.from("leases").remove([path]);
+    return { error: updErr.message };
+  }
+
+  if (isUnsignedLeasePath(tenancy.lease_pdf_path)) {
+    await supabase.storage.from("leases").remove([tenancy.lease_pdf_path!]);
+  }
+
+  revalidatePath(`/tenants/${tenancy.tenant_id}`);
+  return {};
 }
 
 // ----- Update tenant info -----
