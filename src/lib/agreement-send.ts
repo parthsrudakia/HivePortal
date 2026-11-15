@@ -595,6 +595,7 @@ export async function resendAgreementRequest(
       assigned_tenancy_id: row.assigned_tenancy_id,
       send_count: sendCount,
       nudge_texted_at: row.nudge_texted_at,
+      sign_url: signPageUrl(newToken),
     });
     if (!nudge.texted && sendCount >= 3) {
       console.warn(`[agreement-nudge] ${row.id}: ${nudge.reason}`);

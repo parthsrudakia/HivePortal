@@ -3,8 +3,8 @@
  *
  * When a signing request's email goes out for the 3rd time (first send + two
  * resends) and the recipient is a current tenant (an active tenancy), one
- * group text goes to the tenant and the office number asking them to sign
- * from the emailed link. Sent at most once per request (nudge_texted_at); if
+ * group text goes to the tenant and the office number asking them to sign,
+ * followed by the signing link as its own message. Sent at most once per request (nudge_texted_at); if
  * it can't go out on the 3rd send (no phone, SMS down) a later resend retries.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -15,9 +15,11 @@ export const AGREEMENT_NUDGE_AT_SEND = 3;
 /** Office number added to every nudge thread. */
 export const AGREEMENT_NUDGE_CC = "5857322019";
 
+/** The message text; the signing link follows as its own message so it
+ *  arrives whole and tappable. */
 export function agreementNudgeText(tenantName: string): string {
   const firstName = tenantName.trim().split(/\s+/)[0] || "there";
-  return `Hi ${firstName}, your lease agreement is still unsigned. We've emailed it to you a few times now, so please check your inbox (and spam folder) for the signing link and sign it today. Reply here if you're having any trouble with it.`;
+  return `Hi ${firstName}, your lease agreement is still unsigned. We've emailed it to you a few times now (check your spam folder too), or you can sign it using the link in the next message. Please sign it today, and reply here if you're having any trouble with it.`;
 }
 
 function likeLiteral(value: string): string {
@@ -31,6 +33,8 @@ type NudgeRequest = {
   assigned_tenancy_id: string | null;
   send_count: number;
   nudge_texted_at: string | null;
+  /** The signing link that just went out by email. */
+  sign_url: string;
 };
 
 export type NudgeResult =
@@ -99,17 +103,26 @@ export async function maybeNudgeAgreement(
     if (!tenant) return { texted: false, reason: "not a current tenant" };
     if (!tenant.phone?.trim()) return { texted: false, reason: "tenant has no phone" };
 
-    const res = await sendSms(
-      [tenant.phone, AGREEMENT_NUDGE_CC],
-      agreementNudgeText(tenant.full_name),
-      { type: "agreement_nudge", context: `${tenant.full_name} · agreement ${request.id}` },
-    );
+    const to = [tenant.phone, AGREEMENT_NUDGE_CC];
+    const meta = {
+      type: "agreement_nudge" as const,
+      context: `${tenant.full_name} · agreement ${request.id}`,
+    };
+    const res = await sendSms(to, agreementNudgeText(tenant.full_name), meta);
     if (!res.ok) return { texted: false, reason: res.error };
 
+    // The message is out, so mark the nudge done before the link goes:
+    // a retry on a later resend would repeat the message to the tenant.
     await supabase
       .from("agreement_requests")
       .update({ nudge_texted_at: new Date().toISOString() })
       .eq("id", request.id);
+
+    // The link on its own, so it isn't split across SMS segments.
+    const link = await sendSms(to, request.sign_url, meta);
+    if (!link.ok) {
+      return { texted: false, reason: `message sent, link failed: ${link.error}` };
+    }
     return { texted: true };
   } catch (e) {
     return { texted: false, reason: e instanceof Error ? e.message : "unexpected error" };
