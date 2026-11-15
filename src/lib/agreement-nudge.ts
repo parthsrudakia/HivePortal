@@ -17,7 +17,7 @@ export const AGREEMENT_NUDGE_CC = "5857322019";
 
 export function agreementNudgeText(tenantName: string): string {
   const firstName = tenantName.trim().split(/\s+/)[0] || "there";
-  return `Hey ${firstName}, Please sign the agreement from the given link sent to your email.`;
+  return `Hi ${firstName}, your lease agreement is still unsigned. We've emailed it to you a few times now, so please check your inbox (and spam folder) for the signing link and sign it today. Reply here if you're having any trouble with it.`;
 }
 
 function likeLiteral(value: string): string {
