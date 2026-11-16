@@ -548,6 +548,83 @@ export function falseActionCorrection(original: string): string {
   );
 }
 
+/**
+ * Tool names the model listed in a "[tools run this turn: …]" marker it wrote
+ * itself. The real marker is appended by finalizeTurn AFTER the model replies,
+ * so any marker inside the model's own text is forged. A forged marker naming
+ * tools that didn't run is the model pretending it looked something up
+ * (11/16/26: zero tools ran, yet the reply listed an invented "69 Erie Street
+ * Apt 2" with made-up rooms, tenant and rents, footed with a fake
+ * "[tools run this turn: resolve_property_address ok, get_property ok]").
+ */
+export function forgedToolNames(m: Anthropic.Beta.BetaMessage): string[] {
+  const names: string[] = [];
+  for (const b of m.content) {
+    if (b.type !== "text") continue;
+    for (const match of b.text.matchAll(/\[tools run this turn:([^\]]*)\]/gi)) {
+      for (const part of match[1].split(",")) {
+        const name = part.trim().split(/\s+/)[0];
+        if (name) names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+/** Forged marker claims a tool ran that did not actually run this turn. */
+export function claimsPhantomTools(
+  m: Anthropic.Beta.BetaMessage,
+  calledTools: { name: string; ok: boolean }[],
+): boolean {
+  const ran = new Set(calledTools.map((t) => t.name));
+  return forgedToolNames(m).some((n) => !ran.has(n));
+}
+
+/**
+ * Replies that assert inventory/portal facts — room-by-room rent lists,
+ * occupancy, availability dates, "X is in the portal". A zero-tool reply
+ * matching this is portal data from memory or invention (the 11/16 Erie St
+ * incident). Read-backs of operator-supplied terms ("Rent $2,100 · SD $2,100
+ * … Send it?") and plain prorate math don't match.
+ */
+export const PORTAL_DATA_CLAIM_RE = new RegExp(
+  [
+    // "Room 1 — $1,750", "Room 2: $1,650/mo"
+    "\\broom\\s*\\d+\\s*(?:</b>)?\\s*[—–:-]\\s*\\$\\s*\\d",
+    "\\b(?:its|the)\\s+rooms\\s+are\\b",
+    "\\b(?:is|are)\\s+(?:in|listed in)\\s+the\\s+(?:portal|system|database)\\b",
+    "\\b(?:occupied|vacant)\\b",
+    "\\b(?:opens?|opening|available from|frees up|moves? out|out|last day)\\s+\\d{1,2}/\\d{1,2}",
+    // "11L has three rooms", "has two units in the portal"
+    "\\b(?:has|have)\\s+(?:\\w+\\s+)?(?:units?|rooms)\\b",
+    // tenant roster lines: "Apt 24M R1 — Daniel Okafor"
+    "\\bR\\d+\\s*[—–-]\\s*[A-Z]",
+  ].join("|"),
+  "i",
+);
+
+export function claimsPortalData(text: string): boolean {
+  return PORTAL_DATA_CLAIM_RE.test(text);
+}
+
+export const DATA_GROUNDING_REMINDER =
+  "<system-reminder>Your previous reply stated portal data (units, rooms, " +
+  'rents, occupancy, availability, tenants) and/or wrote a "[tools run this ' +
+  'turn: …]" marker, but NO such tool ran this turn — that data came from ' +
+  "memory or was invented, and the marker was forged. Call " +
+  "resolve_property_address / get_property / query_database NOW and answer " +
+  "only from their results. If something isn't in the portal, say exactly " +
+  "that. Never write tool markers yourself.</system-reminder>";
+
+export function falseDataCorrection(original: string): string {
+  return (
+    "⚠️ Correction: my reply below stated unit/room/tenant details without " +
+    "checking the portal this turn — treat it as unreliable. Please re-send " +
+    "and I'll look it up properly.\n\n" +
+    `Original reply:\n${original}`
+  );
+}
+
 /** Concat an assistant message's text blocks, stripping any forged markers. */
 export function messageText(m: Anthropic.Beta.BetaMessage): string {
   return m.content
@@ -599,7 +676,11 @@ export async function runAssistantTurn(
   calledTools: { name: string; ok: boolean }[],
   onFalseSendRetry?: (flaggedReply: string) => Promise<void> | void,
   onGroundingRetry?: (
-    kind: "fabricated_ids" | "ungrounded_status" | "ungrounded_action",
+    kind:
+      | "fabricated_ids"
+      | "ungrounded_status"
+      | "ungrounded_action"
+      | "ungrounded_data",
     flaggedReply: string,
   ) => Promise<void> | void,
 ): Promise<Anthropic.Beta.BetaMessage> {
@@ -661,6 +742,14 @@ export async function runAssistantTurn(
     await onGroundingRetry?.("ungrounded_action", messageText(message));
     message = await retryWith(message, ACTION_GROUNDING_REMINDER);
   } else if (
+    claimsPhantomTools(message, calledTools) ||
+    (calledTools.length === 0 && claimsPortalData(messageText(message)))
+  ) {
+    // Portal data with no lookup behind it, or a forged marker naming tools
+    // that never ran — the model is pretending it checked.
+    await onGroundingRetry?.("ungrounded_data", messageText(message));
+    message = await retryWith(message, DATA_GROUNDING_REMINDER);
+  } else if (
     calledTools.length === 0 &&
     STATUS_CLAIM_RE.test(messageText(message))
   ) {
@@ -692,6 +781,8 @@ export type FinalizedTurn = {
   ungroundedStatusClaim: boolean;
   /** True when a "Done"/lookup claim survived with zero tool calls — reply replaced. */
   ungroundedActionClaim: boolean;
+  /** True when portal data / a forged tool marker survived with no lookup — reply replaced. */
+  ungroundedDataClaim: boolean;
 };
 
 /**
@@ -724,9 +815,14 @@ export function finalizeTurn(
     evidenceText != null ? unsupportedUuids(text, evidenceText) : [];
   const ungroundedActionClaim =
     calledTools.length === 0 && claimsActionDone(text);
+  const ungroundedDataClaim =
+    !ungroundedActionClaim &&
+    (claimsPhantomTools(finalMessage, calledTools) ||
+      (calledTools.length === 0 && claimsPortalData(text)));
   const ungroundedStatusClaim =
     calledTools.length === 0 &&
     !ungroundedActionClaim &&
+    !ungroundedDataClaim &&
     STATUS_CLAIM_RE.test(text);
 
   const replyText =
@@ -738,6 +834,8 @@ export function finalizeTurn(
         ? falseSendCorrection(text)
         : ungroundedActionClaim
           ? falseActionCorrection(text)
+          : ungroundedDataClaim
+            ? falseDataCorrection(text)
           : groundedPastSend
             ? `${text}\n\n${PAST_SEND_NOTE}`
             : ungroundedStatusClaim
@@ -784,6 +882,14 @@ export function finalizeTurn(
               },
               toolMarker,
             ]
+        : ungroundedDataClaim
+          ? [
+              {
+                type: "text",
+                text: "⚠️ I stated unit/room/tenant details without any portal lookup this turn — that reply was unreliable and must not be reused as fact. The request is still pending.",
+              },
+              toolMarker,
+            ]
         : ungroundedStatusClaim
           ? [
               { type: "text", text: UNVERIFIED_STAMP },
@@ -811,5 +917,6 @@ export function finalizeTurn(
     fabricatedIds,
     ungroundedStatusClaim,
     ungroundedActionClaim,
+    ungroundedDataClaim,
   };
 }

@@ -273,6 +273,8 @@ export async function POST(req: Request) {
                   ? "reply cited IDs with no tool-result source — retrying with grounding reminder"
                   : kind === "ungrounded_action"
                     ? "reply claimed an action/lookup with zero tool calls — retrying with grounding reminder"
+                    : kind === "ungrounded_data"
+                      ? "reply stated portal data (or forged a tool marker) with no lookup — retrying with grounding reminder"
                     : "reply stated status with zero tool calls — retrying with grounding reminder",
               text: flagged,
               detail: { calledTools: [...calledTools] },
@@ -316,13 +318,19 @@ export async function POST(req: Request) {
     fabricatedIds,
     ungroundedStatusClaim,
     ungroundedActionClaim,
+    ungroundedDataClaim,
   } = finalizeTurn(
     finalMessage,
     calledTools,
     conversationEvidenceText(messages) + "\n" + toolEvidence.join("\n"),
   );
 
-  if (fabricatedIds.length > 0 || ungroundedStatusClaim || ungroundedActionClaim) {
+  if (
+    fabricatedIds.length > 0 ||
+    ungroundedStatusClaim ||
+    ungroundedActionClaim ||
+    ungroundedDataClaim
+  ) {
     await logTelegramEvent({
       ...actor,
       kind: "agent_error",
@@ -332,6 +340,8 @@ export async function POST(req: Request) {
           ? `reply blocked — fabricated ID(s) survived the retry: ${fabricatedIds.join(", ")}`
           : ungroundedActionClaim
             ? "reply replaced — action/lookup claim with zero tool calls survived the retry"
+            : ungroundedDataClaim
+              ? "reply replaced — portal data / forged tool marker with no lookup survived the retry"
             : "reply stamped unverified — status claim with zero tool calls survived the retry",
       text,
       detail: { calledTools: [...calledTools] },
