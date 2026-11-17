@@ -17,7 +17,7 @@ import { todayISO } from "@/lib/date";
 function resendFrom() {
   return process.env.RESEND_FROM || "onboarding@resend.dev";
 }
-import { CLEANING_CADENCE_DAYS } from "@/lib/cleaning";
+import { CLEANING_CADENCE_DAYS, MOVE_OUT_COVERS_DAYS } from "@/lib/cleaning";
 
 /** Add `days` to an ISO "YYYY-MM-DD" date, returning the same format. */
 function addDaysISO(iso: string, days: number): string {
@@ -340,14 +340,18 @@ async function handleAvailableFromChange(
       if (!insErr) action = "scheduled";
     }
 
-    // The move-out becomes the unit's next cleaning, so the cadence re-anchors
-    // to it (the one after lands at move-out + 35). Clear any regular upcoming
-    // cleaning for the unit so it doesn't compete with the move-out date.
+    // The move-out stands in for the regular cleaning it lands close to, and
+    // the cadence re-anchors to it (the one after lands at move-out + 35).
+    // Clear only the regular cleanings it replaces: those dated within
+    // MOVE_OUT_COVERS_DAYS before it or later. Earlier regular cleanings stay,
+    // so a move-out booked months ahead doesn't pause the unit's cleanings.
+    // Same window as the daily roll in cleaning-reminders.ts.
+    const coversFrom = addDaysISO(cleaningDate, -MOVE_OUT_COVERS_DAYS);
     await supabase
       .from("cleaning_records")
       .delete()
       .eq("property_id", property.id)
-      .gte("cleaning_date", today)
+      .gte("cleaning_date", coversFrom > today ? coversFrom : today)
       .or("kind.is.null,kind.neq.move_out");
   } else if (existing) {
     // toDate is null and there's an existing scheduled move-out → cancel.

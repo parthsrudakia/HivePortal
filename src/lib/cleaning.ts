@@ -1,6 +1,14 @@
 // Cleaning cadence — every 35 days.
 export const CLEANING_CADENCE_DAYS = 35;
 
+/**
+ * A booked move-out cleaning stands in for the unit's regular cleaning only
+ * when the regular one would fall within this many days before it (or any
+ * time after it). A move-out booked further out leaves the regular cadence
+ * running until then.
+ */
+export const MOVE_OUT_COVERS_DAYS = 7;
+
 export type CleaningStatus = "never" | "overdue" | "due_soon" | "scheduled";
 
 export type CleaningSchedule = {
