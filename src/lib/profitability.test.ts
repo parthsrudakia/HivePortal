@@ -68,3 +68,100 @@ describe("loadProfitability past the 1,000-row cap", () => {
     ).rejects.toBeInstanceOf(LedgerDataError);
   });
 });
+
+describe("loadProfitability with actual monthly costs", () => {
+  const flatUnit: ProfitUnit = {
+    ...unit,
+    id: "p2",
+    unit_rent: 3_000,
+    internet_monthly: 60,
+    amenity_fees_yearly: 1_200,
+  };
+  const SEP = 8;
+  const OCT = 9;
+  const costs = [
+    // October rent paid came in higher than the lease figure.
+    { property_id: "p2", month: "2026-10", cost_type: "rent_paid", amount: 3_150, label: null },
+    // Two amenity charges in September, none in other months.
+    { property_id: "p2", month: "2026-09", cost_type: "amenity", amount: 75, label: "Gym" },
+    { property_id: "p2", month: "2026-09", cost_type: "amenity", amount: 25, label: "Package room" },
+    // Company costs, one of them in a month that hasn't happened yet.
+    { property_id: null, month: "2026-09", cost_type: "company", amount: 400, label: "Upwork" },
+    { property_id: null, month: "2026-10", cost_type: "company", amount: 450, label: "Upwork" },
+    { property_id: null, month: "2026-10", cost_type: "company", amount: 30, label: null },
+    { property_id: null, month: "2026-12", cost_type: "company", amount: 999, label: "Upwork" },
+  ];
+  const load = () =>
+    loadProfitability(
+      cappedClient({ properties: [flatUnit], payments: [], utility_bills: [], profit_costs: costs }),
+      2026,
+      "2026-11-17",
+    );
+
+  it("uses the recorded cost for a month and the flat figure otherwise", async () => {
+    const data = await load();
+    expect(data.cellFor("rent_paid", flatUnit)(OCT)).toEqual({ value: 3_150, estimated: false });
+    expect(data.cellFor("rent_paid", flatUnit)(SEP)).toEqual({ value: 3_000, estimated: false });
+    expect(data.cellFor("internet", flatUnit)(OCT)).toEqual({ value: 60, estimated: false });
+  });
+
+  it("counts only actual amenity charges once a unit has any for the year", async () => {
+    const data = await load();
+    expect(data.cellFor("amenity", flatUnit)(SEP)).toEqual({ value: 100, estimated: false });
+    // No yearly ÷ 12 on top of the real charges.
+    expect(data.cellFor("amenity", flatUnit)(OCT)).toBeNull();
+  });
+
+  it("adds company costs to expenses inside the data window only", async () => {
+    const data = await load();
+    const company = data.summary.expenseSeries.find((e) => e.key === "company");
+    expect(company?.monthly[SEP]).toBe(400);
+    expect(company?.monthly[OCT]).toBe(480);
+    expect(company?.monthly[11]).toBeNull();
+    expect(company?.yearly).toBe(880);
+    expect(data.summary.companyItems).toEqual([
+      { label: "Upwork", yearly: 850 },
+      { label: "Other", yearly: 30 },
+    ]);
+    expect(data.summary.monthlyExpenses[OCT]).toBe(3_150 + 60 + 480);
+    expect(data.summary.monthlyNet[OCT]).toBe(-(3_150 + 60 + 480));
+  });
+
+  it("falls back to flat figures when the costs table isn't there yet", async () => {
+    const missing = cappedClient({ properties: [flatUnit], payments: [], utility_bills: [] });
+    const orig = missing.from;
+    missing.from = (name: string) =>
+      name === "profit_costs"
+        ? ({
+            select: () => ({
+              gte: () => ({
+                lte: () => ({
+                  order: () => ({
+                    range: async () => ({
+                      data: null,
+                      count: null,
+                      error: { code: "PGRST205", message: "Could not find the table 'public.profit_costs'" },
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          } as unknown as ReturnType<typeof orig>)
+        : orig(name);
+    const data = await loadProfitability(missing, 2026, "2026-11-17");
+    expect(data.cellFor("rent_paid", flatUnit)(OCT)).toEqual({ value: 3_000, estimated: false });
+  });
+
+  it("fails loudly when costs can't be read for another reason", async () => {
+    await expect(
+      loadProfitability(
+        cappedClient(
+          { properties: [flatUnit], payments: [], utility_bills: [], profit_costs: costs },
+          (name) => name === "profit_costs",
+        ),
+        2026,
+        "2026-11-17",
+      ),
+    ).rejects.toBeInstanceOf(LedgerDataError);
+  });
+});

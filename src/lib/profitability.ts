@@ -5,9 +5,12 @@
  * One year at a time: units × months per metric, where Rent Collection is
  * every tenant payment dated in the calendar month (deposits excluded,
  * refunds subtracting), Rent Paid / Internet / Cleaning / Insurance are the
- * unit's flat monthly figures, Amenity / Misc are yearly ÷ 12, and Utilities
- * come from uploaded bills (months without a bill fall back to the average
- * of same-bedroom units — flagged `estimated`). Cells are null outside the
+ * actual costs recorded for the month (profit_costs) or else the unit's flat
+ * monthly figures, Amenity / Misc are the actual charges once a unit has any
+ * for the year or else yearly ÷ 12, Company costs are the month's unit-less
+ * profit_costs rows, and Utilities come from uploaded bills (months without
+ * a bill fall back to the average of same-bedroom units — flagged
+ * `estimated`). See profit-costs.ts for the actual-cost rules. Cells are null outside the
  * unit's lease window, for months that haven't happened yet, and for months
  * before PROFIT_DATA_START (no data was ever entered for them).
  */
@@ -15,6 +18,11 @@
 import { one } from "@/lib/relations";
 import { allLedgerRows } from "@/lib/rent-data";
 import { billMonth, type BillRow } from "@/lib/utility-bills";
+import {
+  loadProfitCosts,
+  UNIT_COST_TYPES,
+  type UnitCostType,
+} from "@/lib/profit-costs";
 
 export const PROFIT_MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -71,6 +79,14 @@ export type ProfitUnit = {
   insurance_monthly: number | null;
 };
 
+/** A summary expense line: the unit metrics plus company-wide costs. */
+export type ExpenseSeriesKey =
+  | Exclude<ProfitMetric, "profit" | "collection">
+  | "company";
+
+/** One label's yearly total within Company costs (e.g. Upwork). */
+export type CompanyCostItem = { label: string; yearly: number };
+
 export type ProfitLineItem = {
   id: string;
   side: "revenue" | "expense";
@@ -116,11 +132,13 @@ export type ProfitabilityData = {
     monthlyExpenses: (number | null)[];
     monthlyNet: (number | null)[];
     expenseSeries: {
-      key: Exclude<ProfitMetric, "profit" | "collection">;
+      key: ExpenseSeriesKey;
       label: string;
       monthly: (number | null)[];
       yearly: number;
     }[];
+    /** Company costs by label for the year, largest first. */
+    companyItems: CompanyCostItem[];
     unitRevenueYear: number;
     revenueItems: ProfitLineItem[];
     expenseItems: ProfitLineItem[];
@@ -153,6 +171,7 @@ export async function loadProfitability(
     payments,
     bills,
     { data: lineItemRows },
+    costRows,
   ] = await Promise.all([
     supabase
       .from("properties")
@@ -190,6 +209,7 @@ export async function loadProfitability(
       .select("id, side, label, amount")
       .eq("year", year)
       .order("created_at") as Promise<{ data: ProfitLineItem[] | null }>,
+    loadProfitCosts(supabase, year),
   ]);
 
   const units = properties ?? [];
@@ -233,6 +253,34 @@ export async function loadProfitability(
     arr[m] = (arr[m] ?? 0) + Number(b.total_amount);
   }
 
+  // Actual costs per unit, type and month; company costs per month and label.
+  const actual = new Map<string, Map<UnitCostType, (number | undefined)[]>>();
+  const companyMonthlyRaw: number[] = Array(12).fill(0);
+  const companyByLabel = new Map<string, number>();
+  for (const c of costRows) {
+    if (c.month.slice(0, 4) !== String(year)) continue;
+    const m = Number(c.month.slice(5, 7)) - 1;
+    const amount = Number(c.amount);
+    if (c.cost_type === "company") {
+      // Same window as every other figure: nothing before the books start
+      // or in months that haven't happened yet.
+      if (!inRange(m)) continue;
+      companyMonthlyRaw[m] += amount;
+      const label = c.label?.trim() || "Other";
+      companyByLabel.set(label, (companyByLabel.get(label) ?? 0) + amount);
+      continue;
+    }
+    if (!c.property_id) continue;
+    if (!(UNIT_COST_TYPES as readonly string[]).includes(c.cost_type)) continue;
+    let byType = actual.get(c.property_id);
+    if (!byType) actual.set(c.property_id, (byType = new Map()));
+    let arr = byType.get(c.cost_type);
+    if (!arr) byType.set(c.cost_type, (arr = Array(12).fill(undefined)));
+    arr[m] = (arr[m] ?? 0) + amount;
+  }
+  const actualFor = (p: ProfitUnit, type: UnitCostType) =>
+    actual.get(p.id)?.get(type);
+
   // Same-bedroom average (falling back to all units) for months with no bill.
   const estimateFor = (p: ProfitUnit, m: number): number | null => {
     const similar: number[] = [];
@@ -255,6 +303,31 @@ export async function loadProfitability(
         ? null
         : { value: Number(amount), estimated: false };
 
+  // A recorded cost for the month wins over the flat figure. Actual rows are
+  // real money, so they show even outside the unit's lease window.
+  const actualOrFlat =
+    (p: ProfitUnit, type: UnitCostType, flat: number | null) =>
+    (m: number): ProfitCell => {
+      if (!inRange(m)) return null;
+      const v = actualFor(p, type)?.[m];
+      if (v !== undefined) return { value: v, estimated: false };
+      return flatMonthly(p, flat)(m);
+    };
+
+  // Lumpy yearly charges: once any actual row exists for the year, only the
+  // actual rows count; otherwise the yearly figure is spread evenly.
+  const actualOrSpread =
+    (p: ProfitUnit, type: UnitCostType, yearly: number | null) =>
+    (m: number): ProfitCell => {
+      if (!inRange(m)) return null;
+      const arr = actualFor(p, type);
+      if (arr && arr.some((v) => v !== undefined)) {
+        const v = arr[m];
+        return v === undefined ? null : { value: v, estimated: false };
+      }
+      return flatMonthly(p, yearly !== null ? Number(yearly) / 12 : null)(m);
+    };
+
   const cellBuilders: Record<
     ProfitMetric,
     (p: ProfitUnit) => (m: number) => ProfitCell
@@ -263,7 +336,7 @@ export async function loadProfitability(
       !inRange(m)
         ? null
         : { value: collection.get(p.id)?.[m] ?? 0, estimated: false },
-    rent_paid: (p) => flatMonthly(p, p.unit_rent),
+    rent_paid: (p) => actualOrFlat(p, "rent_paid", p.unit_rent),
     utilities: (p) => (m) => {
       if (!inRange(m) || !activeIn(p, m)) return null;
       const actual = utilityActual.get(p.id)?.[m];
@@ -271,19 +344,11 @@ export async function loadProfitability(
       const est = estimateFor(p, m);
       return est === null ? null : { value: est, estimated: true };
     },
-    internet: (p) => flatMonthly(p, p.internet_monthly),
-    cleaning: (p) => flatMonthly(p, p.cleaning_fee_monthly),
-    amenity: (p) =>
-      flatMonthly(
-        p,
-        p.amenity_fees_yearly !== null ? Number(p.amenity_fees_yearly) / 12 : null,
-      ),
-    misc: (p) =>
-      flatMonthly(
-        p,
-        p.misc_fees_yearly !== null ? Number(p.misc_fees_yearly) / 12 : null,
-      ),
-    insurance: (p) => flatMonthly(p, p.insurance_monthly),
+    internet: (p) => actualOrFlat(p, "internet", p.internet_monthly),
+    cleaning: (p) => actualOrFlat(p, "cleaning", p.cleaning_fee_monthly),
+    amenity: (p) => actualOrSpread(p, "amenity", p.amenity_fees_yearly),
+    misc: (p) => actualOrSpread(p, "misc", p.misc_fees_yearly),
+    insurance: (p) => actualOrFlat(p, "insurance", p.insurance_monthly),
     profit: (p) => (m) => {
       if (!inRange(m)) return null;
       const active = activeIn(p, m);
@@ -320,10 +385,24 @@ export async function loadProfitability(
     arr.reduce<number>((s, v) => s + (v ?? 0), 0);
 
   const monthlyRevenue = monthlyTotalOf("collection");
-  const expenseSeries = EXPENSE_METRICS.map((e) => {
-    const monthly = monthlyTotalOf(e.key);
-    return { ...e, monthly, yearly: yearlyOf(monthly) };
-  });
+  const companyMonthly: (number | null)[] = PROFIT_MONTHS.map((_, m) =>
+    inRange(m) ? companyMonthlyRaw[m] : null,
+  );
+  const expenseSeries: ProfitabilityData["summary"]["expenseSeries"] = [
+    ...EXPENSE_METRICS.map((e) => {
+      const monthly = monthlyTotalOf(e.key);
+      return { ...e, monthly, yearly: yearlyOf(monthly) };
+    }),
+    {
+      key: "company" as const,
+      label: "Company costs",
+      monthly: companyMonthly,
+      yearly: yearlyOf(companyMonthly),
+    },
+  ];
+  const companyItems: CompanyCostItem[] = [...companyByLabel]
+    .map(([label, yearly]) => ({ label, yearly }))
+    .sort((a, b) => b.yearly - a.yearly);
   const monthlyExpenses: (number | null)[] = PROFIT_MONTHS.map((_, m) =>
     !inRange(m)
       ? null
@@ -357,6 +436,7 @@ export async function loadProfitability(
       monthlyExpenses,
       monthlyNet,
       expenseSeries,
+      companyItems,
       unitRevenueYear,
       revenueItems,
       expenseItems,
