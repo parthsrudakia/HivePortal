@@ -351,7 +351,12 @@ export async function loadProfitability(
     insurance: (p) => actualOrFlat(p, "insurance", p.insurance_monthly),
     profit: (p) => (m) => {
       if (!inRange(m)) return null;
-      const active = activeIn(p, m);
+      // A recorded cost counts even outside the lease window (see
+      // actualOrFlat), so its month must show here too or unit profits
+      // wouldn't add up to the summary.
+      const active =
+        activeIn(p, m) ||
+        UNIT_COST_TYPES.some((t) => actualFor(p, t)?.[m] !== undefined);
       const revenue = collection.get(p.id)?.[m] ?? 0;
       if (!active && revenue === 0) return null;
       const costs: ProfitCell[] = EXPENSE_METRICS.map((e) =>

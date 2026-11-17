@@ -15,6 +15,7 @@ import {
 import { deleteLineItem, deleteMonthlyCompanyCost } from "./actions";
 import { LineItemForm } from "./line-item-form";
 import { CompanyCostForm } from "./company-cost-form";
+import { isMissingTable } from "@/lib/profit-costs";
 import { NetProfitChart, RevenueExpenseChart } from "./charts";
 
 export const dynamic = "force-dynamic";
@@ -99,7 +100,10 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
       .order("month", { ascending: false })
       .returns<CompanyCostRow[]>(),
   ]);
-  // Missing table (migration not applied yet) just shows an empty list.
+  // Missing table (migration not applied yet) just shows an empty list; any
+  // other read failure errors out, the same as the totals would.
+  if (companyCostsRes.error && !isMissingTable(companyCostsRes.error))
+    throw new Error(`Company costs unavailable: ${companyCostsRes.error.message}`);
   const companyCosts = companyCostsRes.data ?? [];
   if (!(await hasPermission("profitability"))) notFound();
   const props = data.units;

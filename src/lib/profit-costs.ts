@@ -54,7 +54,7 @@ type Client = {
 };
 
 /** PostgREST / Postgres "table does not exist" (migration not applied yet). */
-function isMissingTable(error: { code?: string; message?: string }): boolean {
+export function isMissingTable(error: { code?: string; message?: string }): boolean {
   return (
     error.code === "PGRST205" ||
     error.code === "42P01" ||

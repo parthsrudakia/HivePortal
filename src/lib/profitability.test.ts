@@ -165,3 +165,24 @@ describe("loadProfitability with actual monthly costs", () => {
     ).rejects.toBeInstanceOf(LedgerDataError);
   });
 });
+
+describe("unit profit with costs outside the lease window", () => {
+  it("shows the month so unit profits add up to the summary", async () => {
+    const ended: ProfitUnit = { ...unit, id: "p3", unit_lease_end: "2026-08-31" };
+    const data = await loadProfitability(
+      cappedClient({
+        properties: [ended],
+        payments: [],
+        utility_bills: [],
+        profit_costs: [
+          { property_id: "p3", month: "2026-10", cost_type: "misc", amount: 80, label: "Final fee" },
+        ],
+      }),
+      2026,
+      "2026-11-17",
+    );
+    const OCT = 9;
+    expect(data.cellFor("profit", ended)(OCT)).toEqual({ value: -80, estimated: false });
+    expect(data.summary.monthlyNet[OCT]).toBe(-80);
+  });
+});

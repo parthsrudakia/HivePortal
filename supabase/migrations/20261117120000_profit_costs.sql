@@ -34,16 +34,20 @@ create index if not exists profit_costs_month_idx on public.profit_costs (month)
 create index if not exists profit_costs_property_id_idx on public.profit_costs (property_id);
 
 alter table public.profit_costs enable row level security;
+drop policy if exists "profitability read profit_costs" on public.profit_costs;
 create policy "profitability read profit_costs" on public.profit_costs
   for select to authenticated
   using ((select public.has_portal_permission('profitability')));
+drop policy if exists "profitability write profit_costs (insert)" on public.profit_costs;
 create policy "profitability write profit_costs (insert)" on public.profit_costs
   for insert to authenticated
   with check ((select public.has_portal_permission('profitability')));
+drop policy if exists "profitability write profit_costs (update)" on public.profit_costs;
 create policy "profitability write profit_costs (update)" on public.profit_costs
   for update to authenticated
   using ((select public.has_portal_permission('profitability')))
   with check ((select public.has_portal_permission('profitability')));
+drop policy if exists "profitability write profit_costs (delete)" on public.profit_costs;
 create policy "profitability write profit_costs (delete)" on public.profit_costs
   for delete to authenticated
   using ((select public.has_portal_permission('profitability')));
