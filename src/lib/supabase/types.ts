@@ -1206,6 +1206,59 @@ export type Database = {
           },
         ]
       }
+      profit_costs: {
+        Row: {
+          amount: number
+          cost_type: string
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          month: string
+          notes: string | null
+          property_id: string | null
+          ref: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          cost_type: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          month: string
+          notes?: string | null
+          property_id?: string | null
+          ref: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          cost_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          month?: string
+          notes?: string | null
+          property_id?: string | null
+          ref?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profit_costs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profitability_line_items: {
         Row: {
           amount: number

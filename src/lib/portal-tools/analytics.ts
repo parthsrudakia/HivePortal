@@ -77,6 +77,10 @@ export async function getProfitability(args: { year?: number }) {
           label: i.label,
           amount: round(Number(i.amount)),
         })),
+        company_costs: s.companyItems.map((c) => ({
+          label: c.label,
+          yearly: round(c.yearly),
+        })),
       },
       monthly_net: Object.fromEntries(
         s.monthlyNet
@@ -85,7 +89,7 @@ export async function getProfitability(args: { year?: number }) {
       ),
     },
     notes:
-      "Rent collection = payments dated in the calendar month (deposits excluded, refunds subtracted). Utility months without a bill use same-bedroom averages (includes_estimated_utilities). Line items are manual yearly amounts and count in the totals but not in monthly figures.",
+      "Rent collection = payments dated in the calendar month (deposits excluded, refunds subtracted). Utility months without a bill use same-bedroom averages (includes_estimated_utilities). Line items are manual yearly amounts and count in the totals but not in monthly figures. Rent paid, internet, cleaning and insurance use the cost recorded for a month (rent portals or manual) and otherwise the unit's flat monthly figure; amenity and misc use recorded charges once a unit has any that year. Company costs (e.g. Upwork) are monthly costs not tied to a unit.",
   };
 }
 
@@ -128,6 +132,7 @@ export const analyticsTools = [
       "Unit profitability for a year (defaults to the current year): per-unit " +
       "YTD and monthly profit (revenue collected minus rent paid, utilities, " +
       "internet, cleaning, amenity, misc, insurance), plus the year summary " +
+      "(including monthly company costs such as Upwork) " +
       "with total revenue / expenses / net and the manual revenue/expense line " +
       "items. Units sorted worst profit first. Utility months without an " +
       "uploaded bill use same-bedroom-unit averages (flagged as estimated). " +

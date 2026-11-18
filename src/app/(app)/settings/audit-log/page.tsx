@@ -37,6 +37,7 @@ const TABLE_LABEL: Record<string, string> = {
   reconciliation_reversals: "Reconciliation reversals",
   ignored_payers: "Ignored payers",
   profitability_line_items: "Profitability line items",
+  profit_costs: "Profit costs",
   tab_notes: "Tab notes",
 };
 
