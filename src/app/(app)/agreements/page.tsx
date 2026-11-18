@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { roomLabel } from "@/lib/room-label";
 import { unitLabel } from "@/lib/unit-label";
-import { formatDate, todayISO } from "@/lib/date";
+import { APP_TIME_ZONE, addDaysISO, formatDate, todayISO } from "@/lib/date";
 import {
   AGREEMENTS_BUCKET,
   OPERATOR_SIGNATURE_PATH,
@@ -19,6 +19,16 @@ import {
   type SigningRequestRow,
 } from "./agreement-tally";
 import { OperatorSignatureCard } from "./operator-signature-card";
+import {
+  ApplicationInvites,
+  type InviteRow,
+  type InviteUnitOption,
+} from "./application-invites";
+import {
+  effectiveStatus,
+  formatUsd,
+  inviteUrl,
+} from "@/lib/application-invites";
 
 export const metadata = {
   title: "Agreements",
@@ -70,6 +80,7 @@ export default async function AgreementsPage() {
     { data: tenantRows },
     { data: tenancyRows },
     { data: roomRows },
+    { data: inviteRows },
   ] = await Promise.all([
     supabase
       .from("tenancies")
@@ -95,7 +106,7 @@ export default async function AgreementsPage() {
     supabase
       .from("properties")
       .select(
-        "id, building_name, street_address, unit_number, neighborhood, is_new_york",
+        "id, building_name, street_address, unit_number, neighborhood, is_new_york, archived_at",
       )
       .order("street_address"),
     // Addresses confirmed on previously sent agreements win over composed ones.
@@ -109,9 +120,19 @@ export default async function AgreementsPage() {
     // property's rooms — the form offers them as a picker per property.
     supabase
       .from("rooms")
-      .select("id, property_id, room_number")
+      .select("id, property_id, room_number, total_rent")
       .not("room_number", "is", null)
       .order("room_number"),
+    // Application links: every open one, plus the last 30 days of used,
+    // expired and cancelled ones.
+    supabase
+      .from("application_invites")
+      .select(
+        "id, token, property_id, room_id, applicant_email, applicant_name, rent, security_deposit, status, expires_at, created_at, used_at, claimed_at, tenant_name, tenant_email, deposit_email_sent_at",
+      )
+      .or(`status.eq.sent,created_at.gte.${addDaysISO(todayISO(), -30)}`)
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
 
   const prefills: TenancyPrefill[] = (data ?? []).flatMap((row) => {
@@ -247,6 +268,66 @@ export default async function AgreementsPage() {
     rooms: roomsByProperty.get(p.id) ?? [],
   }));
 
+  // Application links: units still in service, each room with its total
+  // rent as the default (the deposit defaults to the same).
+  const roomsWithRent = new Map<string, InviteUnitOption["rooms"]>();
+  const roomById = new Map<string, string>();
+  for (const r of roomRows ?? []) {
+    const number = r.room_number?.trim();
+    if (!number) continue;
+    roomById.set(r.id, roomLabel(number));
+    roomsWithRent.set(r.property_id, [
+      ...(roomsWithRent.get(r.property_id) ?? []),
+      { id: r.id, label: roomLabel(number), rent: r.total_rent },
+    ]);
+  }
+  const inviteUnits: InviteUnitOption[] = (propertyRows ?? [])
+    .filter((p) => p.archived_at == null && (roomsWithRent.get(p.id)?.length ?? 0) > 0)
+    .map((p) => ({
+      id: p.id,
+      label: `${p.building_name?.trim() || p.street_address} · Apt ${p.unit_number}`,
+      isNewYork: p.is_new_york,
+      rooms: roomsWithRent.get(p.id) ?? [],
+    }));
+  const unitById = new Map(inviteUnits.map((u) => [u.id, u.label]));
+  for (const p of propertyRows ?? []) {
+    if (!unitById.has(p.id)) {
+      unitById.set(p.id, `${p.building_name?.trim() || p.street_address} · Apt ${p.unit_number}`);
+    }
+  }
+  const shortDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-US", {
+      timeZone: APP_TIME_ZONE,
+      month: "short",
+      day: "numeric",
+    });
+  const invites: InviteRow[] = (inviteRows ?? []).map((i) => {
+    const status = effectiveStatus({
+      status: i.status as InviteRow["status"],
+      expires_at: i.expires_at,
+    });
+    return {
+      id: i.id,
+      url: inviteUrl(i.token),
+      status,
+      completing: i.claimed_at != null,
+      applicantEmail: i.applicant_email,
+      applicantName: i.applicant_name,
+      place: `${unitById.get(i.property_id) ?? "Unit"} · ${roomById.get(i.room_id) ?? "Room"}`,
+      rent: formatUsd(i.rent),
+      deposit: formatUsd(i.security_deposit),
+      sentOn: shortDate(i.created_at),
+      expiresOn: shortDate(i.expires_at),
+      usedOn: i.used_at ? shortDate(i.used_at) : null,
+      tenantName: i.tenant_name,
+      tenantEmail: i.tenant_email,
+      emailDiffers:
+        i.tenant_email != null &&
+        i.tenant_email.trim().toLowerCase() !== i.applicant_email.trim().toLowerCase(),
+      depositEmailSent: i.deposit_email_sent_at != null,
+    };
+  });
+
   const operatorSignatureUrl = signatureUrlData?.signedUrl ?? null;
 
   return (
@@ -265,6 +346,8 @@ export default async function AgreementsPage() {
       <OperatorSignatureCard signatureUrl={operatorSignatureUrl} />
 
       <AgreementTally requests={requests} assignOptions={assignOptions} />
+
+      <ApplicationInvites units={inviteUnits} invites={invites} />
 
       <AgreementGenerator
         prefills={prefills}

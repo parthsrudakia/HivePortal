@@ -11,6 +11,8 @@ export type EmailType =
   | "lease_end"
   | "agreement"
   | "agreement_signed"
+  | "application_invite"
+  | "application_deposit"
   | "board"
   | "utility_charge"
   | "other_charge"
@@ -27,6 +29,8 @@ export const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
   lease_end: "Lease ending (45-day heads-up)",
   agreement: "Sublease agreement",
   agreement_signed: "Signed agreement copy",
+  application_invite: "Application link",
+  application_deposit: "Deposit request (after signing)",
   board: "Projects board notification",
   utility_charge: "Utility charge notice",
   other_charge: "Ledger charge notice",

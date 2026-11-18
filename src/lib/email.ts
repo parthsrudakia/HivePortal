@@ -270,6 +270,89 @@ Hive`;
   return { subject, text, html };
 }
 
+// Application invite: the applicant's link to apply for a room on hiveny.com.
+// Branded, from the Outlook work account (New York units don't get invites).
+export function applicationInviteEmailTemplate(opts: {
+  applicantName: string | null;
+  /** "Room 3", never the street address or unit number. */
+  roomLabel: string;
+  neighborhood: string | null;
+  /** Formatted monthly rent, e.g. "$1,850". */
+  rent: string;
+  url: string;
+}): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const firstName = opts.applicantName?.trim().split(/\s+/)[0] || "there";
+  const place = opts.neighborhood?.trim()
+    ? `${opts.roomLabel} in ${opts.neighborhood.trim()}`
+    : opts.roomLabel;
+  const subject = "Your Hive application link";
+  const text = `Hi ${firstName},
+
+Here is your link to apply for ${place}. The rent is ${opts.rent} a month.
+
+${opts.url}
+
+The application asks for your details, your lease dates and a photo ID, plus the application fee. The link works for 14 days. Once you've applied, we'll email you the agreement to sign.
+
+Reply to this email if you have any questions.
+
+Best,
+Vineet
+Hive`;
+  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
+    <div style="height:6px; background:#d4920b;"></div>
+    <div style="padding:24px 20px; color:#1a1a18; line-height:1.55; font-size:15px;">
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>
+      <p style="margin:0 0 14px;">Here is your link to apply for ${escapeHtml(place)}. The rent is ${escapeHtml(opts.rent)} a month.</p>
+      <div style="margin:0 0 14px;">${ctaButton(opts.url, "Apply for the room")}</div>
+      <p style="margin:0 0 14px; font-size:13px; color:#8a8378;">The application asks for your details, your lease dates and a photo ID, plus the application fee. The link works for 14 days.</p>
+      <p style="margin:0 0 14px;">Once you&rsquo;ve applied, we&rsquo;ll email you the agreement to sign. Reply to this email if you have any questions.</p>
+      <p style="margin:18px 0 0;">Best,<br/>Vineet<br/><span style="color:#8a8378;">Hive</span></p>
+    </div>
+  </div>
+</div>`;
+  return { subject, text, html };
+}
+
+// After an invited applicant signs: ask for half the security deposit to hold
+// the room. Sent once, from the same mailbox the agreement went from.
+export function depositRequestEmailTemplate(opts: {
+  tenantName: string;
+  /** Formatted half deposit, e.g. "$925" or "$937.50". */
+  halfDeposit: string;
+}): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const firstName = opts.tenantName.trim().split(/\s+/)[0] || "there";
+  const subject = "Reserve your room";
+  const message = `Thanks for signing. To reserve the room and take it off the market, please send half of the security deposit (${opts.halfDeposit}) by Zelle to Vineet.Dutta@hiveNY.com. If you don't use Zelle, reach out to Vinny to discuss other payment options.`;
+  const text = `Hi ${firstName},
+
+${message}
+
+Best,
+Vineet
+Hive`;
+  const html = `<div style="margin:0; padding:20px 12px; background:#f5f2ed; font-family:'DM Sans',Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px; margin:0 auto; background:#fefdfb; border:1px solid #e8e3db; border-radius:16px; overflow:hidden;">
+    <div style="height:6px; background:#d4920b;"></div>
+    <div style="padding:24px 20px; color:#1a1a18; line-height:1.55; font-size:15px;">
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>
+      <p style="margin:0 0 14px;">${escapeHtml(message)}</p>
+      <p style="margin:18px 0 0;">Best,<br/>Vineet<br/><span style="color:#8a8378;">Hive</span></p>
+    </div>
+  </div>
+</div>`;
+  return { subject, text, html };
+}
+
 // Plain, unbranded cover message for emailing the public inventory "Shareable
 // Sheet". The .xlsx is attached separately; this is just the cover note. Sent
 // from the personal Gmail, so NO Hive branding or name anywhere — plain text
