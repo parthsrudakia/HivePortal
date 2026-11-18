@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   describeChanges,
   diffInventory,
-  formatDiffMessage,
   formatOpenActions,
   isEmptyDiff,
   type InvRoom,
@@ -96,24 +95,6 @@ describe("describeChanges", () => {
       amenities: { has_private_bathroom: false, has_ac: true, unit: ["B", "A"], building: [] },
     });
     expect(describeChanges(a, b)).toEqual([]);
-  });
-});
-
-describe("formatDiffMessage", () => {
-  it("tells the team what to do for each kind of change", () => {
-    const d = diffInventory(asMap([room(), room({ id: "gone", room_number: "4" })]), [
-      room({ available_from: "2026-12-01" }),
-      room({ id: "new", room_number: "1", listing_action: "priority" }),
-    ]);
-    const text = formatDiffMessage(d, new Map([["gone", "It is now occupied."]]));
-    expect(text).toContain("🆕 <b>New in inventory — 12 Example St Apt 3A · Room 1</b>");
-    expect(text).toContain("$1,450/mo · available Now · Journal Square");
-    expect(text).toContain("Flagged: <b>Priority listing</b>");
-    expect(text).toContain("→ Please post a listing for it.");
-    expect(text).toContain("✏️ <b>Updated — 12 Example St Apt 3A · Room 2</b>");
-    expect(text).toContain("• Available from: Now → <b>Dec 1, 2026</b>");
-    expect(text).toContain("❌ <b>Out of inventory — 12 Example St Apt 3A · Room 4</b>\nIt is now occupied.");
-    expect(text).toContain("→ Please take its listing ads down.");
   });
 });
 

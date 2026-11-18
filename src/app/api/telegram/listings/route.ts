@@ -7,20 +7,33 @@
  *     every change is confirmed by a code-built receipt (see agent.ts).
  *   Team group (linked by the admin sending /setgroup in it): the bot posts
  *     inventory changes + reminders there (see src/lib/listings-bot/run.ts).
- *     No model output ever reaches the group unprompted: /inventory there is
+ *     No model output ever reaches the group: everything posted there is
  *     rendered by code straight from the database.
  *
  * Register once (allowed_updates keeps Telegram from sending anything else):
  *   curl "https://api.telegram.org/bot$LISTINGS_BOT_TOKEN/setWebhook" \
  *     -d url=https://<portal host>/api/telegram/listings \
  *     -d secret_token=$LISTINGS_BOT_WEBHOOK_SECRET \
- *     -d 'allowed_updates=["message"]'
+ *     -d 'allowed_updates=["message","message_reaction","chat_member"]'
+ *
+ * The bot must be an ADMIN of the team group: Telegram only sends reaction
+ * and member updates (and non-command messages) to admin bots. Reactions are
+ * how the team acknowledges an inventory change — see src/lib/listings-bot/acks.ts.
  */
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { sendChatAction } from "@/lib/telegram";
-import { todayISO } from "@/lib/date";
+import { sendChatAction, type TgUser } from "@/lib/telegram";
+import {
+  allMembers,
+  displayName,
+  markLeft,
+  normalizeUsername,
+  openTasks,
+  recordReaction,
+  setRemind,
+  upsertMember,
+} from "@/lib/listings-bot/acks";
 import { runBotTurn, type Turn } from "@/lib/listings-bot/agent";
 import { describeSchedule } from "@/lib/listings-bot/schedule";
 import {
@@ -28,28 +41,47 @@ import {
   botDb,
   botSend,
   botToken,
-  fetchInventory,
   getState,
   setGroup,
   REMINDER_COLUMNS,
   type BotDb,
   type ReminderRow,
 } from "@/lib/listings-bot/store";
-import {
-  escapeHtml,
-  formatInventoryList,
-  formatOpenActions,
-} from "@/lib/listings-bot/diff";
+import { escapeHtml } from "@/lib/listings-bot/diff";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+type TgChat = {
+  id: number;
+  type: "private" | "group" | "supergroup" | "channel";
+  title?: string;
+};
+
 type TgMessage = {
   message_id: number;
-  from?: { id: number; first_name?: string; username?: string; is_bot?: boolean };
-  chat: { id: number; type: "private" | "group" | "supergroup" | "channel"; title?: string };
+  from?: TgUser;
+  chat: TgChat;
   text?: string;
   migrate_to_chat_id?: number;
+  new_chat_members?: TgUser[];
+  left_chat_member?: TgUser;
+};
+
+type TgReactionUpdate = {
+  chat: TgChat;
+  message_id: number;
+  /** Absent when someone reacts anonymously as the group. */
+  user?: TgUser;
+  old_reaction: unknown[];
+  new_reaction: unknown[];
+};
+
+type TgChatMemberUpdate = {
+  chat: TgChat;
+  from: TgUser;
+  old_chat_member: { status: string; user: TgUser; is_member?: boolean };
+  new_chat_member: { status: string; user: TgUser; is_member?: boolean };
 };
 
 const HISTORY_LIMIT = 30;
@@ -80,19 +112,13 @@ const ADMIN_HELP =
   "• Tell the team now that the Journal Square prices changed\n" +
   "• What's available under $1,500?\n\n" +
   "After any change I add a <b>Confirmed by the system</b> block showing exactly what was saved. If that block isn't there, nothing was changed.\n\n" +
+  "<b>Ad-update reactions:</b> every inventory change I post tags the people on the reminder list and asks them to react once their ads are updated; I re-tag whoever hasn't every 2 hours (8 AM – 6 PM ET).\n" +
+  "/team — who is on the reminder list\n" +
+  "/add @username · /remove @username — change the reminder list\n" +
+  "/pending — changes still waiting on reactions, and who from\n\n" +
   "/reminders — list reminders\n" +
-  "/inventory — current inventory, straight from the portal\n" +
   "/status — which group I post to\n" +
   "/reset — clear this chat's history";
-
-/** Current inventory rendered by code — no model involved. */
-async function inventoryMessage(db: BotDb): Promise<string> {
-  const rooms = await fetchInventory(db);
-  return (
-    `${formatInventoryList(rooms)}\n\n${formatOpenActions(rooms)}\n\n` +
-    `<i>Live from the portal, ${todayISO()}.</i>`
-  );
-}
 
 async function replyWithAgent(
   db: BotDb,
@@ -132,6 +158,43 @@ async function replyWithAgent(
   }
 }
 
+async function teamMessage(db: BotDb): Promise<string> {
+  const admins = adminIds();
+  const listed = (await allMembers(db)).filter((m) => m.remind);
+  if (listed.length === 0) {
+    return "Nobody is on the reminder list. Add someone with /add @username.";
+  }
+  const rows = listed.map((m) => {
+    const note =
+      m.user_id !== null && admins.has(Number(m.user_id))
+        ? " — admin, not asked"
+        : !m.active
+          ? " — left the group, not asked"
+          : m.user_id === null
+            ? " — <i>reactions count once they post or react in the group</i>"
+            : "";
+    const who = m.username ? `@${escapeHtml(m.username)}` : escapeHtml(displayName(m));
+    return `• ${who}${note}`;
+  });
+  return (
+    `<b>Reminder list (${listed.length})</b>\n${rows.join("\n")}\n\n` +
+    "/add @username · /remove @username"
+  );
+}
+
+async function pendingMessage(db: BotDb): Promise<string> {
+  const state = await getState(db);
+  if (!state.group_chat_id) return "No team group is linked yet.";
+  const open = await openTasks(db, state.group_chat_id);
+  if (open.length === 0) return "✅ Everyone has reacted to every inventory change.";
+  return open
+    .map(
+      (t) =>
+        `${t.lines.join("\n")}\n<i>Waiting on: ${t.pending.map((m) => escapeHtml(displayName(m))).join(", ")}</i>`,
+    )
+    .join("\n\n");
+}
+
 async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
   const chatId = msg.chat.id;
   const userId = msg.from!.id;
@@ -168,8 +231,33 @@ async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
     );
     return;
   }
-  if (text === "/inventory") {
-    await botSend(chatId, await inventoryMessage(db));
+  if (text === "/team") {
+    await botSend(chatId, await teamMessage(db));
+    return;
+  }
+  const listCmd = text.match(/^\/(add|remove)(?:@\w+)?\s+(.+)$/i);
+  if (listCmd) {
+    const add = listCmd[1].toLowerCase() === "add";
+    const names = listCmd[2].split(/[\s,]+/).filter(Boolean);
+    const lines: string[] = [];
+    for (const raw of names) {
+      const username = normalizeUsername(raw);
+      if (!username) {
+        lines.push(`${escapeHtml(raw)} — not a valid @username`);
+        continue;
+      }
+      const result = await setRemind(db, username, add);
+      lines.push(
+        result === "not_found"
+          ? `@${escapeHtml(username)} wasn't on the list`
+          : `@${escapeHtml(username)} ${result === "added" ? "will be reminded" : "removed from the reminder list"}`,
+      );
+    }
+    await botSend(chatId, lines.join("\n") || "Usage: /add @username");
+    return;
+  }
+  if (text === "/pending") {
+    await botSend(chatId, await pendingMessage(db));
     return;
   }
   if (text === "/reminders") {
@@ -205,7 +293,7 @@ async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
 
 async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
   const chatId = msg.chat.id;
-  // The group gets commands only — no model replies. "/inventory@bot" → "/inventory"
+  // The group gets commands only — no model replies. "/help@bot" → "/help"
   if (!text.startsWith("/")) return;
   const command = text.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
 
@@ -214,7 +302,7 @@ async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
     await setGroup(db, chatId, msg.chat.title ?? null);
     await botSend(
       chatId,
-      "👋 I'm set up for this group. I'll post here whenever the inventory changes — a new room, a price or date change, a room coming off the market — so the listing ads can be updated, along with scheduled reminders.\n\nSend /inventory any time for the current list.",
+      "👋 I'm set up for this group. I'll post here whenever the inventory changes — a new room, a price or date change, a room coming off the market — so the listing ads can be updated, along with scheduled reminders.",
     );
     return;
   }
@@ -222,14 +310,52 @@ async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
   const state = await getState(db);
   if (state.group_chat_id !== chatId) return; // not the team group — stay silent
 
-  if (command === "/inventory") {
-    await botSend(chatId, await inventoryMessage(db));
-  } else if (command === "/help" || command === "/start") {
+  if (command === "/help" || command === "/start") {
     await botSend(
       chatId,
-      "I post inventory changes and reminders here. Send /inventory for the current list, straight from the portal.",
+      "I post inventory changes and reminders here. Once your ads match a change, react to that post.",
     );
   }
+}
+
+async function isTeamGroup(db: BotDb, chatId: number): Promise<boolean> {
+  return (await getState(db)).group_chat_id === chatId;
+}
+
+/** Keep the roster current from what happens in the team group. */
+async function learnFromGroupMessage(db: BotDb, msg: TgMessage) {
+  const joined = msg.new_chat_members ?? [];
+  const left = msg.left_chat_member;
+  const author = msg.from && !msg.from.is_bot ? msg.from : null;
+  if (!author && joined.length === 0 && !left) return;
+  if (!(await isTeamGroup(db, msg.chat.id))) return;
+  for (const u of joined) await upsertMember(db, u, { joined: true });
+  if (left && !left.is_bot) await markLeft(db, left.id);
+  else if (author && joined.length === 0) await upsertMember(db, author);
+}
+
+async function handleReaction(db: BotDb, r: TgReactionUpdate) {
+  if (!r.user || r.user.is_bot) return;
+  if (!(await isTeamGroup(db, r.chat.id))) return;
+  await recordReaction(
+    db,
+    r.chat.id,
+    r.message_id,
+    r.user,
+    (r.new_reaction ?? []).length > 0,
+  );
+}
+
+const GONE = new Set(["left", "kicked"]);
+
+async function handleMemberChange(db: BotDb, u: TgChatMemberUpdate) {
+  const user = u.new_chat_member.user;
+  if (user.is_bot) return;
+  if (!(await isTeamGroup(db, u.chat.id))) return;
+  const gone = (s: { status: string; is_member?: boolean }) =>
+    GONE.has(s.status) || (s.status === "restricted" && s.is_member === false);
+  if (gone(u.new_chat_member)) await markLeft(db, user.id);
+  else await upsertMember(db, user, { joined: gone(u.old_chat_member) });
 }
 
 export async function POST(req: Request) {
@@ -245,14 +371,21 @@ export async function POST(req: Request) {
     return new NextResponse("unauthorized", { status: 401 });
   }
 
-  let update: { update_id?: number; message?: TgMessage };
+  let update: {
+    update_id?: number;
+    message?: TgMessage;
+    message_reaction?: TgReactionUpdate;
+    chat_member?: TgChatMemberUpdate;
+  };
   try {
     update = await req.json();
   } catch {
     return NextResponse.json({ ok: true });
   }
   const msg = update.message;
-  if (!msg) return NextResponse.json({ ok: true });
+  if (!msg && !update.message_reaction && !update.chat_member) {
+    return NextResponse.json({ ok: true });
+  }
 
   const db = botDb();
 
@@ -266,6 +399,16 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (update.message_reaction) {
+      await handleReaction(db, update.message_reaction);
+      return NextResponse.json({ ok: true });
+    }
+    if (update.chat_member) {
+      await handleMemberChange(db, update.chat_member);
+      return NextResponse.json({ ok: true });
+    }
+    if (!msg) return NextResponse.json({ ok: true });
+
     // A group upgraded to a supergroup gets a new chat id — follow it.
     if (msg.migrate_to_chat_id) {
       const state = await getState(db);
@@ -273,6 +416,10 @@ export async function POST(req: Request) {
         await setGroup(db, msg.migrate_to_chat_id, state.group_title);
       }
       return NextResponse.json({ ok: true });
+    }
+
+    if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
+      await learnFromGroupMessage(db, msg);
     }
 
     const text = msg.text?.trim();

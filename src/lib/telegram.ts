@@ -39,7 +39,7 @@ async function postChunk(
   chunk: string,
   opts: { reply_to_message_id?: number; token?: string },
   parseMode?: "HTML",
-): Promise<boolean> {
+): Promise<number | null> {
   const res = await fetch(`${API_BASE}/bot${opts.token ?? token()}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -60,9 +60,13 @@ async function postChunk(
     }
     // Don't throw; log and continue so we don't double-handle on retry.
     console.error("Telegram sendMessage failed:", detail);
-    return false;
+    return null;
   }
-  return true;
+  const body = (await res.json().catch(() => null)) as {
+    result?: { message_id?: number };
+  } | null;
+  // Accepted; 0 when Telegram's reply had no id (never expected).
+  return body?.result?.message_id ?? 0;
 }
 
 /** Returns true only if every chunk was accepted by Telegram. */
@@ -75,12 +79,39 @@ export async function sendMessage(
     token?: string;
   } = {},
 ): Promise<boolean> {
+  return (await sendMessageIds(chatId, text, opts)) !== null;
+}
+
+/**
+ * Like sendMessage, but returns the message id of every chunk Telegram
+ * accepted — or null if any chunk was refused.
+ */
+export async function sendMessageIds(
+  chatId: number,
+  text: string,
+  opts: {
+    reply_to_message_id?: number;
+    parse_mode?: "HTML";
+    token?: string;
+  } = {},
+): Promise<number[] | null> {
+  const ids: number[] = [];
   let ok = true;
   for (const chunk of chunkMessage(text)) {
-    if (!(await postChunk(chatId, chunk, opts, opts.parse_mode))) ok = false;
+    const id = await postChunk(chatId, chunk, opts, opts.parse_mode);
+    if (id === null) ok = false;
+    else if (id > 0) ids.push(id);
   }
-  return ok;
+  return ok ? ids : null;
 }
+
+export type TgUser = {
+  id: number;
+  is_bot?: boolean;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+};
 
 export async function sendDocument(
   chatId: number,

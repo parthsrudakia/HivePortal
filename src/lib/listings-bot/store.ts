@@ -5,7 +5,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { todayISO } from "@/lib/date";
-import { sendMessage } from "@/lib/telegram";
+import { sendMessage, sendMessageIds } from "@/lib/telegram";
 import { filterAndSortRooms } from "@/lib/inventory-filter";
 import {
   ROOM_SELECT,
@@ -56,6 +56,21 @@ export async function botSend(
   } catch (e) {
     console.error("Listings bot send failed:", e);
     return false;
+  }
+}
+
+/** Send as the listings bot; the sent message ids, or null on failure. */
+export async function botPost(
+  chatId: number,
+  text: string,
+): Promise<number[] | null> {
+  const token = botToken();
+  if (!token) return null;
+  try {
+    return await sendMessageIds(chatId, text, { parse_mode: "HTML", token });
+  } catch (e) {
+    console.error("Listings bot send failed:", e);
+    return null;
   }
 }
 

@@ -8,7 +8,6 @@
 import { todayISO } from "@/lib/date";
 import {
   diffInventory,
-  formatDiffMessage,
   formatInventoryList,
   formatOpenActions,
   escapeHtml,
@@ -17,7 +16,16 @@ import {
 } from "./diff";
 import { nextRun } from "./schedule";
 import {
+  formatChangeNotice,
+  processAdNags,
+  recordChangeTask,
+  taskLines,
+  trackedMembers,
+  type Member,
+} from "./acks";
+import {
   botDb,
+  botPost,
   botSend,
   botToken,
   fetchInventory,
@@ -34,46 +42,6 @@ const SEND_RETRY_MS = 13 * 60 * 1000;
 export type ChangeResult =
   | { status: "busy" | "seeded" | "no_changes" | "no_group" | "send_failed" }
   | { status: "posted"; added: number; changed: number; removed: number };
-
-/** Why each removed room left inventory, for the "take it down" note. */
-async function removalReasons(
-  db: BotDb,
-  removed: InvRoom[],
-): Promise<Map<string, string>> {
-  const reasons = new Map<string, string>();
-  if (removed.length === 0) return reasons;
-  const { data } = await db
-    .from("rooms")
-    .select("id, status, pending_tenant, available_from, properties(archived_at)")
-    .in(
-      "id",
-      removed.map((r) => r.id),
-    )
-    .returns<
-      {
-        id: string;
-        status: string;
-        pending_tenant: boolean;
-        available_from: string | null;
-        properties: { archived_at: string | null } | { archived_at: string | null }[] | null;
-      }[]
-    >();
-  const found = new Map((data ?? []).map((r) => [r.id, r]));
-  for (const r of removed) {
-    const now = found.get(r.id);
-    if (!now) {
-      reasons.set(r.id, "The room was deleted from the portal.");
-      continue;
-    }
-    const prop = Array.isArray(now.properties) ? now.properties[0] : now.properties;
-    if (prop?.archived_at) reasons.set(r.id, "The property was retired.");
-    else if (now.pending_tenant) reasons.set(r.id, "A new tenant is lined up for it.");
-    else if (now.status === "occupied") reasons.set(r.id, "It is now occupied.");
-    else if (now.status === "reserved") reasons.set(r.id, "It is now reserved.");
-    else if (now.status === "maintenance") reasons.set(r.id, "It is now under maintenance.");
-  }
-  return reasons;
-}
 
 async function saveSnapshot(db: BotDb, rooms: InvRoom[], removedIds: string[]) {
   const now = new Date().toISOString();
@@ -151,8 +119,17 @@ export async function processInventoryChanges(db: BotDb): Promise<ChangeResult> 
       return { status: "no_group" };
     }
 
-    const text = formatDiffMessage(diff, await removalReasons(db, diff.removed));
-    if (!(await botSend(state.group_chat_id, text))) {
+    // Tag everyone who must react once their ads match. A roster failure
+    // must never hold up the change post itself.
+    let team: Member[] = [];
+    try {
+      team = await trackedMembers(db);
+    } catch (e) {
+      console.error("Listings bot roster read failed:", e);
+    }
+    // The post only says that something changed; details are in the portal.
+    const messageIds = await botPost(state.group_chat_id, formatChangeNotice(team));
+    if (!messageIds) {
       // Keep the old snapshot so the same diff is retried, but back off.
       await db
         .from("listing_bot_state")
@@ -163,6 +140,11 @@ export async function processInventoryChanges(db: BotDb): Promise<ChangeResult> 
 
     await saveSnapshot(db, curr, removedIds);
     await clearDirty(db, state.dirty_at);
+    try {
+      await recordChangeTask(db, state.group_chat_id, taskLines(diff), messageIds);
+    } catch (e) {
+      console.error("Listings bot task record failed:", e);
+    }
     return {
       status: "posted",
       added: diff.added.length,
@@ -288,5 +270,11 @@ export async function runListingsBot(db: BotDb = botDb()) {
   const reminders = await processDueReminders(db).catch((e) => ({
     error: e instanceof Error ? e.message : String(e),
   }));
-  return { as_of: todayISO(), changes, reminders };
+  const adReminders = await getState(db)
+    .then((s) => processAdNags(db, s.group_chat_id, botPost))
+    .catch((e) => ({
+      status: "error" as const,
+      error: e instanceof Error ? e.message : String(e),
+    }));
+  return { as_of: todayISO(), changes, reminders, ad_reminders: adReminders };
 }

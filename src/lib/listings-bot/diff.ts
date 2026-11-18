@@ -192,48 +192,6 @@ export function roomSummary(r: InvRoom): string {
   return bits.map(escapeHtml).join(" · ");
 }
 
-function flagged(r: InvRoom): string {
-  return r.listing_action !== "no_action"
-    ? `\nFlagged: <b>${escapeHtml(LISTING_ACTION_LABELS[r.listing_action] ?? r.listing_action)}</b>`
-    : "";
-}
-
-/**
- * The group message for a diff. `removedReasons` maps a removed room's id to
- * why it left inventory (e.g. "now Occupied"), when known.
- */
-export function formatDiffMessage(
-  d: InventoryDiff,
-  removedReasons: Map<string, string> = new Map(),
-): string {
-  const blocks: string[] = [];
-  for (const r of d.added) {
-    blocks.push(
-      `🆕 <b>New in inventory — ${escapeHtml(roomTitle(r))}</b>\n` +
-        roomSummary(r) +
-        (r.photos_url ? `\nPhotos: ${escapeHtml(r.photos_url)}` : "") +
-        flagged(r) +
-        "\n→ Please post a listing for it.",
-    );
-  }
-  for (const { room, changes } of d.changed) {
-    blocks.push(
-      `✏️ <b>Updated — ${escapeHtml(roomTitle(room))}</b>\n` +
-        changes.map((c) => `• ${c}`).join("\n") +
-        "\n→ Please update its listing ads to match.",
-    );
-  }
-  for (const r of d.removed) {
-    const why = removedReasons.get(r.id);
-    blocks.push(
-      `❌ <b>Out of inventory — ${escapeHtml(roomTitle(r))}</b>` +
-        (why ? `\n${escapeHtml(why)}` : "") +
-        "\n→ Please take its listing ads down.",
-    );
-  }
-  return `📋 <b>Inventory update</b>\n\n${blocks.join("\n\n")}`;
-}
-
 /** Rooms whose listing action is still flagged (reminder digest). */
 export function formatOpenActions(rooms: InvRoom[]): string {
   const open = rooms.filter((r) => r.listing_action !== "no_action");
