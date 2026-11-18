@@ -47,10 +47,10 @@ describe("runCleaningSchedule", () => {
     expect(inserted).toEqual([{ property_id: "u1", cleaning_date: "2026-11-24" }]);
   });
 
-  it("lets a move-out close to the due date stand in for the regular cleaning", async () => {
+  it("books no regular cleaning in the move-out month", async () => {
     const { supabase, inserted } = fakeSupabase([
       { property_id: "u1", cleaning_date: "2026-10-20", kind: "regular" },
-      // Regular would be 11-24; the move-out on 11-28 is within 7 days of it.
+      // Regular would be 11-24; the move-out on 11-28 is that month's cleaning.
       { property_id: "u1", cleaning_date: "2026-11-28", kind: "move_out" },
     ]);
     const res = await runCleaningSchedule(supabase);
@@ -58,7 +58,7 @@ describe("runCleaningSchedule", () => {
     expect(inserted).toEqual([]);
   });
 
-  it("lets a move-out before the due date stand in too", async () => {
+  it("books no regular cleaning when the move-out comes before it in the same month", async () => {
     const { supabase, inserted } = fakeSupabase([
       { property_id: "u1", cleaning_date: "2026-10-20", kind: "regular" },
       { property_id: "u1", cleaning_date: "2026-11-19", kind: "move_out" },
@@ -67,13 +67,23 @@ describe("runCleaningSchedule", () => {
     expect(inserted).toEqual([]);
   });
 
-  it("still books the regular cleaning when the move-out is 8+ days after it", async () => {
+  it("still books the regular cleaning in the month before the move-out month", async () => {
     const { supabase, inserted } = fakeSupabase([
       { property_id: "u1", cleaning_date: "2026-10-20", kind: "regular" },
       { property_id: "u1", cleaning_date: "2026-12-02", kind: "move_out" },
     ]);
     await runCleaningSchedule(supabase);
     expect(inserted).toEqual([{ property_id: "u1", cleaning_date: "2026-11-24" }]);
+  });
+
+  it("skips a regular due early in the move-out month, even weeks before it", async () => {
+    const { supabase, inserted } = fakeSupabase([
+      // Next regular would be 12-06; the move-out is 12-28, same month.
+      { property_id: "u1", cleaning_date: "2026-11-01", kind: "regular" },
+      { property_id: "u1", cleaning_date: "2026-12-28", kind: "move_out" },
+    ]);
+    await runCleaningSchedule(supabase);
+    expect(inserted).toEqual([]);
   });
 
   it("does not add a cleaning when a regular one is already booked", async () => {

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayISO, addDaysISO } from "@/lib/date";
-import { CLEANING_CADENCE_DAYS, MOVE_OUT_COVERS_DAYS } from "@/lib/cleaning";
+import { CLEANING_CADENCE_DAYS, moveOutMonthStart } from "@/lib/cleaning";
 
 /**
  * Keep the 35-day cadence rolling. For every unit that has been scheduled at
@@ -9,14 +9,14 @@ import { CLEANING_CADENCE_DAYS, MOVE_OUT_COVERS_DAYS } from "@/lib/cleaning";
  * later. Units that have never been scheduled are skipped — the operator sets
  * the first date.
  *
- * A booked move-out cleaning only replaces the regular one when it lands no
- * more than MOVE_OUT_COVERS_DAYS after the regular due date (or before it):
- * then the move-out is the unit's next cleaning and the cadence re-anchors to
- * it once it passes. A move-out booked further out must not pause the
- * cadence, so it doesn't count as "upcoming" and doesn't set the last date.
- * Past move-out cleanings still count as the unit's last cleaning. The same
- * window decides which regular cleanings a move-out booking clears (see
- * handleAvailableFromChange in notifications.ts).
+ * A booked move-out cleaning is the unit's regular cleaning for its month:
+ * no separate regular cleaning is booked in the move-out month (or later),
+ * and once the move-out cleaning passes the cadence re-anchors to it (next
+ * regular = move-out + 35). Regular cleanings in earlier months keep rolling,
+ * so a move-out booked far ahead doesn't pause the unit. Future move-outs
+ * don't count as "upcoming" or as the last cleaning; past ones count as the
+ * last cleaning. Booking a move-out clears regular cleanings by the same rule
+ * (see handleAvailableFromChange in notifications.ts).
  */
 export async function runCleaningSchedule(supabase: SupabaseClient) {
   const today = todayISO();
@@ -57,10 +57,10 @@ export async function runCleaningSchedule(supabase: SupabaseClient) {
     if (hasUpcoming.has(propertyId)) continue; // already has a next cleaning
     let next = addDaysISO(last, CLEANING_CADENCE_DAYS);
     while (next < today) next = addDaysISO(next, CLEANING_CADENCE_DAYS);
-    // The move-out lands close enough to (or before) the regular due date to
-    // be this cycle's cleaning.
+    // In (or after) the move-out month the move-out cleaning is the regular
+    // cleaning, so don't book a separate one.
     const moveOut = nextMoveOut.get(propertyId);
-    if (moveOut && moveOut <= addDaysISO(next, MOVE_OUT_COVERS_DAYS)) continue;
+    if (moveOut && next >= moveOutMonthStart(moveOut)) continue;
     inserts.push({ property_id: propertyId, cleaning_date: next });
   }
 
