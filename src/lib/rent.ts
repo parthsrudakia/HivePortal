@@ -43,6 +43,13 @@ export type LedgerTenancy = {
   move_out_date: string | null;
   monthly_rent: number | string;
   first_month_rent: number | string | null;
+  /**
+   * Rent billed in the move-out month instead of the monthly rate (room
+   * transfers prorate the old room's last month by days stayed). Required for
+   * the same reason as paused_at: a forgotten select must not bill a full
+   * month on one page and the prorated amount on another.
+   */
+  last_month_rent: number | string | null;
   security_deposit: number | string | null;
   /**
    * When set, the tenancy is paused: months that BEGIN on or after this
@@ -148,6 +155,32 @@ export function rateForMonthISO(
 }
 
 /**
+ * Rent billed for one ledger month. The move-out month bills
+ * last_month_rent when set (it covers only the days actually stayed, so it
+ * wins even when the tenancy also started that month); the tenancy's real
+ * first month bills first_month_rent, but only when that month is inside the
+ * ledger window — a tenancy predating the anchor bills its first counted
+ * month at the regular rate. Every other month bills the rate in effect.
+ */
+function monthCharge(
+  idx: number,
+  startIdx: number,
+  anchorIdx: number,
+  t: LedgerTenancy,
+  rentChanges: RentChange[],
+): number {
+  if (
+    t.move_out_date &&
+    t.last_month_rent !== null &&
+    idx === monthIndex(t.move_out_date)
+  )
+    return num(t.last_month_rent);
+  if (idx === startIdx && startIdx >= anchorIdx && t.first_month_rent !== null)
+    return num(t.first_month_rent);
+  return rateForMonth(idx, t, rentChanges);
+}
+
+/**
  * Cumulative rent owed from the anchor (or the tenancy's start month, if that
  * is later) through the current month, capped at the move-out month. Each
  * month bills the rate in effect that month (see rateForMonth), so a rent
@@ -175,13 +208,7 @@ function rentDue(
     // Paused tenancies accrue nothing for months that begin on/after the
     // pause date; a month already underway when the pause landed stays billed.
     if (pausedDay && firstOfMonthISO(idx) >= pausedDay) continue;
-    // The tenancy's real first month gets first_month_rent — but only when
-    // that month is inside the ledger window. If the tenancy predates the
-    // anchor, the first counted month is just a regular monthly charge.
-    total +=
-      idx === startIdx && startIdx >= anchorIdx && t.first_month_rent !== null
-        ? num(t.first_month_rent)
-        : rateForMonth(idx, t, rentChanges);
+    total += monthCharge(idx, startIdx, anchorIdx, t, rentChanges);
   }
   return total;
 }
@@ -382,10 +409,7 @@ export function buildLedgerEntries(
   const pausedDay = t.paused_at ? t.paused_at.slice(0, 10) : null;
   for (let idx = effStart; t.start_date <= todayIso && idx <= end; idx++) {
     if (pausedDay && firstOfMonthISO(idx) >= pausedDay) continue;
-    const amount =
-      idx === startIdx && startIdx >= anchorIdx && t.first_month_rent !== null
-        ? num(t.first_month_rent)
-        : rateForMonth(idx, t, rentChanges);
+    const amount = monthCharge(idx, startIdx, anchorIdx, t, rentChanges);
     rows.push({
       id: `rent-${idx}`,
       date: firstOfMonthISO(idx),

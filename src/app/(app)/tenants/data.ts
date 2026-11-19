@@ -34,6 +34,7 @@ export type ActiveTenancyRow = {
   id: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -54,7 +55,7 @@ export const getActiveTenancies = cache(async () => {
   return supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, tenant_id,
+      `id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at, tenant_id,
        tenants(id, full_name, email, phone),
        rooms(id, room_number,
              properties(id, building_name, street_address, unit_number)),
@@ -83,7 +84,7 @@ export const getEndedTenancies = cache(async () => {
   return supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at,
        balance_dismissed_at, room_id,
        tenants(id, full_name),
        rooms(room_number, pending_tenant,
@@ -142,6 +143,7 @@ export const getTenantsReminderInfo = cache(async () => {
  * What's owed for a single tenancy in the given rent cycle.
  *  • Tenancy starts after this month → 0 (shouldn't happen here since we
  *    only fetch active tenancies, but defensive).
+ *  • Move-out month AND tenancy has last_month_rent set → use that.
  *  • Starting month AND tenancy has first_month_rent set → use that.
  *  • Otherwise → monthly_rent (full month).
  */
@@ -152,8 +154,20 @@ function dueForMonth(
   monthStart: string,
   monthEnd: string,
   today: string,
+  moveOutDate: string | null,
+  lastMonthRent: number | null,
 ): number {
   if (startDate > monthEnd || startDate > today) return 0;
+  // Move-out month with a prorated last month (room transfers) — the ledger
+  // bills that instead of a full month (rent.ts monthCharge). The cycle is
+  // named for the month its 26th falls in.
+  if (
+    moveOutDate &&
+    lastMonthRent !== null &&
+    moveOutDate.slice(0, 7) === monthEnd.slice(0, 7)
+  ) {
+    return lastMonthRent;
+  }
   const isStartingMonth = startDate >= monthStart && startDate <= monthEnd;
   if (isStartingMonth && firstMonthRent !== null) {
     return firstMonthRent;
@@ -215,6 +229,8 @@ export const getRowsWithStatus = cache(async () => {
       monthStart,
       monthEnd,
       today,
+      row.move_out_date,
+      row.last_month_rent !== null ? Number(row.last_month_rent) : null,
     );
     // Balance is tenant-wide (every room this tenant has had), so a balance
     // from a previous room follows them into this one.

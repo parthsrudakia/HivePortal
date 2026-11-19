@@ -46,6 +46,7 @@ type Row = {
   tenant_id: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -82,7 +83,7 @@ const loadHistory = cache(async () => {
       supabase
         .from("tenancies")
         .select(
-          `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+          `id, tenant_id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at,
            balance_dismissed_at,
            tenants(id, full_name, email, phone),
            rooms(room_number,

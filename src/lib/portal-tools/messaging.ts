@@ -50,6 +50,7 @@ export async function sendBalanceReminders(args: {
     tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    last_month_rent: number | null;
     security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
@@ -74,7 +75,7 @@ export async function sendBalanceReminders(args: {
   let query = supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at,
+      `id, tenant_id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at,
        tenants(full_name, email, phone),
        rooms(properties(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,

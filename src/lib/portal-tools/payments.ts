@@ -86,7 +86,7 @@ export async function listMovedOutBalances() {
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, monthly_rent, first_month_rent, security_deposit,
+      `id, tenant_id, monthly_rent, first_month_rent, last_month_rent, security_deposit,
        start_date, move_out_date, paused_at, balance_dismissed_at,
        tenants(full_name),
        rooms(room_number, properties(building_name, street_address, unit_number)),
@@ -186,7 +186,7 @@ export async function settleMovedOutBalance(args: { tenancy_id: string }) {
   const { data: t } = await supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, status, monthly_rent, first_month_rent, security_deposit,
+      `id, tenant_id, status, monthly_rent, first_month_rent, last_month_rent, security_deposit,
        start_date, move_out_date, paused_at,
        tenants(full_name),
        payments(amount, paid_on, payment_type)`,

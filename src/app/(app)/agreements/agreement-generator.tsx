@@ -240,6 +240,17 @@ export function AgreementGenerator({
         toast.success(
           `Agreement sent to ${recipientEmail.trim()} with a 48-hour signing link.`,
         );
+        // An existing tenant's agreement books a room transfer.
+        const t = res.transfer;
+        if (t?.status === "transferred") {
+          if (t.warning) toast.warning(`${t.summary} ${t.warning}`, { duration: 15000 });
+          else toast.success(t.summary, { duration: 10000 });
+        } else if (t?.status === "failed") {
+          toast.error(
+            `This is an existing tenant, but the room transfer could not be booked: ${t.error}. Transfer them from their tenant page.`,
+            { duration: 15000 },
+          );
+        }
       } else {
         toast.error(res.error ?? "Failed to send the agreement.");
       }

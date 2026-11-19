@@ -29,6 +29,7 @@ type Tenancy = {
   id: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -97,7 +98,7 @@ export async function GET(
       supabase
         .from("tenancies")
         .select(
-          `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, status,
+          `id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at, status,
            rooms(room_number, properties(building_name, street_address, unit_number))`,
         )
         .eq("tenant_id", id)

@@ -191,7 +191,7 @@ export async function loadTenancyNetBalance(
     supabase
       .from("tenancies")
       .select(
-        `id, tenant_id, room_id, status, monthly_rent, first_month_rent,
+        `id, tenant_id, room_id, status, monthly_rent, first_month_rent, last_month_rent,
          security_deposit, start_date, move_out_date, paused_at,
          payments(amount, paid_on, payment_type)`,
       )
@@ -282,6 +282,7 @@ type TenantLedgerRow = {
   move_out_date: string | null;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   security_deposit: number | null;
   paused_at: string | null;
   rooms:
@@ -334,7 +335,7 @@ export const fetchTenantLedgers = cache(async (
         .from("tenancies")
         .select(
           `id, tenant_id, status, start_date, move_out_date, monthly_rent,
-           first_month_rent, security_deposit, paused_at,
+           first_month_rent, last_month_rent, security_deposit, paused_at,
            rooms(room_number, properties(building_name, street_address, unit_number)),
            payments(id, amount, paid_on, payment_type, notes)`,
           { count: "exact" },
