@@ -102,20 +102,45 @@ describe("formatNag", () => {
   it("combines open changes into one line and tags only who is missing", () => {
     delete process.env.NEXT_PUBLIC_SITE_URL;
     const text = formatNag([
-      { id: 1, lines: [], created_at: "", pending: [grace] },
-      { id: 2, lines: [], created_at: "", pending: [grace, mary] },
+      { id: 1, kind: "inventory", lines: [], created_at: "", pending: [grace] },
+      { id: 2, kind: "inventory", lines: [], created_at: "", pending: [grace, mary] },
     ]);
     expect(text).toBe(
       "🔔 <b>Reminder</b>\n2 inventory changes still need your ads updated. " +
         "Check the portal for what changed and update your ads to match.\n\n" +
-        '👉 <a href="tg://user?id=200">Grace</a> @mary_h — react or reply “done” once updated.',
+        '👉 <a href="tg://user?id=200">Grace</a> @mary_h — react or reply “done” once done.',
     );
   });
 
   it("speaks of a single change in the singular", () => {
-    const text = formatNag([{ id: 1, lines: [], created_at: "", pending: [gian] }]);
+    const text = formatNag([{ id: 1, kind: "inventory", lines: [], created_at: "", pending: [gian] }]);
     expect(text).toContain("An inventory change still needs your ads updated.");
-    expect(text).toContain("👉 @gian — react or reply “done” once updated.");
+    expect(text).toContain("👉 @gian — react or reply “done” once done.");
+  });
+});
+
+describe("formatNag with scheduled reminders", () => {
+  it("repeats a reminder's own text and bullets it alongside inventory changes", () => {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    const text = formatNag([
+      { id: 1, kind: "inventory", lines: [], created_at: "", pending: [grace] },
+      { id: 2, kind: "reminder", lines: ["Refresh the FB &amp; Zillow listings"], created_at: "", pending: [mary] },
+    ]);
+    expect(text).toBe(
+      "🔔 <b>Reminder</b>\n" +
+        "• An inventory change still needs your ads updated. Check the portal for what changed and update your ads to match.\n" +
+        "• “Refresh the FB &amp; Zillow listings”\n\n" +
+        '👉 <a href="tg://user?id=200">Grace</a> @mary_h — react or reply “done” once done.',
+    );
+  });
+
+  it("shows a lone reminder without a bullet", () => {
+    const text = formatNag([
+      { id: 3, kind: "reminder", lines: ["Post the weekend open house"], created_at: "", pending: [gian] },
+    ]);
+    expect(text).toBe(
+      "🔔 <b>Reminder</b>\n“Post the weekend open house”\n\n👉 @gian — react or reply “done” once done.",
+    );
   });
 });
 

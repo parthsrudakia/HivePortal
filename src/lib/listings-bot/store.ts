@@ -138,6 +138,8 @@ export type ReminderRow = {
   schedule: Schedule;
   include: ReminderInclude;
   enabled: boolean;
+  /** Tag the reminder list and follow up until they confirm. */
+  needs_confirmation: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
   last_error: string | null;
@@ -145,4 +147,4 @@ export type ReminderRow = {
 };
 
 export const REMINDER_COLUMNS =
-  "id, message, schedule, include, enabled, next_run_at, last_run_at, last_error, fail_count";
+  "id, message, schedule, include, enabled, needs_confirmation, next_run_at, last_run_at, last_error, fail_count";

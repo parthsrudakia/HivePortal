@@ -127,33 +127,67 @@ function portalLine(): string {
  * being asked to act.
  */
 export function formatChangeNotice(members: Member[]): string {
-  const who = members.map(mention).join(" ");
   return (
     `📋 <b>Inventory updated</b>\n${portalLine()}\n\n` +
-    (who
-      ? `👉 ${who} — react or reply “done” once your ads are updated.`
-      : "👉 React or reply “done” once your ads are updated.")
+    confirmCallout(members, "once your ads are updated")
   );
 }
 
+/** The "tag + react or reply done" line that asks for a confirmation. */
+export function confirmCallout(members: Member[], when = "once done"): string {
+  const who = members.map(mention).join(" ");
+  return who
+    ? `👉 ${who} — react or reply “done” ${when}.`
+    : `👉 React or reply “done” ${when}.`;
+}
+
+export type TaskKind = "inventory" | "reminder";
+
 export type OpenTask = {
   id: number;
+  kind: TaskKind;
   lines: string[];
   created_at: string;
   pending: Member[];
 };
 
-/** The combined reminder for every open change, tagging who is missing. */
+const MAX_REMINDER_LINE = 120;
+
+/**
+ * The combined follow-up for everything still open, tagging who is missing.
+ * Inventory changes are only counted (details live in the portal); a
+ * scheduled reminder that needs confirmation is repeated by its own text.
+ */
 export function formatNag(tasks: OpenTask[]): string {
   const everyone = new Map<number, Member>();
   for (const t of tasks) for (const m of t.pending) everyone.set(m.id, m);
-  const what =
-    tasks.length === 1
-      ? "An inventory change still needs your ads updated."
-      : `${tasks.length} inventory changes still need your ads updated.`;
+  const changes = tasks.filter((t) => t.kind === "inventory").length;
+  const reminders = tasks.filter((t) => t.kind === "reminder");
+
+  const what: string[] = [];
+  if (changes > 0) {
+    what.push(
+      (changes === 1
+        ? "An inventory change still needs your ads updated."
+        : `${changes} inventory changes still need your ads updated.`) +
+        ` ${portalLine()}`,
+    );
+  }
+  for (const r of reminders) {
+    // Lines are stored escaped; cut on the raw text so no entity is split.
+    const raw = (r.lines[0] ?? "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+    const cut =
+      raw.length > MAX_REMINDER_LINE ? `${raw.slice(0, MAX_REMINDER_LINE).trimEnd()}…` : raw;
+    what.push(`“${escapeHtml(cut)}”`);
+  }
+  const body =
+    what.length === 1 ? what[0] : what.map((w) => `• ${w}`).join("\n");
   return (
-    `🔔 <b>Reminder</b>\n${what} ${portalLine()}\n\n` +
-    `👉 ${[...everyone.values()].map(mention).join(" ")} — react or reply “done” once updated.`
+    `🔔 <b>Reminder</b>\n${body}\n\n` +
+    confirmCallout([...everyone.values()])
   );
 }
 
@@ -303,17 +337,36 @@ async function nagNextAt(db: BotDb): Promise<string | null> {
   return data.nag_next_at;
 }
 
-/** Record a change post as a task and make sure a reminder is scheduled. */
-export async function recordChangeTask(
+/**
+ * Record a post that needs confirmation (an inventory change, or a firing of
+ * a reminder set to need it) as a task, and make sure a follow-up is
+ * scheduled. A reminder's new firing replaces its previous unconfirmed one.
+ */
+export async function recordTask(
   db: BotDb,
   chatId: number,
   lines: string[],
   messageIds: number[],
+  opts: { kind?: TaskKind; reminderId?: number } = {},
 ): Promise<void> {
   const now = new Date();
+  const kind = opts.kind ?? "inventory";
+  if (opts.reminderId !== undefined) {
+    await db
+      .from("listing_bot_tasks")
+      .update({ done_at: now.toISOString() })
+      .eq("reminder_id", opts.reminderId)
+      .is("done_at", null);
+  }
   const { data: task, error } = await db
     .from("listing_bot_tasks")
-    .insert({ chat_id: chatId, lines, created_at: now.toISOString() })
+    .insert({
+      chat_id: chatId,
+      lines,
+      kind,
+      reminder_id: opts.reminderId ?? null,
+      created_at: now.toISOString(),
+    })
     .select("id")
     .single<{ id: number }>();
   if (error || !task) throw new Error(`task insert failed: ${error?.message}`);
@@ -323,7 +376,7 @@ export async function recordChangeTask(
       messageIds.map((message_id) => ({
         chat_id: chatId,
         message_id,
-        kind: "change",
+        kind: kind === "inventory" ? "change" : "reminder",
         task_ids: [task.id],
       })),
     );
@@ -477,11 +530,11 @@ export async function recordReaction(
 export async function openTasks(db: BotDb, chatId: number): Promise<OpenTask[]> {
   const { data: tasks, error } = await db
     .from("listing_bot_tasks")
-    .select("id, lines, created_at")
+    .select("id, kind, lines, created_at")
     .eq("chat_id", chatId)
     .is("done_at", null)
     .order("created_at", { ascending: true })
-    .returns<{ id: number; lines: string[]; created_at: string }[]>();
+    .returns<{ id: number; kind: TaskKind; lines: string[]; created_at: string }[]>();
   if (error) throw new Error(`tasks read failed: ${error.message}`);
   if (!tasks || tasks.length === 0) return [];
 

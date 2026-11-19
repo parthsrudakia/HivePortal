@@ -113,7 +113,7 @@ const ADMIN_HELP =
   "In the team group I post every inventory change so the listing ads get updated, plus any reminders you set up here.\n\n" +
   "<b>Setup:</b> add me to the team group, then send /setgroup there.\n\n" +
   "<b>Then just tell me what you want, e.g.</b>\n" +
-  "• Remind the team every Monday at 10am to refresh the Facebook listings\n" +
+  "• Remind the team every Monday at 10am to refresh the Facebook listings, and make them confirm\n" +
   "• Every weekday at 9, post the rooms still flagged for a listing action\n" +
   "• Move the Monday reminder to 11am\n" +
   "• Pause the daily reminder\n" +
@@ -282,7 +282,7 @@ async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
         : rows
             .map(
               (r) =>
-                `<b>#${r.id}</b>${r.enabled ? "" : " (paused)"} — ${escapeHtml(describeSchedule(r.schedule))}\n${escapeHtml(r.message)}`,
+                `<b>#${r.id}</b>${r.enabled ? "" : " (paused)"}${r.needs_confirmation ? " · needs confirmation" : ""} — ${escapeHtml(describeSchedule(r.schedule))}\n${escapeHtml(r.message)}`,
             )
             .join("\n\n"),
     );

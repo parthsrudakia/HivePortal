@@ -49,6 +49,7 @@ Here the admin manages what is posted to the team group:
 - After any change the system itself appends a "Confirmed by the system" block with exactly what was saved, so keep your own confirmation to one short line and do not restate ids, times or schedules yourself.
 - include: "open_actions" appends the live list of rooms still flagged for a listing action; "inventory" appends the full current inventory; "none" sends just the message. Pick the one that fits the reminder.
 - If the request is ambiguous about time of day or which days, ask before creating it rather than guessing.
+- needs_confirmation: true means the reminder tags the team members on the reminder list and asks them to react or reply "done"; whoever hasn't is re-tagged every 2 hours between 8 AM and 6 PM ET (resuming the next morning) until they do. false means it is just posted once, with no tags and no follow-ups. If the admin hasn't said which they want for a new reminder, ask ("Should the team confirm it, with follow-ups until they do?") before creating it — never assume.
 - To change or cancel, list the reminders first to get the id.
 - send_to_group posts a message to the group right now. Only use it when the admin clearly asks you to post something now, and post their wording — do not put inventory figures into it yourself.
 - Only claim something was created, changed, deleted or sent after the tool call for it succeeded.`;
@@ -66,6 +67,7 @@ function reminderView(r: ReminderRow) {
     message: r.message,
     schedule: describeSchedule(r.schedule),
     include: r.include,
+    needs_confirmation: r.needs_confirmation,
     enabled: r.enabled,
     next_run_at_eastern: r.next_run_at ? easternStamp(new Date(r.next_run_at)) : null,
     last_run_at_eastern: r.last_run_at ? easternStamp(new Date(r.last_run_at)) : null,
@@ -89,7 +91,10 @@ function reminderReceipt(verb: string, r: ReminderRow): string {
       ? `Next: ${escapeHtml(easternStamp(new Date(r.next_run_at)))} ET\n`
       : "") +
     `Text the team will see: “${escapeHtml(r.message)}”` +
-    (adds ? `\nFollowed by ${adds}.` : "")
+    (adds ? `\nFollowed by ${adds}.` : "") +
+    (r.needs_confirmation
+      ? "\nConfirmation: <b>required</b> — tags the reminder list; whoever hasn't reacted or replied “done” is re-tagged every 2 hours, 8 AM–6 PM ET."
+      : "\nConfirmation: not required — posted once, no follow-ups.")
   );
 }
 
@@ -127,6 +132,12 @@ const scheduleShape = {
     .optional()
     .describe('interval only: first firing date "YYYY-MM-DD" (default today)'),
 };
+
+const confirmSchema = z
+  .boolean()
+  .describe(
+    'true = tag the reminder list and re-tag anyone who has not reacted or replied "done" every 2 hours (8 AM-6 PM ET); false = post it once with no follow-ups',
+  );
 
 const includeSchema = z
   .enum(["none", "open_actions", "inventory"])
@@ -171,9 +182,10 @@ function adminTools(db: BotDb, adminUserId: number, receipts: string[]) {
       inputSchema: z.object({
         message: z.string().describe("The text the team reads in the group"),
         include: includeSchema,
+        needs_confirmation: confirmSchema,
         ...scheduleShape,
       }),
-      run: async ({ message, include, ...sched }) => {
+      run: async ({ message, include, needs_confirmation, ...sched }) => {
         if (!message.trim()) return fail("message is empty");
         const parsed = parseSchedule(sched, todayISO());
         if (!parsed.ok) return fail(parsed.error);
@@ -185,6 +197,7 @@ function adminTools(db: BotDb, adminUserId: number, receipts: string[]) {
             message: message.trim(),
             schedule: parsed.schedule,
             include,
+            needs_confirmation,
             next_run_at: next.toISOString(),
             created_by: adminUserId,
           })
@@ -207,17 +220,18 @@ function adminTools(db: BotDb, adminUserId: number, receipts: string[]) {
     betaZodTool({
       name: "update_reminder",
       description:
-        "Change a reminder's message, schedule, include, or pause/resume it (enabled). To change the schedule pass the full new schedule (kind + time + its fields).",
+        "Change a reminder's message, schedule, include, needs_confirmation, or pause/resume it (enabled). To change the schedule pass the full new schedule (kind + time + its fields).",
       inputSchema: z.object({
         id: z.number(),
         message: z.string().optional(),
         include: includeSchema.optional(),
+        needs_confirmation: confirmSchema.optional(),
         enabled: z.boolean().optional(),
         ...scheduleShape,
         kind: scheduleShape.kind.optional(),
         time: scheduleShape.time.optional(),
       }),
-      run: async ({ id, message, include, enabled, kind, time, ...rest }) => {
+      run: async ({ id, message, include, needs_confirmation, enabled, kind, time, ...rest }) => {
         const { data: existing, error: readErr } = await db
           .from("listing_bot_reminders")
           .select(REMINDER_COLUMNS)
@@ -232,6 +246,9 @@ function adminTools(db: BotDb, adminUserId: number, receipts: string[]) {
           patch.message = message.trim();
         }
         if (include !== undefined) patch.include = include;
+        if (needs_confirmation !== undefined) {
+          patch.needs_confirmation = needs_confirmation;
+        }
 
         let schedule = existing.schedule;
         if (kind !== undefined || time !== undefined) {
