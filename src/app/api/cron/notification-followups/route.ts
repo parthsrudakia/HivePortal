@@ -25,6 +25,7 @@ import { applyMonthlyLateFees } from "@/lib/late-fees";
 import { processExpiredTenancies } from "@/lib/tenancy-lifecycle";
 import { dedupeAgreementRequests } from "@/lib/agreement-dedupe";
 import { retrySignedAgreementAlerts } from "@/lib/agreement-notify";
+import { retryDepositRequestEmails } from "@/lib/application-deposit";
 import { flushChargeNotices } from "@/lib/charge-notices";
 import { runMailboxHealthCheck } from "@/lib/mailbox-health";
 import { runListingsBot } from "@/lib/listings-bot/run";
@@ -107,6 +108,17 @@ export async function GET(req: NextRequest) {
     }),
   );
 
+  // Same retry for the "send half the deposit" email that invited applicants
+  // get after signing; also expires application invites past 14 days.
+  const depositRequests = await retryDepositRequestEmails(supabase).catch(
+    (e) => ({
+      sent: 0,
+      pending: 0,
+      expired: 0,
+      error: e instanceof Error ? e.message : "deposit email retry failed",
+    }),
+  );
+
   // Safety net for the 5-minute-delayed "Other" charge emails, normally sent
   // within a minute of coming due by pg_cron → /api/cron/charge-notices.
   const chargeNotices = await flushChargeNotices().catch((e) => ({
@@ -129,6 +141,7 @@ export async function GET(req: NextRequest) {
     tenancyLifecycle,
     chargeNotices,
     signedAlerts,
+    depositRequests,
     lease,
     cleaningSchedule,
     flush,

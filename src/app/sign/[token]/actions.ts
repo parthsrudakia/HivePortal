@@ -23,6 +23,7 @@ import {
 import { logEmail } from "@/lib/email-log";
 import { notifyOperators } from "@/lib/telegram";
 import { autoAttachSignedAgreement } from "@/lib/agreement-attach";
+import { sendDepositRequestEmail } from "@/lib/application-deposit";
 import { revalidatePath } from "next/cache";
 
 // Matches the client-side cap in sign-form.tsx; server actions reject bodies
@@ -232,6 +233,15 @@ export async function submitSignature(
       .from("agreement_requests")
       .update({ operator_notified_at: new Date().toISOString() })
       .eq("id", request.id);
+  }
+
+  // Agreements from an application invite also ask for half the deposit to
+  // hold the room (once). If this send fails, the daily cron retries it.
+  const deposit = await sendDepositRequestEmail(supabase, request.id).catch(
+    (e) => ({ sent: false as const, reason: "send_failed" as const, error: String(e) }),
+  );
+  if (!deposit.sent && deposit.reason === "send_failed") {
+    console.warn(`[application-deposit] ${request.id}: ${deposit.error ?? "send failed"}`);
   }
 
   return { ok: true };

@@ -10,6 +10,7 @@ import {
   resendAgreementRequest,
 } from "@/lib/agreement-send";
 import { assertSection } from "@/lib/section-access";
+import { cancelInvite, createInvite } from "@/lib/application-invites";
 import { zUuidArray } from "@/lib/validation";
 
 // Matches the pad's client-side cap; a real signature PNG is a few KB.
@@ -378,5 +379,34 @@ export async function assignToTenancy(
 
   revalidatePath("/agreements");
   revalidatePath(`/tenants/${tenancy.tenant_id}`);
+  return { ok: true };
+}
+
+/** Email an applicant a link to apply for a room on hiveny.com, with the
+ *  rent and deposit set here (the applicant can't change them). */
+export async function createApplicationInvite(payload: {
+  propertyId: string;
+  roomId: string;
+  applicantEmail: string;
+  applicantName?: string;
+  rent: string;
+  securityDeposit: string;
+}): Promise<{ ok: boolean; error?: string; url?: string }> {
+  await assertSection("agreements");
+  const { supabase, user } = await requireUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const result = await createInvite(supabase, payload);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/agreements");
+  return { ok: true, url: result.url };
+}
+
+export async function cancelApplicationInvite(inviteId: string): Promise<ActionResult> {
+  await assertSection("agreements");
+  const { supabase, user } = await requireUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const result = await cancelInvite(supabase, inviteId);
+  if (!result.ok) return result;
+  revalidatePath("/agreements");
   return { ok: true };
 }

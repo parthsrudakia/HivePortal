@@ -195,6 +195,116 @@ export type Database = {
           },
         ]
       }
+      application_invites: {
+        Row: {
+          agreement_request_id: string | null
+          applicant_email: string
+          applicant_name: string | null
+          cancelled_at: string | null
+          claimed_at: string | null
+          created_at: string
+          created_by: string | null
+          deposit_email_sent_at: string | null
+          email_sent_at: string | null
+          expires_at: string
+          id: string
+          lease_end_date: string | null
+          lease_start_date: string | null
+          property_id: string
+          rent: number
+          room_id: string
+          security_deposit: number
+          status: string
+          tenant_email: string | null
+          tenant_name: string | null
+          tenant_phone: string | null
+          token: string
+          used_at: string | null
+          website_application_id: string | null
+        }
+        Insert: {
+          agreement_request_id?: string | null
+          applicant_email: string
+          applicant_name?: string | null
+          cancelled_at?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          deposit_email_sent_at?: string | null
+          email_sent_at?: string | null
+          expires_at?: string
+          id?: string
+          lease_end_date?: string | null
+          lease_start_date?: string | null
+          property_id: string
+          rent: number
+          room_id: string
+          security_deposit: number
+          status?: string
+          tenant_email?: string | null
+          tenant_name?: string | null
+          tenant_phone?: string | null
+          token: string
+          used_at?: string | null
+          website_application_id?: string | null
+        }
+        Update: {
+          agreement_request_id?: string | null
+          applicant_email?: string
+          applicant_name?: string | null
+          cancelled_at?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          deposit_email_sent_at?: string | null
+          email_sent_at?: string | null
+          expires_at?: string
+          id?: string
+          lease_end_date?: string | null
+          lease_start_date?: string | null
+          property_id?: string
+          rent?: number
+          room_id?: string
+          security_deposit?: number
+          status?: string
+          tenant_email?: string | null
+          tenant_name?: string | null
+          tenant_phone?: string | null
+          token?: string
+          used_at?: string | null
+          website_application_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_invites_agreement_request_id_fkey"
+            columns: ["agreement_request_id"]
+            isOneToOne: false
+            referencedRelation: "agreement_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_invites_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_invites_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_invites_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "v_room_occupancy"
+            referencedColumns: ["room_id"]
+          },
+        ]
+      }
       assistant_chat_messages: {
         Row: {
           content: Json
@@ -2663,6 +2773,7 @@ export type Database = {
         Returns: string
       }
       has_portal_permission: { Args: { perm: string }; Returns: boolean }
+      has_portal_section: { Args: { section: string }; Returns: boolean }
       ingest_reconciliation_statement: {
         Args: { p_deposits: Json; p_statement: Json }
         Returns: Json
