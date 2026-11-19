@@ -23,7 +23,11 @@
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { sendChatAction, type TgUser } from "@/lib/telegram";
+import {
+  sendChatAction,
+  setMessageReaction,
+  type TgUser,
+} from "@/lib/telegram";
 import {
   allMembers,
   displayName,
@@ -31,6 +35,7 @@ import {
   normalizeUsername,
   openTasks,
   recordReaction,
+  recordTextConfirmation,
   setRemind,
   upsertMember,
 } from "@/lib/listings-bot/acks";
@@ -60,7 +65,10 @@ type TgChat = {
 
 type TgMessage = {
   message_id: number;
+  /** Unix seconds. */
+  date: number;
   from?: TgUser;
+  reply_to_message?: { message_id: number; from?: TgUser };
   chat: TgChat;
   text?: string;
   migrate_to_chat_id?: number;
@@ -293,8 +301,12 @@ async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
 
 async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
   const chatId = msg.chat.id;
-  // The group gets commands only — no model replies. "/help@bot" → "/help"
-  if (!text.startsWith("/")) return;
+  // The group gets no model replies. Plain text is only checked for "ads
+  // updated" confirmations; commands follow. "/help@bot" → "/help"
+  if (!text.startsWith("/")) {
+    await handleConfirmation(db, msg, text);
+    return;
+  }
   const command = text.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
 
   if (command === "/setgroup") {
@@ -315,6 +327,27 @@ async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
       chatId,
       "I post inventory changes and reminders here. Once your ads match a change, react to that post.",
     );
+  }
+}
+
+/** Count "done"-style texts from the reminder list; 👍 the ones counted. */
+async function handleConfirmation(db: BotDb, msg: TgMessage, text: string) {
+  if (!(await isTeamGroup(db, msg.chat.id))) return;
+  const counted = await recordTextConfirmation(
+    db,
+    msg.chat.id,
+    {
+      message_id: msg.message_id,
+      date: msg.date,
+      text,
+      reply_to_message_id: msg.reply_to_message?.from?.is_bot
+        ? msg.reply_to_message.message_id
+        : undefined,
+    },
+    msg.from!,
+  );
+  if (counted > 0) {
+    await setMessageReaction(msg.chat.id, msg.message_id, "👍", botToken()!);
   }
 }
 

@@ -3,6 +3,7 @@ import {
   formatChangeNotice,
   formatNag,
   inNagWindow,
+  isConfirmation,
   mention,
   pendingFor,
   type Member,
@@ -66,14 +67,14 @@ describe("formatChangeNotice", () => {
     expect(formatChangeNotice([gian, grace])).toBe(
       "📋 <b>Inventory updated</b>\n" +
         'Check the <a href="https://portal.example.com/inventory">portal</a> for what changed and update your ads to match.\n\n' +
-        '👉 @gian <a href="tg://user?id=200">Grace</a> — react to this message once your ads are updated.',
+        '👉 @gian <a href="tg://user?id=200">Grace</a> — react or reply “done” once your ads are updated.',
     );
   });
   it("still asks for a reaction when nobody is known yet", () => {
     delete process.env.NEXT_PUBLIC_SITE_URL;
     expect(formatChangeNotice([])).toBe(
       "📋 <b>Inventory updated</b>\nCheck the portal for what changed and update your ads to match.\n\n" +
-        "👉 React to this message once your ads are updated.",
+        "👉 React or reply “done” once your ads are updated.",
     );
   });
 });
@@ -107,13 +108,42 @@ describe("formatNag", () => {
     expect(text).toBe(
       "🔔 <b>Reminder</b>\n2 inventory changes still need your ads updated. " +
         "Check the portal for what changed and update your ads to match.\n\n" +
-        '👉 <a href="tg://user?id=200">Grace</a> @mary_h — react here once done.',
+        '👉 <a href="tg://user?id=200">Grace</a> @mary_h — react or reply “done” once updated.',
     );
   });
 
   it("speaks of a single change in the singular", () => {
     const text = formatNag([{ id: 1, lines: [], created_at: "", pending: [gian] }]);
     expect(text).toContain("An inventory change still needs your ads updated.");
-    expect(text).toContain("👉 @gian — react here once done.");
+    expect(text).toContain("👉 @gian — react or reply “done” once updated.");
   });
+});
+
+describe("isConfirmation", () => {
+  it.each([
+    "done",
+    "Done ✅",
+    "ads updated",
+    "Updated the ads",
+    "I changed the price on FB",
+    "took them down",
+    "all set!",
+    "✅",
+    "👍",
+    "Posted the new listing",
+  ])("counts %j", (t) => expect(isConfirmation(t)).toBe(true));
+
+  it.each([
+    "not done yet",
+    "haven't updated it",
+    "will update later",
+    "which room changed?",
+    "done?",
+    "need to update the ads",
+    "can you check if it's posted",
+    "on it",
+    "ok",
+    "/help",
+    "",
+  ])("ignores %j", (t) => expect(isConfirmation(t)).toBe(false));
 });

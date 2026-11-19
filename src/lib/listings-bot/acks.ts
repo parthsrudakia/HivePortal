@@ -131,8 +131,8 @@ export function formatChangeNotice(members: Member[]): string {
   return (
     `📋 <b>Inventory updated</b>\n${portalLine()}\n\n` +
     (who
-      ? `👉 ${who} — react to this message once your ads are updated.`
-      : "👉 React to this message once your ads are updated.")
+      ? `👉 ${who} — react or reply “done” once your ads are updated.`
+      : "👉 React or reply “done” once your ads are updated.")
   );
 }
 
@@ -153,7 +153,7 @@ export function formatNag(tasks: OpenTask[]): string {
       : `${tasks.length} inventory changes still need your ads updated.`;
   return (
     `🔔 <b>Reminder</b>\n${what} ${portalLine()}\n\n` +
-    `👉 ${[...everyone.values()].map(mention).join(" ")} — react here once done.`
+    `👉 ${[...everyone.values()].map(mention).join(" ")} — react or reply “done” once updated.`
   );
 }
 
@@ -356,6 +356,85 @@ export async function recordPost(
     })),
   );
   if (error) throw new Error(`post insert failed: ${error.message}`);
+}
+
+const CONFIRM_WORDS =
+  /\b(done|updated|changed|fixed|posted|reposted|completed?|finished|removed|deleted|taken down|took (it |them |the ads? )?down|all set|good to go|taken care of|ads? (are |is )?(up|live))\b/i;
+const CONFIRM_EMOJI = /^[\s✅👍✔☑️👌🙌💯]+$/u;
+/** Anything that makes it a question, a promise or a "not yet". */
+const NOT_A_CONFIRMATION =
+  /\?|n['’]t\b|\b(not|never|yet|will|gonna|going to|later|soon|tomorrow|tonight|working on|need|needs|should|can you|could you|when|which|what|how|why|if)\b/i;
+
+/**
+ * Whether a group message reads as "I've updated my ads". Deliberately strict
+ * and rule-based (no model): a miss just means one more reminder, while a
+ * false "done" would silence reminders for ads nobody updated.
+ */
+export function isConfirmation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 160 || t.startsWith("/")) return false;
+  if (CONFIRM_EMOJI.test(t)) return true;
+  return CONFIRM_WORDS.test(t) && !NOT_A_CONFIRMATION.test(t);
+}
+
+/**
+ * A confirmation text from someone on the reminder list. A reply to a change
+ * post or reminder acknowledges what that message covered; a standalone
+ * message acknowledges every change posted before it that they still owe.
+ * Returns how many changes it acknowledged (0 = not counted).
+ */
+export async function recordTextConfirmation(
+  db: BotDb,
+  chatId: number,
+  msg: { message_id: number; date: number; text: string; reply_to_message_id?: number },
+  user: TgUser,
+): Promise<number> {
+  if (!isConfirmation(msg.text)) return 0;
+  const me = (await trackedMembers(db)).find((m) => Number(m.user_id) === user.id);
+  if (!me) return 0;
+
+  let taskIds: number[] = [];
+  if (msg.reply_to_message_id) {
+    const { data: post } = await db
+      .from("listing_bot_posts")
+      .select("task_ids")
+      .eq("chat_id", chatId)
+      .eq("message_id", msg.reply_to_message_id)
+      .maybeSingle<{ task_ids: number[] }>();
+    taskIds = post?.task_ids ?? [];
+  }
+  if (taskIds.length === 0) {
+    // Standalone (or a reply to something else): every open change posted
+    // before this message.
+    const sentAt = new Date(msg.date * 1000).toISOString();
+    const { data, error } = await db
+      .from("listing_bot_tasks")
+      .select("id")
+      .eq("chat_id", chatId)
+      .is("done_at", null)
+      .lte("created_at", sentAt)
+      .returns<{ id: number }[]>();
+    if (error) throw new Error(`tasks read failed: ${error.message}`);
+    taskIds = (data ?? []).map((t) => t.id);
+  }
+  if (taskIds.length === 0) return 0;
+
+  const { data: already } = await db
+    .from("listing_bot_acks")
+    .select("task_id")
+    .eq("user_id", user.id)
+    .in("task_id", taskIds)
+    .returns<{ task_id: number }[]>();
+  const have = new Set((already ?? []).map((a) => Number(a.task_id)));
+  const fresh = taskIds.filter((id) => !have.has(Number(id)));
+  if (fresh.length === 0) return 0;
+
+  const { error } = await db.from("listing_bot_acks").upsert(
+    fresh.map((task_id) => ({ task_id, user_id: user.id, message_id: msg.message_id })),
+    { onConflict: "task_id,user_id", ignoreDuplicates: true },
+  );
+  if (error) throw new Error(`ack insert failed: ${error.message}`);
+  return fresh.length;
 }
 
 /**
