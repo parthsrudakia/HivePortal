@@ -6,7 +6,8 @@
  * post, or to a reminder that covers it. Until everyone has, the bot posts
  * ONE combined reminder for all open tasks every 2 hours, only between 8 AM
  * and 6 PM Eastern (picking up again at 8 AM the next day), tagging just the
- * people who haven't reacted yet.
+ * people who haven't reacted yet. A reaction from a bot admin closes the
+ * task for everyone.
  *
  * Telegram gives bots no "list members" call, so the roster is learned from
  * group activity: messages, reactions, joins and leaves (see the webhook).
@@ -492,7 +493,10 @@ export async function recordTextConfirmation(
 
 /**
  * A reaction in the team group. Any reaction (added, not removed) to a change
- * post or reminder acknowledges every task that message covers.
+ * post or reminder acknowledges every task that message covers. A reaction
+ * from a bot admin (LISTINGS_BOT_ADMIN_IDS — Vineet) speaks for the whole
+ * team: those tasks are closed outright, so no more follow-ups go out for
+ * them even if teammates never reacted.
  */
 export async function recordReaction(
   db: BotDb,
@@ -520,6 +524,15 @@ export async function recordReaction(
     { onConflict: "task_id,user_id", ignoreDuplicates: true },
   );
   if (error) throw new Error(`ack insert failed: ${error.message}`);
+
+  if (adminIds().has(user.id)) {
+    const { error: closeErr } = await db
+      .from("listing_bot_tasks")
+      .update({ done_at: new Date().toISOString() })
+      .in("id", taskIds)
+      .is("done_at", null);
+    if (closeErr) throw new Error(`task close failed: ${closeErr.message}`);
+  }
   return taskIds.length;
 }
 
