@@ -5,12 +5,13 @@ import { UtilitiesApiDocs } from "@/components/docs/utilities-api-docs";
 import { CredentialsApiDocs } from "@/components/docs/credentials-api-docs";
 import { ProjectsApiDocs } from "@/components/docs/projects-api-docs";
 import { ProfitCostsApiDocs } from "@/components/docs/profit-costs-api-docs";
+import { SalesKpisApiDocs } from "@/components/docs/sales-kpis-api-docs";
 import { DevelopersTabs } from "./tabs";
 
 export const metadata = {
   title: "Developers — Hive",
   description:
-    "API reference for Hive's JSON APIs: tenants, inventory, utility statement intake, credentials, projects, and profit costs.",
+    "API reference for Hive's JSON APIs: tenants, inventory, utility statement intake, credentials, projects, profit costs, and sales KPIs.",
 };
 
 /**
@@ -124,6 +125,20 @@ export default function DevelopersPage() {
               month, plus company-wide costs. No tenant data.
             </p>
             <ProfitCostsApiDocs />
+          </>
+        }
+        salesKpis={
+          <>
+            <h2 className="mt-8 text-2xl tracking-tight text-ink">
+              Sales KPIs{" "}
+              <span className="font-display text-accent-text">API</span>
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Lead-handling KPIs from the sales agents, per listing account:
+              leads, reply speed, handoffs, follow-ups, threads waiting on us
+              and leads per address. Shown at the top of Inventory.
+            </p>
+            <SalesKpisApiDocs />
           </>
         }
       />

@@ -8,7 +8,8 @@ type TabKey =
   | "utilities"
   | "credentials"
   | "projects"
-  | "profitCosts";
+  | "profitCosts"
+  | "salesKpis";
 
 /**
  * Pill-tab switcher for the API references. The active tab is mirrored into
@@ -23,6 +24,7 @@ export function DevelopersTabs({
   credentials,
   projects,
   profitCosts,
+  salesKpis,
 }: {
   tenants: ReactNode;
   inventory: ReactNode;
@@ -30,6 +32,7 @@ export function DevelopersTabs({
   credentials: ReactNode;
   projects: ReactNode;
   profitCosts: ReactNode;
+  salesKpis: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("tenants");
 
@@ -43,7 +46,8 @@ export function DevelopersTabs({
       hash === "utilities" ||
       hash === "credentials" ||
       hash === "projects" ||
-      hash === "profitCosts"
+      hash === "profitCosts" ||
+      hash === "salesKpis"
     )
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync from the URL hash, which the server render cannot see
       setTab(hash);
@@ -76,6 +80,7 @@ export function DevelopersTabs({
         {pill("credentials", "Credentials API")}
         {pill("projects", "Projects API")}
         {pill("profitCosts", "Profit costs API")}
+        {pill("salesKpis", "Sales KPIs API")}
       </div>
       <div className={tab === "tenants" ? "" : "hidden"}>{tenants}</div>
       <div className={tab === "inventory" ? "" : "hidden"}>{inventory}</div>
@@ -83,6 +88,7 @@ export function DevelopersTabs({
       <div className={tab === "credentials" ? "" : "hidden"}>{credentials}</div>
       <div className={tab === "projects" ? "" : "hidden"}>{projects}</div>
       <div className={tab === "profitCosts" ? "" : "hidden"}>{profitCosts}</div>
+      <div className={tab === "salesKpis" ? "" : "hidden"}>{salesKpis}</div>
     </>
   );
 }

@@ -2013,6 +2013,111 @@ export type Database = {
           },
         ]
       }
+      sales_kpi_days: {
+        Row: {
+          account_key: string
+          account_name: string
+          agent: string
+          day: string
+          first_reply_hours: number | null
+          followed_up: number | null
+          handoffs: number | null
+          id: string
+          leads: number
+          leads_by_address: Json
+          never_answered: number | null
+          platform: string
+          replies_sent: number | null
+          updated_at: string
+        }
+        Insert: {
+          account_key: string
+          account_name: string
+          agent: string
+          day: string
+          first_reply_hours?: number | null
+          followed_up?: number | null
+          handoffs?: number | null
+          id?: string
+          leads?: number
+          leads_by_address?: Json
+          never_answered?: number | null
+          platform?: string
+          replies_sent?: number | null
+          updated_at?: string
+        }
+        Update: {
+          account_key?: string
+          account_name?: string
+          agent?: string
+          day?: string
+          first_reply_hours?: number | null
+          followed_up?: number | null
+          handoffs?: number | null
+          id?: string
+          leads?: number
+          leads_by_address?: Json
+          never_answered?: number | null
+          platform?: string
+          replies_sent?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_kpi_prefs: {
+        Row: {
+          filters: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          filters: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          filters?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sales_kpi_streams: {
+        Row: {
+          account_key: string
+          account_name: string
+          agent: string
+          id: string
+          last_received_at: string
+          never_answered_leads: Json
+          open_as_of: string | null
+          platform: string
+          waiting_on_us: Json
+        }
+        Insert: {
+          account_key: string
+          account_name: string
+          agent: string
+          id?: string
+          last_received_at?: string
+          never_answered_leads?: Json
+          open_as_of?: string | null
+          platform?: string
+          waiting_on_us?: Json
+        }
+        Update: {
+          account_key?: string
+          account_name?: string
+          agent?: string
+          id?: string
+          last_received_at?: string
+          never_answered_leads?: Json
+          open_as_of?: string | null
+          platform?: string
+          waiting_on_us?: Json
+        }
+        Relationships: []
+      }
       sms_log: {
         Row: {
           body: string | null
