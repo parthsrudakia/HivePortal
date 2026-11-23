@@ -103,6 +103,23 @@ export async function ProfitabilityNavLink({
   );
 }
 
+/** "KPIs" nav entry — sales_kpis permission only. */
+export async function KpisNavLink({
+  className,
+  iconClassName,
+}: {
+  className: string;
+  iconClassName: string;
+}) {
+  if (!(await hasPermission("sales_kpis"))) return null;
+  return (
+    <Link href="/kpis" data-label="KPIs" className={className}>
+      <NavIcon name="kpis" className={iconClassName} />
+      <span className="sidebar-label min-w-0 truncate">KPIs</span>
+    </Link>
+  );
+}
+
 /**
  * "Developers" nav entry (API docs) — developers permission only; renders
  * nothing for everyone else. Same slot pattern as ProfitabilityNavLink. Used in the

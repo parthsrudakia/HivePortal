@@ -2089,6 +2089,8 @@ export type Database = {
           agent: string
           id: string
           last_received_at: string
+          listings: Json
+          listings_as_of: string | null
           never_answered_leads: Json
           open_as_of: string | null
           platform: string
@@ -2100,6 +2102,8 @@ export type Database = {
           agent: string
           id?: string
           last_received_at?: string
+          listings?: Json
+          listings_as_of?: string | null
           never_answered_leads?: Json
           open_as_of?: string | null
           platform?: string
@@ -2111,6 +2115,8 @@ export type Database = {
           agent?: string
           id?: string
           last_received_at?: string
+          listings?: Json
+          listings_as_of?: string | null
           never_answered_leads?: Json
           open_as_of?: string | null
           platform?: string

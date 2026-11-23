@@ -57,10 +57,18 @@ export function SalesKpisApiDocs() {
         "followed_up": 2,
         "never_answered": 0,
         "leads_by_address": [
-          { "address": "Sample Tower", "leads": 3 },
-          { "address": "100 Example St", "leads": 1 }
+          { "address": "Sample St", "ad_ref": "100000001", "unit_style": "Private room", "leads": 3, "handoffs": 1 },
+          { "address": "100 Example St", "unit": "4B", "unit_style": "Studio", "leads": 1, "handoffs": 0 }
         ]
       }
+    ],
+    "listings": [
+      {
+        "address": "Sample St", "ad_ref": "100000001", "unit_style": "Private room",
+        "listed_on": "2025-12-20", "price": 1450,
+        "price_changes": [{ "date": "2026-01-03", "from": 1500, "to": 1450 }]
+      },
+      { "address": "100 Example St", "unit": "4B", "unit_style": "Studio", "listed_on": "2025-12-01", "deactivated_on": "2026-01-05" }
     ],
     "open": {
       "waiting_on_us": [
@@ -84,7 +92,9 @@ export function SalesKpisApiDocs() {
             ["days[].handoffs", "of that day's leads, how many were handed to Vinny by sharing his number", ""],
             ["days[].followed_up", "of that day's leads, how many got a follow-up", ""],
             ["days[].never_answered", "of that day's leads, how many have had no reply from us", ""],
-            ["days[].leads_by_address", "that day's leads per exact unit: [{ address, leads }]", ""],
+            ["days[].leads_by_address", "that day's leads per unit: [{ address, unit?, unit_style?, leads, handoffs? }] — address is the building, unit the exact unit or room, unit_style the kind of unit, handoffs that unit's leads given Vinny's number (qualified leads)", ""],
+            ["listings", "right now: every ad the account runs or ran — [{ address, unit?, unit_style?, listed_on, deactivated_on?, price?, price_changes? }]. listed_on = date last listed; deactivated_on = date taken down (leave out while live)", ""],
+            ["listings[].price_changes", "every price change with its date: [{ date, from?, to, note? }]. The portal compares leads per week before and after each", ""],
             ["open.waiting_on_us", "right now: threads where the renter wrote last and we haven't answered — [{ lead, days_waiting, address?, last_message_at? }]", ""],
             ["open.never_answered_leads", "right now: leads who never got a reply — [{ lead, address?, received_at? }]", ""],
             ["open.as_of", "optional ISO timestamp for the open lists; defaults to now", ""],
@@ -92,7 +102,8 @@ export function SalesKpisApiDocs() {
         />
         <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
           <li>
-            Send at least one of <Code>days</Code> or <Code>open</Code>.
+            Send at least one of <Code>days</Code>, <Code>open</Code> or{" "}
+            <Code>listings</Code>.
             Unknown fields are rejected and nothing is saved.
           </li>
           <li>
@@ -102,12 +113,24 @@ export function SalesKpisApiDocs() {
           </li>
           <li>
             <Code>open</Code> replaces the previous open lists for that account
-            + platform + agent; leave it out to keep them as they are.
+            + platform + agent; leave it out to keep them as they are.{" "}
+            <Code>listings</Code> works the same way, so always send the full
+            list including deactivated ads.
+          </li>
+          <li>
+            When the ad hides the building or unit number, send the street
+            name as <Code>address</Code> and the listing site&apos;s ad number
+            as <Code>ad_ref</Code> (on <Code>leads_by_address</Code>,{" "}
+            <Code>listings</Code> and the <Code>open</Code> lists). The portal
+            matches the ad number to the real unit from the ad links saved on
+            Inventory; an ad it can&apos;t find stays under the street name.
+            Use the same <Code>address</Code> + <Code>ad_ref</Code> (or{" "}
+            <Code>unit</Code>) for an ad everywhere.
           </li>
         </ul>
         <p>
           Response:{" "}
-          <Code>{`{ "account_name", "platform", "agent", "saved_days", "first_day", "last_day", "open_updated" }`}</Code>
+          <Code>{`{ "account_name", "platform", "agent", "saved_days", "first_day", "last_day", "open_updated", "listings_saved" }`}</Code>
           . A <Code>400</Code> lists the offending fields in{" "}
           <Code>issues</Code>.
         </p>
@@ -118,7 +141,8 @@ export function SalesKpisApiDocs() {
           Every account on file as <Code>{`{ "accounts": [ … ] }`}</Code>, each
           with <Code>account_name</Code>, <Code>platform</Code>,{" "}
           <Code>agent</Code>, <Code>last_day</Code> (the newest day stored),{" "}
-          <Code>open_as_of</Code> and <Code>last_received_at</Code>.{" "}
+          <Code>open_as_of</Code>, <Code>listings_as_of</Code> and{" "}
+          <Code>last_received_at</Code>.{" "}
           <Code>?account=</Code> narrows to one account name. An account
           that isn&apos;t listed has no history yet — send it all.
         </p>

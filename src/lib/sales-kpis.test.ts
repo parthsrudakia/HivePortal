@@ -26,8 +26,11 @@ import {
   filtersFromParams,
   filtersToParams,
   hasKpiParams,
+  inventoryResolver,
+  streetName,
   normalizeFilters,
   previousBounds,
+  priceChangeTrends,
   rangeBounds,
   weekdayAverages,
   sameFilters,
@@ -104,6 +107,7 @@ describe("POST /api/sales-kpis", () => {
     expect((await post(dup)).status).toBe(400);
     expect((await post({ account_name: "A", agent: "grok" })).status).toBe(400);
     expect((await post({ ...history, bogus: 1 })).status).toBe(400);
+    expect((await post({ ...history, listings: [{ address: "Sample Tower", listed_on: "soon" }] })).status).toBe(400);
     expect(mocks.upserts).toHaveLength(0);
   });
 
@@ -214,6 +218,82 @@ describe("aggregateByAccount", () => {
     );
     expect(v.neverAnsweredLeads.map((n) => n.lead)).toEqual(["New", "Undated"]);
     expect(v.neverAnswered).toBe(2);
+  });
+
+  it("breaks demand down per unit and joins the listing dates", () => {
+    const [v] = aggregateByAccount(
+      [
+        day({ day: "2026-11-10", leads: 5, leads_by_address: [
+          { address: "Sample Tower", unit: "Room 2", unit_style: "Private room", leads: 3, handoffs: 1 },
+          { address: "Sample Tower", unit: "Room 3", unit_style: "Private room", leads: 2, handoffs: 0 },
+        ] }),
+        day({ day: "2026-11-11", leads: 2, leads_by_address: [
+          { address: "sample tower", unit: "room 2", leads: 1, handoffs: 1 },
+          { address: "100 Example St", unit: "4B", unit_style: "Studio", leads: 1 },
+        ] }),
+      ],
+      [stream({ listings: [
+        { address: "Sample Tower", unit: "Room 2", listed_on: "2026-10-01", deactivated_on: "2026-10-20" },
+        { address: "Sample Tower", unit: "Room 2", listed_on: "2026-11-08", price: 1450 },
+        { address: "100 Example St", unit: "4B", listed_on: "2026-11-01", deactivated_on: "2026-11-11" },
+        { address: "9 Quiet Rd", listed_on: "2026-11-05" },
+      ] })],
+      { from: "2026-11-05", to: "2026-11-14" },
+      { today: "2026-11-14" },
+    );
+    expect(v.leadsByAddress).toEqual([{ address: "Sample Tower", leads: 6 }, { address: "100 Example St", leads: 1 }]);
+    expect(v.leadsByStyle).toEqual([{ style: "Private room", leads: 5 }, { style: "Studio", leads: 1 }]);
+    expect(v.units.map((u) => [u.address, u.unit, u.leads, u.qualified, u.daysOnMarket, u.leadsPerDay])).toEqual([
+      // Latest listing wins: listed Nov 8, still live → 6 days; 4 leads over Nov 8–14 (7 days).
+      ["Sample Tower", "Room 2", 4, 2, 6, 0.57],
+      ["Sample Tower", "Room 3", 2, 0, null, 1],
+      ["100 Example St", "4B", 1, null, 10, 0.14],
+      // Listed but no leads still shows, at zero.
+      ["9 Quiet Rd", null, 0, null, 9, 0],
+    ]);
+    expect(v.units[0]).toMatchObject({ style: "Private room", price: 1450, deactivatedOn: null });
+    // Plain { address, leads } with no listings keeps the unit table out of the way.
+    const [plain] = aggregateByAccount([day({ leads: 1, leads_by_address: [{ address: "Epic", leads: 1 }] })], [], { from: null, to: null });
+    expect(plain.units).toEqual([]);
+  });
+
+  it("compares leads per week before and after a price change", () => {
+    const rows = (unit: string, list: [string, number][]) =>
+      list.map(([d, leads]) => ({ day: d, leads_by_address: [{ address: "Sample Tower", unit, leads }] }));
+    const trends = priceChangeTrends(
+      [{
+        address: "Sample Tower", unit: "Room 2", listed_on: "2026-10-25",
+        price_changes: [{ date: "2026-11-01", from: 1500, to: 1450 }, { date: "2026-11-15", to: 1400 }],
+      }],
+      [
+        ...rows("Room 2", [["2026-10-26", 1], ["2026-10-31", 1], ["2026-11-01", 3], ["2026-11-10", 4], ["2026-11-16", 2]]),
+        ...rows("Room 3", [["2026-11-02", 9]]),
+      ],
+      "2026-11-17",
+    );
+    // Newest first. Second change: before = Nov 1–14 (cut at the first change), after = Nov 15–17.
+    expect(trends[0]).toMatchObject({ date: "2026-11-15", from: 1450, to: 1400, beforeDays: 14, beforePerWeek: 3.5, afterDays: 3, afterPerWeek: 4.7 });
+    // First change: before = Oct 25–31 (cut at listed_on), after = Nov 1–14 (cut at the next change).
+    expect(trends[1]).toMatchObject({ date: "2026-11-01", from: 1500, to: 1450, beforeDays: 7, beforePerWeek: 2, afterDays: 14, afterPerWeek: 3.5 });
+  });
+
+  it("matches what an ad shows to the real inventory room", () => {
+    const resolve = inventoryResolver([
+      { building_name: null, street_address: "85 Sample St", unit_number: "8E", room_number: "Room 2", ad_urls: ["https://www.example.com/rooms/downtown/103000001"] },
+      { building_name: "Sample Tower", street_address: "628 Example Avenue, Sampleville, NJ 07000", unit_number: "904", room_number: "1", ad_urls: [] },
+      { building_name: "Other Court", street_address: "505 Example Ave, Sampleville, NJ 07000", unit_number: "306", room_number: null, ad_urls: [] },
+    ]);
+    expect(streetName("628 Example Avenue, Sampleville, NJ 07000")).toBe("example ave");
+    expect(streetName("53-55 East 95th Street")).toBe("e 95 st");
+    // 1. Ad number saved on Inventory → the exact room, wherever the number was sent.
+    expect(resolve({ address: "Sample St", ad_ref: "103000001" })).toMatchObject({ address: "85 Sample St", unit: "Apt 8E · Room 2" });
+    expect(resolve({ address: "Downtown (ad 103000001, unit unconfirmed)" })).toMatchObject({ address: "85 Sample St", unit: "Apt 8E · Room 2" });
+    // 2. Unknown ad, but only one building on that street → the building; unit stays the ad.
+    expect(resolve({ address: "Sample Street", ad_ref: "103000009" })).toMatchObject({ address: "85 Sample St", unit: "Ad 103000009" });
+    // 3. Two buildings on the street → never guess.
+    expect(resolve({ address: "Example Ave", ad_ref: "103000009" })).toMatchObject({ address: "Example Ave", unit: "Ad 103000009" });
+    // A building name is kept as it is.
+    expect(resolve({ address: "Sample Tower" })).toEqual({ address: "Sample Tower", unit: undefined });
   });
 
   it("tells accounts apart by name, ignoring case and spacing", () => {

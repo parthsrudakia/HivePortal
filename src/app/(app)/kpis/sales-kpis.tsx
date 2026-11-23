@@ -1,21 +1,32 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
 import { todayISO } from "@/lib/date";
+import { one } from "@/lib/relations";
+import { addDaysISO } from "@/lib/date";
 import {
   BUILTIN_FILTERS,
+  ListingSchema,
   OVERALL,
   RANGES,
+  TREND_WINDOW_DAYS,
   aggregateByAccount,
   aggregateOverall,
   filtersFromParams,
   hasKpiParams,
+  inventoryResolver,
   normalizeFilters,
+  parseList,
   previousBounds,
+  priceChangeTrends,
   rangeBounds,
+  resolveDayRow,
+  resolveStreamRow,
   weekdayAverages,
   weekdayIndex,
   type AccountKpis,
   type DayRow,
+  type InventoryRoom,
+  type PriceTrend,
 } from "@/lib/sales-kpis";
 import { SalesKpiFilters } from "./sales-kpi-filters";
 import { SalesKpiChart } from "./sales-kpi-chart";
@@ -271,6 +282,185 @@ function DayTable({ a }: { a: AccountKpis }) {
   );
 }
 
+// ---------------------------------------------------------------- demand per unit
+
+type Trend = PriceTrend & { account: string };
+
+const fmtMoney = (n: number | null) => (n === null ? "—" : `$${n.toLocaleString()}`);
+
+/** Demand per unit and time on market: unit table, unit styles, price-change trend. */
+function Demand({ a, trends }: { a: AccountKpis; trends: Trend[] }) {
+  const overall = !!a.byAccount;
+  const maxUnit = Math.max(1, ...a.units.map((u) => u.leads));
+  const maxStyle = Math.max(1, ...a.leadsByStyle.map((x) => x.leads));
+  const th = "px-2 py-1 text-right font-medium";
+  const td = "px-2 py-1.5 text-right tabular-nums text-ink";
+
+  return (
+    <div className="mt-5 border-t border-stone/30 pt-4">
+      <h4 className="text-sm font-semibold text-ink">
+        Demand per unit{" "}
+        <span className="font-display text-lg font-normal italic text-accent-text">&amp; time on market</span>
+      </h4>
+      {a.units.length === 0 && trends.length === 0 ? (
+        <p className="mt-1 text-sm text-muted">
+          No per-unit detail sent yet. It appears once the agent sends a unit on each address line and the
+          account&apos;s listings.
+        </p>
+      ) : (
+        <>
+          {a.units.length > 0 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead className="text-[11px] uppercase tracking-wide text-muted">
+                  <tr>
+                    <th className="px-2 py-1 text-left font-medium">Unit</th>
+                    <th className="px-2 py-1 text-left font-medium">Style</th>
+                    <th className={th}>Leads</th>
+                    <th className={th}>Leads / day</th>
+                    <th className={th}>Qualified</th>
+                    <th className={th}>Price</th>
+                    <th className={th}>Listed</th>
+                    <th className={th}>Days on market</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.units.map((u) => (
+                    <tr key={`${u.account}|${u.address}|${u.unit}`} className="border-t border-stone/30">
+                      <td className="px-2 py-1.5">
+                        <div className="text-ink">
+                          {u.address}
+                          {u.unit && <span className="text-muted"> · {u.unit}</span>}
+                          {overall && <span className="text-accent-text"> · {u.account}</span>}
+                        </div>
+                        <div className="mt-1 h-1 w-28 rounded-full bg-warm/60" aria-hidden>
+                          <div className="h-1 rounded-full bg-accent" style={{ width: `${(u.leads / maxUnit) * 100}%` }} />
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-ink">{u.style ?? "—"}</td>
+                      <td className={`${td} font-semibold`}>{u.leads}</td>
+                      <td className={td}>{u.leadsPerDay === null ? "—" : u.leadsPerDay.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className={td}>
+                        {u.qualified === null ? "—" : u.qualified}
+                        {u.qualified !== null && u.leads > 0 && (
+                          <span className="text-muted"> ({Math.round((u.qualified / u.leads) * 100)}%)</span>
+                        )}
+                      </td>
+                      <td className={td}>{fmtMoney(u.price)}</td>
+                      <td className={td}>{u.listedOn ? fmtDay(u.listedOn) : "—"}</td>
+                      <td className={td}>
+                        {u.daysOnMarket === null ? (
+                          "—"
+                        ) : (
+                          <>
+                            {u.daysOnMarket}
+                            <span
+                              className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                                u.deactivatedOn ? "bg-warm text-muted" : "bg-green-100 text-green-800"
+                              }`}
+                            >
+                              {u.deactivatedOn ? `off ${fmtDay(u.deactivatedOn)}` : "live"}
+                            </span>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div>
+              <h5 className="text-xs uppercase tracking-wide text-muted">Leads by unit style</h5>
+              {a.leadsByStyle.length === 0 ? (
+                <p className="mt-1 text-sm text-muted">No unit styles sent.</p>
+              ) : (
+                <ul className="mt-1 space-y-1.5 text-sm">
+                  {a.leadsByStyle.map((x) => (
+                    <li key={x.style}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-ink">{x.style}</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-ink">{x.leads}</span>
+                      </div>
+                      <div className="mt-0.5 h-1 rounded-full bg-warm/60" aria-hidden>
+                        <div className="h-1 rounded-full bg-accent" style={{ width: `${(x.leads / maxStyle) * 100}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="md:col-span-2">
+              <h5 className="text-xs uppercase tracking-wide text-muted">Demand after a price change</h5>
+              {trends.length === 0 ? (
+                <p className="mt-1 text-sm text-muted">No price changes logged.</p>
+              ) : (
+                <div className="mt-1 overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead className="text-[11px] uppercase tracking-wide text-muted">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-medium">Unit</th>
+                        <th className={th}>Changed</th>
+                        <th className={th}>Price</th>
+                        <th className={th}>Leads / wk before</th>
+                        <th className={th}>Leads / wk after</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trends.map((t, i) => {
+                        const diff =
+                          t.beforePerWeek !== null && t.afterPerWeek !== null ? t.afterPerWeek - t.beforePerWeek : null;
+                        return (
+                          <tr key={i} className="border-t border-stone/30">
+                            <td className="px-2 py-1.5 text-ink">
+                              {t.address}
+                              {t.unit && <span className="text-muted"> · {t.unit}</span>}
+                              {overall && <span className="text-accent-text"> · {t.account}</span>}
+                            </td>
+                            <td className={td}>{fmtDay(t.date)}</td>
+                            <td className={td}>
+                              {t.from !== null && <span className="text-muted">{fmtMoney(t.from)} → </span>}
+                              {fmtMoney(t.to)}
+                            </td>
+                            <td className={td}>
+                              {fmtNum(t.beforePerWeek)}
+                              <span className="text-muted"> ({t.beforeDays}d)</span>
+                            </td>
+                            <td className={td}>
+                              {fmtNum(t.afterPerWeek)}
+                              <span className="text-muted"> ({t.afterDays}d)</span>
+                              {diff !== null && Math.abs(diff) >= 0.05 && (
+                                <span
+                                  className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                                    diff > 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                  }`}
+                                >
+                                  {diff > 0 ? "▲" : "▼"} {fmtNum(Math.abs(Math.round(diff * 10) / 10))}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[11px] text-muted">
+                    Up to {TREND_WINDOW_DAYS} days each side of the change; the days actually counted are in
+                    brackets, so judge a short &quot;after&quot; with care.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- account card
 
 function AccountCard({
@@ -278,12 +468,14 @@ function AccountCard({
   prev,
   compare,
   bounds,
+  trends,
 }: {
   a: AccountKpis;
   prev: AccountKpis | undefined;
   /** e.g. "previous 7 days"; null when the range has no previous period. */
   compare: string | null;
   bounds: Bounds;
+  trends: Trend[];
 }) {
   const overall = !!a.byAccount;
   // On the summary, say whose thread each row is.
@@ -469,6 +661,7 @@ function AccountCard({
           )}
         </div>
       </div>
+      <Demand a={a} trends={trends} />
       </details>
     </article>
   );
@@ -564,30 +757,12 @@ function TeamTable({ cards }: { cards: AccountKpis[] }) {
 
 // ---------------------------------------------------------------- shell
 
-/**
- * The whole panel is a native <details>, closed on every page load so the
- * inventory table stays the first thing on the page. React doesn't control
- * `open`, so it stays open while the filters re-render the panel.
- */
+/** One card: filters and account sub-cards all live inside it. */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <details className="group mt-4 rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
-      <summary className="flex cursor-pointer select-none list-none items-center gap-2 rounded-xl px-4 py-3 transition hover:bg-cream/60 [&::-webkit-details-marker]:hidden">
-        <span
-          className="text-xs text-accent-text transition-transform group-open:rotate-90"
-          aria-hidden
-        >
-          ▶
-        </span>
-        <h2 className="text-sm uppercase tracking-wide text-muted">
-          Sales <span className="font-display text-base normal-case italic text-accent-text">KPIs</span>
-        </h2>
-        <span className="ml-auto text-xs text-muted group-open:hidden">Show</span>
-        <span className="ml-auto hidden text-xs text-muted group-open:inline">Hide</span>
-      </summary>
-      {/* One card: filters and account sub-cards all live inside it. */}
-      <div className="border-t border-stone/30 px-4 pb-4 pt-1">{children}</div>
-    </details>
+    <section className="mt-6 rounded-xl bg-white px-4 pb-4 pt-1 shadow-sm ring-1 ring-stone/40">
+      {children}
+    </section>
   );
 }
 
@@ -604,14 +779,14 @@ function Notice({ children, error = false }: { children: React.ReactNode; error?
 }
 
 /**
- * Sales KPIs panel at the top of /inventory (render only for users with the
- * 'sales_kpis' permission; RLS enforces it too). Filters come from the k_*
+ * Sales KPIs panel, the body of /kpis (the page checks the 'sales_kpis'
+ * permission; RLS enforces it too). Filters come from the k_*
  * URL params, else the user's saved default, else the built-in default.
  * Built for judging the team and the days: every tile shows its change vs
  * the previous equally long period, each account gets a per-day chart with
  * weekday averages and a day-by-day table, and with several accounts a
  * comparison table ranks them side by side. A load failure is shown in the
- * panel instead of taking the inventory table down with it.
+ * panel rather than thrown.
  */
 export async function SalesKpis({ params }: { params: Params }) {
   const supabase = await createClient();
@@ -628,12 +803,36 @@ export async function SalesKpis({ params }: { params: Params }) {
   // Every account on file feeds the filter options; the cards use the filtered subset.
   const { data: allStreams, error: streamError } = await supabase
     .from("sales_kpi_streams")
-    .select("account_key, account_name, platform, agent, waiting_on_us, never_answered_leads, open_as_of, last_received_at")
+    .select("account_key, account_name, platform, agent, waiting_on_us, never_answered_leads, listings, open_as_of, last_received_at")
     .order("account_key");
 
   const error = prefError?.message ?? streamError?.message;
   if (error || !allStreams)
     return <Shell><Notice error>Couldn&apos;t load sales KPIs: {error ?? "no data"}</Notice></Shell>;
+
+  // Ads hide the building and unit numbers, so agents send the street name
+  // and the ad number; the ad links saved on Inventory name the real room.
+  const { data: adRows, error: adError } = await supabase
+    .from("room_ads")
+    .select("url, rooms!inner(room_number, properties!inner(building_name, street_address, unit_number))");
+  const { data: propRows, error: propError } = await supabase
+    .from("properties")
+    .select("building_name, street_address, unit_number");
+  if (adError || propError || !adRows || !propRows)
+    return (
+      <Shell>
+        <Notice error>Couldn&apos;t load inventory to match addresses: {(adError ?? propError)?.message ?? "no data"}</Notice>
+      </Shell>
+    );
+  const inventory: InventoryRoom[] = [
+    ...propRows.map((p) => ({ ...p, room_number: null, ad_urls: [] })),
+    ...adRows.flatMap((a) => {
+      const room = one(a.rooms);
+      const prop = room && one(room.properties);
+      return room && prop ? [{ ...prop, room_number: room.room_number, ad_urls: [a.url] }] : [];
+    }),
+  ];
+  const resolve = inventoryResolver(inventory);
 
   // "all" and OVERALL both span every account; anything else is one account.
   const oneAccount = filters.account !== "all" && filters.account !== OVERALL;
@@ -641,7 +840,7 @@ export async function SalesKpis({ params }: { params: Params }) {
     (!oneAccount || s.account_key === filters.account) &&
     (filters.platform === "all" || s.platform === filters.platform) &&
     (filters.agent === "all" || s.agent === filters.agent);
-  const streams = allStreams.filter(matches);
+  const streams = allStreams.filter(matches).map((s) => resolveStreamRow(s, resolve));
 
   // One read covers the range and the period before it (for the deltas).
   const loaded: DayRow[] = [];
@@ -661,7 +860,7 @@ export async function SalesKpis({ params }: { params: Params }) {
     const { data, error: dayError } = await q;
     if (dayError)
       return <Shell><Notice error>Couldn&apos;t load sales KPIs: {dayError.message}</Notice></Shell>;
-    loaded.push(...data);
+    loaded.push(...data.map((d) => resolveDayRow(d, resolve)));
     if (data.length < PAGE) break;
   }
   const days = bounds.from ? loaded.filter((d) => d.day >= bounds.from!) : loaded;
@@ -670,8 +869,44 @@ export async function SalesKpis({ params }: { params: Params }) {
   const summary = filters.account === OVERALL;
   // Per-account cards always exist (the comparison table needs them); the
   // Summary view shows the composite instead of the cards.
-  const cards = aggregateByAccount(days, streams, bounds);
-  const overall = summary ? aggregateOverall(days, streams, bounds) : null;
+  const today = todayISO();
+  const cards = aggregateByAccount(days, streams, bounds, { today });
+  const overall = summary ? aggregateByAccount(days, streams, bounds, { combine: true, today })[0] ?? null : null;
+
+  // Demand after a price change looks 4 weeks either side of each change,
+  // whatever date range is on screen, so it gets its own read.
+  const withChanges = streams
+    .map((s) => ({ s, listings: parseList(ListingSchema, s.listings).filter((l) => l.price_changes?.length) }))
+    .filter((x) => x.listings.length > 0);
+  const trendsByAccount = new Map<string, Trend[]>();
+  if (withChanges.length > 0) {
+    const dates = withChanges.flatMap((x) => x.listings.flatMap((l) => l.price_changes!.map((c) => c.date))).sort();
+    const trendDays: (Pick<DayRow, "account_key" | "platform" | "agent" | "day" | "leads_by_address">)[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error: trendError } = await supabase
+        .from("sales_kpi_days")
+        .select("account_key, platform, agent, day, leads_by_address")
+        .in("account_key", [...new Set(withChanges.map((x) => x.s.account_key))])
+        .gte("day", addDaysISO(dates[0], -TREND_WINDOW_DAYS))
+        .lte("day", addDaysISO(dates.at(-1)!, TREND_WINDOW_DAYS))
+        .order("day")
+        .order("id")
+        .range(from, from + PAGE - 1);
+      if (trendError)
+        return <Shell><Notice error>Couldn&apos;t load sales KPIs: {trendError.message}</Notice></Shell>;
+      trendDays.push(...data.map((d) => resolveDayRow(d, resolve)));
+      if (data.length < PAGE) break;
+    }
+    for (const { s, listings } of withChanges) {
+      const own = trendDays.filter(
+        (d) => d.account_key === s.account_key && d.platform === s.platform && d.agent === s.agent,
+      );
+      const list = trendsByAccount.get(s.account_key) ?? [];
+      list.push(...priceChangeTrends(listings, own, today).map((t) => ({ ...t, account: s.account_name })));
+      trendsByAccount.set(s.account_key, list);
+    }
+  }
+  const allTrends = [...trendsByAccount.values()].flat().sort((a, b) => b.date.localeCompare(a.date));
   // Previous period: no streams, so its "right now" lists stay out of it.
   const prevCards = new Map(
     (prevBounds ? aggregateByAccount(prevDays, [], prevBounds) : []).map((a) => [a.accountKey, a]),
@@ -724,7 +959,7 @@ export async function SalesKpis({ params }: { params: Params }) {
           ) : (
             <div className="mt-3 space-y-3">
               {overall && (
-                <AccountCard a={overall} prev={prevOverall} compare={compare} bounds={bounds} />
+                <AccountCard a={overall} prev={prevOverall} compare={compare} bounds={bounds} trends={allTrends} />
               )}
               {!oneAccount && cards.length > 1 && <TeamTable cards={cards} />}
               {!summary &&
@@ -735,6 +970,7 @@ export async function SalesKpis({ params }: { params: Params }) {
                     prev={prevCards.get(a.accountKey)}
                     compare={compare}
                     bounds={bounds}
+                    trends={trendsByAccount.get(a.accountKey) ?? []}
                   />
                 ))}
             </div>
