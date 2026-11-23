@@ -296,6 +296,15 @@ describe("aggregateByAccount", () => {
     expect(resolve({ address: "Sample Tower" })).toEqual({ address: "Sample Tower", unit: undefined });
   });
 
+  it("keeps only threads waiting 45 days or less", () => {
+    const [v] = aggregateByAccount(
+      [],
+      [stream({ waiting_on_us: [{ lead: "Old", days_waiting: 46 }, { lead: "Edge", days_waiting: 45 }, { lead: "New", days_waiting: 1 }] })],
+      { from: null, to: null },
+    );
+    expect(v.waitingOnUs.map((w) => w.lead)).toEqual(["Edge", "New"]);
+  });
+
   it("tells accounts apart by name, ignoring case and spacing", () => {
     expect(accountKey("  Vineet   SpareRoom ")).toBe(accountKey("vineet spareroom"));
   });

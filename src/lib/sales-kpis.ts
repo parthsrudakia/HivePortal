@@ -374,6 +374,9 @@ export type AccountKpis = {
   byAccount?: { name: string; leads: number }[];
 };
 
+/** "Waiting on us" stops at threads this old: past it the lead is gone, not waiting. */
+export const WAITING_MAX_DAYS = 45;
+
 /** jsonb columns arrive untyped; keep only well-formed entries. */
 export function parseList<T>(schema: z.ZodType<T>, raw: unknown): T[] {
   if (!Array.isArray(raw)) return [];
@@ -561,6 +564,7 @@ export function aggregateByAccount(
 
     const waiting = ss
       .flatMap((s) => parseList(WaitingThreadSchema, s.waiting_on_us).map((w) => ({ ...w, platform: s.platform, account: s.account_name })))
+      .filter((w) => w.days_waiting <= WAITING_MAX_DAYS)
       .sort((a, b) => b.days_waiting - a.days_waiting);
     const neverLeads = ss
       .flatMap((s) =>
@@ -602,8 +606,9 @@ export function aggregateByAccount(
       handoffRate: pct(handoffs, handoffLeads),
       followedUp: followLeads > 0 || followed > 0 ? followed : null,
       followUpRate: pct(followed, followLeads),
-      // Per-day counts when the agent sends them; otherwise the open list.
-      neverAnswered: neverSeen ? never : neverLeads.length > 0 ? neverLeads.length : null,
+      // Per-day counts and the named list measure the same thing; an agent
+      // that sent only some days undercounts per day, so take the larger.
+      neverAnswered: neverSeen ? Math.max(never, neverLeads.length) : neverLeads.length > 0 ? neverLeads.length : null,
       leadsByAddress: [...addr.values()].sort(
         (a, b) => b.leads - a.leads || a.address.localeCompare(b.address),
       ),
@@ -905,7 +910,7 @@ export const KPI_DICTIONARY = [
       {
         name: "Waiting on us",
         meaning:
-          "Threads where the renter wrote last and we haven't answered, with how many days each has waited. These are warm leads going cold.",
+          "Threads where the renter wrote last and we haven't answered, with how many days each has waited. These are warm leads going cold. Only threads waiting 45 days or less are shown.",
       },
       {
         name: "Never answered",

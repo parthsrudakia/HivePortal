@@ -9,6 +9,7 @@ import {
   OVERALL,
   RANGES,
   TREND_WINDOW_DAYS,
+  WAITING_MAX_DAYS,
   aggregateByAccount,
   aggregateOverall,
   filtersFromParams,
@@ -560,7 +561,7 @@ function AccountCard({
         <Stat
           label="Waiting on us now"
           value={fmtNum(a.waitingOnUs.length)}
-          hint={oldestWait !== null ? `oldest ${fmtNum(oldestWait)} days` : "all caught up"}
+          hint={oldestWait !== null ? `oldest ${fmtNum(oldestWait)} days · last ${WAITING_MAX_DAYS} days` : `none in the last ${WAITING_MAX_DAYS} days`}
           alert={(oldestWait ?? 0) >= 2}
         />
       </div>
@@ -669,30 +670,22 @@ function AccountCard({
 
 // ---------------------------------------------------------------- team comparison
 
-/** Side-by-side accounts; ★ marks the best value in each column. */
+/** Side-by-side accounts. */
 function TeamTable({ cards }: { cards: AccountKpis[] }) {
   const cols: {
     label: string;
     get: (a: AccountKpis) => number | null;
     suffix?: string;
-    lowerIsBetter?: boolean;
   }[] = [
     { label: "Leads", get: (a) => a.totalLeads },
     { label: "Leads / day", get: leadsPerDay },
-    { label: "First reply", get: (a) => a.firstReplyHours, suffix: " h", lowerIsBetter: true },
+    { label: "First reply", get: (a) => a.firstReplyHours, suffix: " h" },
     { label: "Replies / day", get: (a) => a.repliesPerDay },
     { label: "Handoff rate", get: (a) => a.handoffRate, suffix: "%" },
     { label: "Follow-up rate", get: (a) => a.followUpRate, suffix: "%" },
-    { label: "Never answered", get: (a) => a.neverAnswered, lowerIsBetter: true },
-    { label: "Waiting now", get: (a) => a.waitingOnUs.length, lowerIsBetter: true },
+    { label: "Never answered", get: (a) => a.neverAnswered },
+    { label: "Waiting now", get: (a) => a.waitingOnUs.length },
   ];
-  const best = cols.map((c) => {
-    const vals = cards.map(c.get).filter((v): v is number => v !== null);
-    if (vals.length < 2) return null;
-    const b = c.lowerIsBetter ? Math.min(...vals) : Math.max(...vals);
-    // No star when everyone ties.
-    return vals.every((v) => v === b) ? null : b;
-  });
   const maxLeads = Math.max(1, ...cards.map((a) => a.totalLeads));
   const rows = [...cards].sort((a, b) => b.totalLeads - a.totalLeads);
 
@@ -725,31 +718,18 @@ function TeamTable({ cards }: { cards: AccountKpis[] }) {
                     />
                   </div>
                 </td>
-                {cols.map((c, i) => {
-                  const v = c.get(a);
-                  const isBest = v !== null && best[i] !== null && v === best[i];
-                  return (
-                    <td
-                      key={c.label}
-                      className={`px-2 py-1.5 text-right tabular-nums text-ink ${isBest ? "font-semibold" : ""}`}
-                    >
-                      {isBest && (
-                        <span className="mr-1 text-accent-text" title="Best in this column">
-                          ★<span className="sr-only">best</span>
-                        </span>
-                      )}
-                      {fmtNum(v, c.suffix)}
-                    </td>
-                  );
-                })}
+                {cols.map((c) => (
+                  <td key={c.label} className="px-2 py-1.5 text-right tabular-nums text-ink">
+                    {fmtNum(c.get(a), c.suffix)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <p className="mt-2 text-[11px] text-muted">
-        ★ = best in that column (lowest for first reply, never answered and waiting). The bar under each
-        name is its share of the top account&apos;s leads.
+        The bar under each name is its share of the top account&apos;s leads.
       </p>
     </div>
   );
