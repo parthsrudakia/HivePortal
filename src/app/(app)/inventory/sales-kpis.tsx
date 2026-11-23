@@ -382,6 +382,16 @@ function AccountCard({
         </p>
       )}
 
+      {/* Tiles first; the chart, day views and lead lists open on demand. */}
+      <details className="group/more mt-3">
+        <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1.5 rounded-full border border-stone bg-white px-3 py-1 text-xs font-medium text-ink shadow-sm transition hover:border-accent hover:text-accent-text [&::-webkit-details-marker]:hidden">
+          <span className="group-open/more:hidden">Details</span>
+          <span className="hidden group-open/more:inline">Hide details</span>
+          <span className="text-accent-text transition-transform group-open/more:rotate-180" aria-hidden>
+            ▼
+          </span>
+        </summary>
+
       <SalesKpiChart daily={a.daily} from={bounds.from} to={bounds.to} />
       <DayInsights a={a} />
       <DayTable a={a} />
@@ -461,6 +471,7 @@ function AccountCard({
           )}
         </div>
       </div>
+      </details>
     </article>
   );
 }
@@ -555,14 +566,29 @@ function TeamTable({ cards }: { cards: AccountKpis[] }) {
 
 // ---------------------------------------------------------------- shell
 
+/**
+ * The whole panel is a native <details>, closed on every page load so the
+ * inventory table stays the first thing on the page. React doesn't control
+ * `open`, so it stays open while the filters re-render the panel.
+ */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="mt-4">
-      <h2 className="text-sm uppercase tracking-wide text-muted">
-        Sales <span className="font-display text-base normal-case italic text-accent-text">KPIs</span>
-      </h2>
+    <details className="group mt-4">
+      <summary className="flex cursor-pointer select-none list-none items-center gap-2 rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-stone/40 transition hover:ring-accent [&::-webkit-details-marker]:hidden">
+        <span
+          className="text-xs text-accent-text transition-transform group-open:rotate-90"
+          aria-hidden
+        >
+          ▶
+        </span>
+        <h2 className="text-sm uppercase tracking-wide text-muted">
+          Sales <span className="font-display text-base normal-case italic text-accent-text">KPIs</span>
+        </h2>
+        <span className="ml-auto text-xs text-muted group-open:hidden">Show</span>
+        <span className="ml-auto hidden text-xs text-muted group-open:inline">Hide</span>
+      </summary>
       {children}
-    </section>
+    </details>
   );
 }
 
