@@ -94,7 +94,12 @@ function fakeSend(fake: InstanceType<typeof FakeDb>, opts: { fail?: boolean; gat
       recipient_email: input.recipientEmail,
       created_at: new Date().toISOString(),
     });
-    return { ok: true as const, requestId: id, mailbox: "outlook" as const };
+    return {
+      ok: true as const,
+      requestId: id,
+      mailbox: "outlook" as const,
+      transfer: { status: "skipped" as const, reason: "new tenant (no profile with this email)" },
+    };
   });
 }
 
