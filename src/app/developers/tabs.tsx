@@ -2,7 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-type TabKey = "tenants" | "inventory" | "utilities" | "credentials" | "projects";
+type TabKey =
+  | "tenants"
+  | "inventory"
+  | "utilities"
+  | "credentials"
+  | "projects"
+  | "profitCosts"
+  | "salesKpis";
 
 /**
  * Pill-tab switcher for the API references. The active tab is mirrored into
@@ -16,12 +23,16 @@ export function DevelopersTabs({
   utilities,
   credentials,
   projects,
+  profitCosts,
+  salesKpis,
 }: {
   tenants: ReactNode;
   inventory: ReactNode;
   utilities: ReactNode;
   credentials: ReactNode;
   projects: ReactNode;
+  profitCosts: ReactNode;
+  salesKpis: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("tenants");
 
@@ -34,7 +45,9 @@ export function DevelopersTabs({
       hash === "inventory" ||
       hash === "utilities" ||
       hash === "credentials" ||
-      hash === "projects"
+      hash === "projects" ||
+      hash === "profitCosts" ||
+      hash === "salesKpis"
     )
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync from the URL hash, which the server render cannot see
       setTab(hash);
@@ -66,12 +79,16 @@ export function DevelopersTabs({
         {pill("utilities", "Utilities API")}
         {pill("credentials", "Credentials API")}
         {pill("projects", "Projects API")}
+        {pill("profitCosts", "Profit costs API")}
+        {pill("salesKpis", "Sales KPIs API")}
       </div>
       <div className={tab === "tenants" ? "" : "hidden"}>{tenants}</div>
       <div className={tab === "inventory" ? "" : "hidden"}>{inventory}</div>
       <div className={tab === "utilities" ? "" : "hidden"}>{utilities}</div>
       <div className={tab === "credentials" ? "" : "hidden"}>{credentials}</div>
       <div className={tab === "projects" ? "" : "hidden"}>{projects}</div>
+      <div className={tab === "profitCosts" ? "" : "hidden"}>{profitCosts}</div>
+      <div className={tab === "salesKpis" ? "" : "hidden"}>{salesKpis}</div>
     </>
   );
 }

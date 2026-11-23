@@ -240,6 +240,7 @@ async function SideListsSection() {
     id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    last_month_rent: number | null;
     security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;

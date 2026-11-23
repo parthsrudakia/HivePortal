@@ -264,6 +264,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       move_out_date: string | null;
       monthly_rent: number;
       first_month_rent: number | null;
+      last_month_rent: number | null;
       security_deposit: number | null;
       paused_at: string | null;
       payments: { amount: number; paid_on: string; payment_type: string }[];
@@ -273,7 +274,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
         supabase
           .from("tenancies")
           .select(
-            `id, tenant_id, start_date, move_out_date, monthly_rent, first_month_rent, security_deposit, paused_at,
+            `id, tenant_id, start_date, move_out_date, monthly_rent, first_month_rent, last_month_rent, security_deposit, paused_at,
              payments(amount, paid_on, payment_type)`,
           )
           .in("id", tenancyIds)

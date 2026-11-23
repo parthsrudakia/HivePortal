@@ -27,7 +27,9 @@ export async function applyMoveOut(
 
   const { data: tenancy, error: tenancyLoadError } = await supabase
     .from("tenancies")
-    .select("room_id, monthly_rent, start_date, move_out_date, status")
+    .select(
+      "room_id, monthly_rent, start_date, move_out_date, status, last_month_rent",
+    )
     .eq("id", tenancy_id)
     .single();
   if (tenancyLoadError || !tenancy) {
@@ -37,11 +39,16 @@ export async function applyMoveOut(
     return { error: "Move-out date cannot be before the tenancy start date." };
   }
 
+  // A prorated last month (room transfers) was priced for the old date; a
+  // new date drops it back to a normal month. The transfer re-sets it after.
   const { error: tenancyUpdateError } = await supabase
     .from("tenancies")
     .update({
       move_out_date,
       status: hasMovedOut ? "ended" : "active",
+      ...(move_out_date !== tenancy.move_out_date
+        ? { last_month_rent: null }
+        : {}),
     })
     .eq("id", tenancy_id);
   if (tenancyUpdateError) return { error: tenancyUpdateError.message };
@@ -91,6 +98,7 @@ export async function applyMoveOut(
         .update({
           move_out_date: tenancy.move_out_date,
           status: tenancy.status,
+          last_month_rent: tenancy.last_month_rent,
         })
         .eq("id", tenancy_id);
       return { error: roomError.message };

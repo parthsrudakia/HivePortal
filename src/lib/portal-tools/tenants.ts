@@ -24,7 +24,7 @@ export async function listActiveTenants(args: {
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, monthly_rent, first_month_rent, security_deposit, start_date,
+      `id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date,
        move_out_date, paused_at, tenant_id,
        tenants(id, full_name, email, phone),
        rooms(room_number,

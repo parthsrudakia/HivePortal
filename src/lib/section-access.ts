@@ -63,6 +63,12 @@ export const PORTAL_PERMISSIONS = [
     description: "API docs for the internal integrations.",
   },
   {
+    key: "sales_kpis",
+    label: "Sales KPIs",
+    description:
+      "Lead-handling KPIs from the sales agents, shown at the top of Inventory.",
+  },
+  {
     key: "assistant",
     label: "Ops assistant",
     description:

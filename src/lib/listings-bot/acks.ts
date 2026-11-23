@@ -6,7 +6,8 @@
  * post, or to a reminder that covers it. Until everyone has, the bot posts
  * ONE combined reminder for all open tasks every 2 hours, only between 8 AM
  * and 6 PM Eastern (picking up again at 8 AM the next day), tagging just the
- * people who haven't reacted yet.
+ * people who haven't reacted yet. A reaction from a bot admin closes the
+ * task for everyone.
  *
  * Telegram gives bots no "list members" call, so the roster is learned from
  * group activity: messages, reactions, joins and leaves (see the webhook).
@@ -127,33 +128,67 @@ function portalLine(): string {
  * being asked to act.
  */
 export function formatChangeNotice(members: Member[]): string {
-  const who = members.map(mention).join(" ");
   return (
     `📋 <b>Inventory updated</b>\n${portalLine()}\n\n` +
-    (who
-      ? `👉 ${who} — react to this message once your ads are updated.`
-      : "👉 React to this message once your ads are updated.")
+    confirmCallout(members, "once your ads are updated")
   );
 }
 
+/** The "tag + react or reply done" line that asks for a confirmation. */
+export function confirmCallout(members: Member[], when = "once done"): string {
+  const who = members.map(mention).join(" ");
+  return who
+    ? `👉 ${who} — react or reply “done” ${when}.`
+    : `👉 React or reply “done” ${when}.`;
+}
+
+export type TaskKind = "inventory" | "reminder";
+
 export type OpenTask = {
   id: number;
+  kind: TaskKind;
   lines: string[];
   created_at: string;
   pending: Member[];
 };
 
-/** The combined reminder for every open change, tagging who is missing. */
+const MAX_REMINDER_LINE = 120;
+
+/**
+ * The combined follow-up for everything still open, tagging who is missing.
+ * Inventory changes are only counted (details live in the portal); a
+ * scheduled reminder that needs confirmation is repeated by its own text.
+ */
 export function formatNag(tasks: OpenTask[]): string {
   const everyone = new Map<number, Member>();
   for (const t of tasks) for (const m of t.pending) everyone.set(m.id, m);
-  const what =
-    tasks.length === 1
-      ? "An inventory change still needs your ads updated."
-      : `${tasks.length} inventory changes still need your ads updated.`;
+  const changes = tasks.filter((t) => t.kind === "inventory").length;
+  const reminders = tasks.filter((t) => t.kind === "reminder");
+
+  const what: string[] = [];
+  if (changes > 0) {
+    what.push(
+      (changes === 1
+        ? "An inventory change still needs your ads updated."
+        : `${changes} inventory changes still need your ads updated.`) +
+        ` ${portalLine()}`,
+    );
+  }
+  for (const r of reminders) {
+    // Lines are stored escaped; cut on the raw text so no entity is split.
+    const raw = (r.lines[0] ?? "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+    const cut =
+      raw.length > MAX_REMINDER_LINE ? `${raw.slice(0, MAX_REMINDER_LINE).trimEnd()}…` : raw;
+    what.push(`“${escapeHtml(cut)}”`);
+  }
+  const body =
+    what.length === 1 ? what[0] : what.map((w) => `• ${w}`).join("\n");
   return (
-    `🔔 <b>Reminder</b>\n${what} ${portalLine()}\n\n` +
-    `👉 ${[...everyone.values()].map(mention).join(" ")} — react here once done.`
+    `🔔 <b>Reminder</b>\n${body}\n\n` +
+    confirmCallout([...everyone.values()])
   );
 }
 
@@ -303,17 +338,36 @@ async function nagNextAt(db: BotDb): Promise<string | null> {
   return data.nag_next_at;
 }
 
-/** Record a change post as a task and make sure a reminder is scheduled. */
-export async function recordChangeTask(
+/**
+ * Record a post that needs confirmation (an inventory change, or a firing of
+ * a reminder set to need it) as a task, and make sure a follow-up is
+ * scheduled. A reminder's new firing replaces its previous unconfirmed one.
+ */
+export async function recordTask(
   db: BotDb,
   chatId: number,
   lines: string[],
   messageIds: number[],
+  opts: { kind?: TaskKind; reminderId?: number } = {},
 ): Promise<void> {
   const now = new Date();
+  const kind = opts.kind ?? "inventory";
+  if (opts.reminderId !== undefined) {
+    await db
+      .from("listing_bot_tasks")
+      .update({ done_at: now.toISOString() })
+      .eq("reminder_id", opts.reminderId)
+      .is("done_at", null);
+  }
   const { data: task, error } = await db
     .from("listing_bot_tasks")
-    .insert({ chat_id: chatId, lines, created_at: now.toISOString() })
+    .insert({
+      chat_id: chatId,
+      lines,
+      kind,
+      reminder_id: opts.reminderId ?? null,
+      created_at: now.toISOString(),
+    })
     .select("id")
     .single<{ id: number }>();
   if (error || !task) throw new Error(`task insert failed: ${error?.message}`);
@@ -323,7 +377,7 @@ export async function recordChangeTask(
       messageIds.map((message_id) => ({
         chat_id: chatId,
         message_id,
-        kind: "change",
+        kind: kind === "inventory" ? "change" : "reminder",
         task_ids: [task.id],
       })),
     );
@@ -358,9 +412,91 @@ export async function recordPost(
   if (error) throw new Error(`post insert failed: ${error.message}`);
 }
 
+const CONFIRM_WORDS =
+  /\b(done|updated|changed|fixed|posted|reposted|completed?|finished|removed|deleted|taken down|took (it |them |the ads? )?down|all set|good to go|taken care of|ads? (are |is )?(up|live))\b/i;
+const CONFIRM_EMOJI = /^[\s✅👍✔☑️👌🙌💯]+$/u;
+/** Anything that makes it a question, a promise or a "not yet". */
+const NOT_A_CONFIRMATION =
+  /\?|n['’]t\b|\b(not|never|yet|will|gonna|going to|later|soon|tomorrow|tonight|working on|need|needs|should|can you|could you|when|which|what|how|why|if)\b/i;
+
+/**
+ * Whether a group message reads as "I've updated my ads". Deliberately strict
+ * and rule-based (no model): a miss just means one more reminder, while a
+ * false "done" would silence reminders for ads nobody updated.
+ */
+export function isConfirmation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 160 || t.startsWith("/")) return false;
+  if (CONFIRM_EMOJI.test(t)) return true;
+  return CONFIRM_WORDS.test(t) && !NOT_A_CONFIRMATION.test(t);
+}
+
+/**
+ * A confirmation text from someone on the reminder list. A reply to a change
+ * post or reminder acknowledges what that message covered; a standalone
+ * message acknowledges every change posted before it that they still owe.
+ * Returns how many changes it acknowledged (0 = not counted).
+ */
+export async function recordTextConfirmation(
+  db: BotDb,
+  chatId: number,
+  msg: { message_id: number; date: number; text: string; reply_to_message_id?: number },
+  user: TgUser,
+): Promise<number> {
+  if (!isConfirmation(msg.text)) return 0;
+  const me = (await trackedMembers(db)).find((m) => Number(m.user_id) === user.id);
+  if (!me) return 0;
+
+  let taskIds: number[] = [];
+  if (msg.reply_to_message_id) {
+    const { data: post } = await db
+      .from("listing_bot_posts")
+      .select("task_ids")
+      .eq("chat_id", chatId)
+      .eq("message_id", msg.reply_to_message_id)
+      .maybeSingle<{ task_ids: number[] }>();
+    taskIds = post?.task_ids ?? [];
+  }
+  if (taskIds.length === 0) {
+    // Standalone (or a reply to something else): every open change posted
+    // before this message.
+    const sentAt = new Date(msg.date * 1000).toISOString();
+    const { data, error } = await db
+      .from("listing_bot_tasks")
+      .select("id")
+      .eq("chat_id", chatId)
+      .is("done_at", null)
+      .lte("created_at", sentAt)
+      .returns<{ id: number }[]>();
+    if (error) throw new Error(`tasks read failed: ${error.message}`);
+    taskIds = (data ?? []).map((t) => t.id);
+  }
+  if (taskIds.length === 0) return 0;
+
+  const { data: already } = await db
+    .from("listing_bot_acks")
+    .select("task_id")
+    .eq("user_id", user.id)
+    .in("task_id", taskIds)
+    .returns<{ task_id: number }[]>();
+  const have = new Set((already ?? []).map((a) => Number(a.task_id)));
+  const fresh = taskIds.filter((id) => !have.has(Number(id)));
+  if (fresh.length === 0) return 0;
+
+  const { error } = await db.from("listing_bot_acks").upsert(
+    fresh.map((task_id) => ({ task_id, user_id: user.id, message_id: msg.message_id })),
+    { onConflict: "task_id,user_id", ignoreDuplicates: true },
+  );
+  if (error) throw new Error(`ack insert failed: ${error.message}`);
+  return fresh.length;
+}
+
 /**
  * A reaction in the team group. Any reaction (added, not removed) to a change
- * post or reminder acknowledges every task that message covers.
+ * post or reminder acknowledges every task that message covers. A reaction
+ * from a bot admin (LISTINGS_BOT_ADMIN_IDS — Vineet) speaks for the whole
+ * team: those tasks are closed outright, so no more follow-ups go out for
+ * them even if teammates never reacted.
  */
 export async function recordReaction(
   db: BotDb,
@@ -388,6 +524,15 @@ export async function recordReaction(
     { onConflict: "task_id,user_id", ignoreDuplicates: true },
   );
   if (error) throw new Error(`ack insert failed: ${error.message}`);
+
+  if (adminIds().has(user.id)) {
+    const { error: closeErr } = await db
+      .from("listing_bot_tasks")
+      .update({ done_at: new Date().toISOString() })
+      .in("id", taskIds)
+      .is("done_at", null);
+    if (closeErr) throw new Error(`task close failed: ${closeErr.message}`);
+  }
   return taskIds.length;
 }
 
@@ -398,11 +543,11 @@ export async function recordReaction(
 export async function openTasks(db: BotDb, chatId: number): Promise<OpenTask[]> {
   const { data: tasks, error } = await db
     .from("listing_bot_tasks")
-    .select("id, lines, created_at")
+    .select("id, kind, lines, created_at")
     .eq("chat_id", chatId)
     .is("done_at", null)
     .order("created_at", { ascending: true })
-    .returns<{ id: number; lines: string[]; created_at: string }[]>();
+    .returns<{ id: number; kind: TaskKind; lines: string[]; created_at: string }[]>();
   if (error) throw new Error(`tasks read failed: ${error.message}`);
   if (!tasks || tasks.length === 0) return [];
 

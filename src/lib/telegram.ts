@@ -105,6 +105,29 @@ export async function sendMessageIds(
   return ok ? ids : null;
 }
 
+/** React to a message as the bot (one emoji). False when Telegram refused. */
+export async function setMessageReaction(
+  chatId: number,
+  messageId: number,
+  emoji: string,
+  token: string,
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/bot${token}/setMessageReaction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: "emoji", emoji }],
+    }),
+  });
+  if (!res.ok) {
+    console.error("Telegram setMessageReaction failed:", await res.text());
+    return false;
+  }
+  return true;
+}
+
 export type TgUser = {
   id: number;
   is_bot?: boolean;

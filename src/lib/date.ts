@@ -46,6 +46,27 @@ export function proratedMonthRemainder(
   return Math.round(remainder * 100) / 100;
 }
 
+/**
+ * Prorated rent for the month containing `moveOutISO` (the tenant's last
+ * day, inclusive): monthly rent / days in that month × days stayed, rounded
+ * to the cent. Days stayed run from the 1st — or from `startISO` when the
+ * tenancy began that same month — through the move-out day. Used as the old
+ * room's last-month rent on a room transfer.
+ */
+export function proratedDaysStayed(
+  startISO: string,
+  moveOutISO: string,
+  monthlyRent: number,
+): number {
+  const [y, m, d] = moveOutISO.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const firstDay = startISO.slice(0, 7) === moveOutISO.slice(0, 7)
+    ? Number(startISO.slice(8, 10))
+    : 1;
+  const daysStayed = Math.max(0, d - firstDay + 1);
+  return Math.round(((monthlyRent / daysInMonth) * daysStayed) * 100) / 100;
+}
+
 /** Day of week for an ISO date: 0 = Sunday … 6 = Saturday. */
 export function isoDayOfWeek(iso: string): number {
   return new Date(iso + "T00:00:00Z").getUTCDay();

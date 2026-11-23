@@ -79,6 +79,7 @@ type TenancyForMonth = {
   paused_at: string | null;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   /** Rent-rate history so past months bill the rate in effect back then. */
   rent_changes: RentChange[];
 };
@@ -89,6 +90,14 @@ function dueForMonth(t: TenancyForMonth, monthStart: string, monthEnd: string): 
   if (t.move_out_date && t.move_out_date < monthStart) return 0;
   // Mirrors rentDue's pause freeze: paused months owe nothing.
   if (t.paused_at && monthStart >= t.paused_at.slice(0, 10)) return 0;
+  // Prorated move-out month (room transfers), as the ledger bills it.
+  if (
+    t.move_out_date &&
+    t.last_month_rent !== null &&
+    t.move_out_date.slice(0, 7) === monthEnd.slice(0, 7)
+  ) {
+    return Number(t.last_month_rent);
+  }
   const isStartingMonth =
     t.start_date >= monthStart && t.start_date <= monthEnd;
   if (isStartingMonth && t.first_month_rent !== null) {
@@ -104,6 +113,7 @@ type RawTenancy = {
   paused_at: string | null;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
 };
 
 type CollectionPayment = {
@@ -157,7 +167,7 @@ const loadFilteredHistory = cache(async (propertyIds?: string[]) => {
 
     const { data: tenancies } = await supabase
       .from("tenancies")
-      .select("id, start_date, move_out_date, paused_at, monthly_rent, first_month_rent")
+      .select("id, start_date, move_out_date, paused_at, monthly_rent, first_month_rent, last_month_rent")
       .in("room_id", roomIds);
 
     const tenancyIds = (tenancies ?? []).map((t) => t.id);
@@ -182,7 +192,7 @@ const loadFilteredHistory = cache(async (propertyIds?: string[]) => {
   const [{ data: tenancies }, payments] = await Promise.all([
     supabase
       .from("tenancies")
-      .select("id, start_date, move_out_date, paused_at, monthly_rent, first_month_rent"),
+      .select("id, start_date, move_out_date, paused_at, monthly_rent, first_month_rent, last_month_rent"),
     allLedgerRows("payments", (from, to) =>
       supabase
         .from("payments")

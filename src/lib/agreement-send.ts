@@ -22,6 +22,10 @@ import { logEmail } from "@/lib/email-log";
 import { composeFullAddress } from "@/lib/agreement-address";
 import { roomLabel } from "@/lib/room-label";
 import { maybeNudgeAgreement } from "@/lib/agreement-nudge";
+import {
+  transferOnAgreementSend,
+  type AgreementTransferOutcome,
+} from "@/lib/agreement-transfer";
 
 export const AGREEMENTS_BUCKET = "agreements";
 export const OPERATOR_SIGNATURE_PATH = "operator/signature.png";
@@ -251,7 +255,14 @@ export type AgreementSendInput = AgreementInput & {
 };
 
 export type AgreementSendResult =
-  | { ok: true; requestId: string; mailbox: "gmail" | "outlook"; diag?: unknown }
+  | {
+      ok: true;
+      requestId: string;
+      mailbox: "gmail" | "outlook";
+      /** An agreement to an existing tenant books a room transfer. */
+      transfer: AgreementTransferOutcome;
+      diag?: unknown;
+    }
   | { ok: false; error: string; diag?: unknown };
 
 type RequestRow = {
@@ -515,7 +526,23 @@ export async function sendAgreementRequest(
     { onConflict: "property_id" },
   );
 
-  return { ok: true, requestId: id, mailbox: channel, diag: result.diag };
+  // Existing tenant (matched by email) → they're moving rooms: end the old
+  // room the day before this agreement's move-in, prorate both months, and
+  // book the new tenancy. Best-effort and reported — the email already went.
+  const transfer = await transferOnAgreementSend({
+    recipientEmail: input.recipientEmail,
+    roomId: room.roomId,
+    leaseStartDate: input.leaseStartDate,
+    leaseEndDate: input.leaseEndDate,
+    rent: input.rent,
+    securityDeposit: input.securityDeposit,
+    proRateRent: input.proRateRent,
+  });
+  if (transfer.status === "failed") {
+    console.warn(`[agreement-transfer] ${id}: ${transfer.error}`);
+  }
+
+  return { ok: true, requestId: id, mailbox: channel, transfer, diag: result.diag };
 }
 
 /**

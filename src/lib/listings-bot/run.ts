@@ -18,7 +18,8 @@ import { nextRun } from "./schedule";
 import {
   formatChangeNotice,
   processAdNags,
-  recordChangeTask,
+  confirmCallout,
+  recordTask,
   taskLines,
   trackedMembers,
   type Member,
@@ -141,7 +142,7 @@ export async function processInventoryChanges(db: BotDb): Promise<ChangeResult> 
     await saveSnapshot(db, curr, removedIds);
     await clearDirty(db, state.dirty_at);
     try {
-      await recordChangeTask(db, state.group_chat_id, taskLines(diff), messageIds);
+      await recordTask(db, state.group_chat_id, taskLines(diff), messageIds);
     } catch (e) {
       console.error("Listings bot task record failed:", e);
     }
@@ -174,6 +175,39 @@ export async function reminderText(
         : formatInventoryList(rooms));
   }
   return text;
+}
+
+/**
+ * Post one reminder. One that needs confirmation also tags the reminder list
+ * and becomes a task, so whoever doesn't react or reply "done" is followed
+ * up every 2 hours. Returns the problem, or null when it posted.
+ */
+async function fireReminder(
+  db: BotDb,
+  chatId: number,
+  r: ReminderRow,
+): Promise<string | null> {
+  const text = await reminderText(db, r);
+  if (!r.needs_confirmation) {
+    return (await botSend(chatId, text)) ? null : "Telegram refused the message";
+  }
+  let team: Member[] = [];
+  try {
+    team = await trackedMembers(db);
+  } catch (e) {
+    console.error("Listings bot roster read failed:", e);
+  }
+  const ids = await botPost(chatId, `${text}\n\n${confirmCallout(team)}`);
+  if (!ids) return "Telegram refused the message";
+  try {
+    await recordTask(db, chatId, [escapeHtml(r.message)], ids, {
+      kind: "reminder",
+      reminderId: r.id,
+    });
+  } catch (e) {
+    console.error("Listings bot reminder task record failed:", e);
+  }
+  return null;
 }
 
 const MAX_REMINDER_RETRIES = 3;
@@ -220,8 +254,7 @@ export async function processDueReminders(
       problem = "no group linked — run /setgroup in the team group";
     } else {
       try {
-        const ok = await botSend(state.group_chat_id, await reminderText(db, r));
-        if (!ok) problem = "Telegram refused the message";
+        problem = await fireReminder(db, state.group_chat_id, r);
       } catch (e) {
         problem = e instanceof Error ? e.message : String(e);
       }

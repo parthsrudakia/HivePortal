@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { AgreementTransferOutcome } from "@/lib/agreement-transfer";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
 import {
@@ -95,7 +96,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  *  never comes from the browser. */
 export async function sendAgreementToTenant(
   payload: SendToTenantPayload,
-): Promise<ActionResult> {
+): Promise<ActionResult & { transfer?: AgreementTransferOutcome }> {
   await assertSection("agreements");
   const { user } = await requireUser();
   if (!user) return { ok: false, error: "Not signed in." };
@@ -162,7 +163,13 @@ export async function sendAgreementToTenant(
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/agreements");
-  return { ok: true };
+  if (result.transfer.status === "transferred") {
+    revalidatePath("/tenants");
+    revalidatePath("/tenants/history");
+    revalidatePath("/inventory");
+    revalidatePath("/properties");
+  }
+  return { ok: true, transfer: result.transfer };
 }
 
 /** Remove an entry from the tally (deal fell through, signed on paper, …). */

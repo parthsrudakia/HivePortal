@@ -69,6 +69,7 @@ type Tenancy = {
   id: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   security_deposit: number | null;
   start_date: string;
   move_out_date: string | null;
@@ -165,7 +166,7 @@ export default async function TenantDetailPage({
         supabase
           .from("tenancies")
           .select(
-            `id, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, pause_source, lease_start_date, lease_end_date, status,
+            `id, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at, pause_source, lease_start_date, lease_end_date, status,
              lease_pdf_path,
              rooms(id, room_number,
                    properties(id, building_name, street_address, unit_number))`,

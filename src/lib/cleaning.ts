@@ -1,6 +1,19 @@
 // Cleaning cadence — every 35 days.
 export const CLEANING_CADENCE_DAYS = 35;
 
+/**
+ * No regular cleaning in a move-out month: that month's regular cleaning IS
+ * the move-out cleaning (right after the tenant leaves), and the next regular
+ * one lands 35 days after it. Regular cleanings in earlier months keep
+ * running, so a move-out booked far ahead doesn't pause the unit.
+ *
+ * Returns the first day of the move-out's month ("YYYY-MM-01"): regular
+ * cleanings dated on or after it are replaced by the move-out cleaning.
+ */
+export function moveOutMonthStart(moveOutDate: string): string {
+  return `${moveOutDate.slice(0, 7)}-01`;
+}
+
 export type CleaningStatus = "never" | "overdue" | "due_soon" | "scheduled";
 
 export type CleaningSchedule = {

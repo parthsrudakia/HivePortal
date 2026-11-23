@@ -186,7 +186,9 @@ export function TransferDialog({
             </p>
             <ul className="mt-1 list-disc pl-4 leading-relaxed">
               <li>
-                Old room bills its full final month; the new room starts at{" "}
+                Old room bills only the days stayed in its final month
+                (monthly rent ÷ days in month × days stayed); the new room
+                starts at{" "}
                 {proratedHint !== null
                   ? `a prorated ${money(proratedHint)}`
                   : "the amount above"}

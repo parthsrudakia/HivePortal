@@ -34,8 +34,19 @@ export function expectedForMonth(
   monthEnd: string,
   rentChanges: RentChange[],
   pausedAt: string | null = null,
+  moveOutDate: string | null = null,
+  lastMonthRent: number | null = null,
 ): number {
   if (startDate > monthEnd) return 0;
+  // A prorated move-out month (room transfers) expects only the days stayed,
+  // same as the ledger's monthCharge.
+  if (
+    moveOutDate &&
+    lastMonthRent !== null &&
+    moveOutDate.slice(0, 7) === monthEnd.slice(0, 7)
+  ) {
+    return lastMonthRent;
+  }
   // Paused tenancies expect nothing for months that begin after the pause —
   // mirrors rentDue's freeze so recon and the ledger agree.
   if (pausedAt && monthStart >= pausedAt.slice(0, 10)) return 0;
@@ -57,7 +68,9 @@ export type TenancyInfo = {
   full_name: string;
   monthly_rent: number;
   first_month_rent: number | null;
+  last_month_rent: number | null;
   start_date: string;
+  move_out_date: string | null;
   paused_at: string | null;
   property_label: string | null;
   room_label: string | null;
@@ -91,6 +104,7 @@ export async function loadMonthTenancies(
     tenant_id: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    last_month_rent: number | null;
     start_date: string;
     move_out_date: string | null;
     paused_at: string | null;
@@ -100,7 +114,7 @@ export async function loadMonthTenancies(
   const { data, error } = await supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, monthly_rent, first_month_rent, start_date, move_out_date, paused_at,
+      `id, tenant_id, monthly_rent, first_month_rent, last_month_rent, start_date, move_out_date, paused_at,
        tenants(id, full_name, pays_as),
        rooms(room_number,
              properties(building_name, street_address, unit_number))`,
@@ -188,7 +202,10 @@ export async function loadMonthTenancies(
         monthly_rent: Number(t.monthly_rent),
         first_month_rent:
           t.first_month_rent != null ? Number(t.first_month_rent) : null,
+        last_month_rent:
+          t.last_month_rent != null ? Number(t.last_month_rent) : null,
         start_date: t.start_date,
+        move_out_date: t.move_out_date,
         paused_at: t.paused_at,
         property_label: property
           ? `${property.building_name?.trim() || property.street_address} Apt ${property.unit_number}`
@@ -371,6 +388,8 @@ export function computeMonthMatches(
       monthEnd,
       t.rent_changes,
       t.paused_at,
+      t.move_out_date,
+      t.last_month_rent,
     );
     const actual = (bankPaidByTenancy.get(t.id) ?? 0) + t.recorded_paid;
     const difference = actual - expected;

@@ -145,6 +145,10 @@ export async function sendAgreement(args: {
     recipient,
     signing_link_expires: "48h",
     signing_tally: "The tenant now appears in the /agreements signing tally until they sign online.",
+    // Recipient email matched an existing tenant → booked as a room transfer
+    // (old room ends the day before move-in, that month prorated). Report
+    // the summary / skip reason / error to the operator verbatim.
+    room_transfer: result.transfer,
     diag: result.diag,
   };
 }

@@ -982,6 +982,74 @@ export type Database = {
         }
         Relationships: []
       }
+      listing_bot_acks: {
+        Row: {
+          acked_at: string
+          message_id: number | null
+          task_id: number
+          user_id: number
+        }
+        Insert: {
+          acked_at?: string
+          message_id?: number | null
+          task_id: number
+          user_id: number
+        }
+        Update: {
+          acked_at?: string
+          message_id?: number | null
+          task_id?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_bot_acks_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "listing_bot_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      listing_bot_members: {
+        Row: {
+          active: boolean
+          first_name: string | null
+          first_seen_at: string
+          id: number
+          joined_at: string | null
+          last_name: string | null
+          remind: boolean
+          updated_at: string
+          user_id: number | null
+          username: string | null
+        }
+        Insert: {
+          active?: boolean
+          first_name?: string | null
+          first_seen_at?: string
+          id?: number
+          joined_at?: string | null
+          last_name?: string | null
+          remind?: boolean
+          updated_at?: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Update: {
+          active?: boolean
+          first_name?: string | null
+          first_seen_at?: string
+          id?: number
+          joined_at?: string | null
+          last_name?: string | null
+          remind?: boolean
+          updated_at?: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Relationships: []
+      }
       listing_bot_messages: {
         Row: {
           chat_id: number
@@ -1006,6 +1074,30 @@ export type Database = {
         }
         Relationships: []
       }
+      listing_bot_posts: {
+        Row: {
+          chat_id: number
+          created_at: string
+          kind: string
+          message_id: number
+          task_ids: number[]
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          kind: string
+          message_id: number
+          task_ids?: number[]
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          kind?: string
+          message_id?: number
+          task_ids?: number[]
+        }
+        Relationships: []
+      }
       listing_bot_reminders: {
         Row: {
           created_at: string
@@ -1017,6 +1109,7 @@ export type Database = {
           last_error: string | null
           last_run_at: string | null
           message: string
+          needs_confirmation: boolean
           next_run_at: string | null
           schedule: Json
         }
@@ -1030,6 +1123,7 @@ export type Database = {
           last_error?: string | null
           last_run_at?: string | null
           message: string
+          needs_confirmation?: boolean
           next_run_at?: string | null
           schedule: Json
         }
@@ -1043,6 +1137,7 @@ export type Database = {
           last_error?: string | null
           last_run_at?: string | null
           message?: string
+          needs_confirmation?: boolean
           next_run_at?: string | null
           schedule?: Json
         }
@@ -1072,6 +1167,7 @@ export type Database = {
           group_chat_id: number | null
           group_title: string | null
           id: boolean
+          nag_next_at: string | null
           processing_at: string | null
           seeded_at: string | null
           updated_at: string
@@ -1081,6 +1177,7 @@ export type Database = {
           group_chat_id?: number | null
           group_title?: string | null
           id?: boolean
+          nag_next_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
@@ -1090,11 +1187,53 @@ export type Database = {
           group_chat_id?: number | null
           group_title?: string | null
           id?: boolean
+          nag_next_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      listing_bot_tasks: {
+        Row: {
+          chat_id: number
+          created_at: string
+          done_at: string | null
+          id: number
+          kind: string
+          last_reminded_at: string | null
+          lines: string[]
+          reminder_id: number | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          done_at?: string | null
+          id?: number
+          kind?: string
+          last_reminded_at?: string | null
+          lines: string[]
+          reminder_id?: number | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          done_at?: string | null
+          id?: number
+          kind?: string
+          last_reminded_at?: string | null
+          lines?: string[]
+          reminder_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_bot_tasks_reminder_id_fkey"
+            columns: ["reminder_id"]
+            isOneToOne: false
+            referencedRelation: "listing_bot_reminders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       listing_bot_updates: {
         Row: {
@@ -1312,6 +1451,59 @@ export type Database = {
             columns: ["channel_id"]
             isOneToOne: false
             referencedRelation: "marketing_channels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profit_costs: {
+        Row: {
+          amount: number
+          cost_type: string
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          month: string
+          notes: string | null
+          property_id: string | null
+          ref: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          cost_type: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          month: string
+          notes?: string | null
+          property_id?: string | null
+          ref: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          cost_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          month?: string
+          notes?: string | null
+          property_id?: string | null
+          ref?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profit_costs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -1931,6 +2123,111 @@ export type Database = {
           },
         ]
       }
+      sales_kpi_days: {
+        Row: {
+          account_key: string
+          account_name: string
+          agent: string
+          day: string
+          first_reply_hours: number | null
+          followed_up: number | null
+          handoffs: number | null
+          id: string
+          leads: number
+          leads_by_address: Json
+          never_answered: number | null
+          platform: string
+          replies_sent: number | null
+          updated_at: string
+        }
+        Insert: {
+          account_key: string
+          account_name: string
+          agent: string
+          day: string
+          first_reply_hours?: number | null
+          followed_up?: number | null
+          handoffs?: number | null
+          id?: string
+          leads?: number
+          leads_by_address?: Json
+          never_answered?: number | null
+          platform?: string
+          replies_sent?: number | null
+          updated_at?: string
+        }
+        Update: {
+          account_key?: string
+          account_name?: string
+          agent?: string
+          day?: string
+          first_reply_hours?: number | null
+          followed_up?: number | null
+          handoffs?: number | null
+          id?: string
+          leads?: number
+          leads_by_address?: Json
+          never_answered?: number | null
+          platform?: string
+          replies_sent?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_kpi_prefs: {
+        Row: {
+          filters: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          filters: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          filters?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sales_kpi_streams: {
+        Row: {
+          account_key: string
+          account_name: string
+          agent: string
+          id: string
+          last_received_at: string
+          never_answered_leads: Json
+          open_as_of: string | null
+          platform: string
+          waiting_on_us: Json
+        }
+        Insert: {
+          account_key: string
+          account_name: string
+          agent: string
+          id?: string
+          last_received_at?: string
+          never_answered_leads?: Json
+          open_as_of?: string | null
+          platform?: string
+          waiting_on_us?: Json
+        }
+        Update: {
+          account_key?: string
+          account_name?: string
+          agent?: string
+          id?: string
+          last_received_at?: string
+          never_answered_leads?: Json
+          open_as_of?: string | null
+          platform?: string
+          waiting_on_us?: Json
+        }
+        Relationships: []
+      }
       sms_log: {
         Row: {
           body: string | null
@@ -2085,6 +2382,7 @@ export type Database = {
           created_at: string
           first_month_rent: number | null
           id: string
+          last_month_rent: number | null
           lease_end_date: string | null
           lease_end_reminded_30_at: string | null
           lease_end_reminded_at: string | null
@@ -2108,6 +2406,7 @@ export type Database = {
           created_at?: string
           first_month_rent?: number | null
           id?: string
+          last_month_rent?: number | null
           lease_end_date?: string | null
           lease_end_reminded_30_at?: string | null
           lease_end_reminded_at?: string | null
@@ -2131,6 +2430,7 @@ export type Database = {
           created_at?: string
           first_month_rent?: number | null
           id?: string
+          last_month_rent?: number | null
           lease_end_date?: string | null
           lease_end_reminded_30_at?: string | null
           lease_end_reminded_at?: string | null

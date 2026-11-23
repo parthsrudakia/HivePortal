@@ -13,6 +13,7 @@ const tenancy = (overrides: Partial<LedgerTenancy> = {}): LedgerTenancy => ({
   move_out_date: null,
   monthly_rent: 1_325,
   first_month_rent: null,
+  last_month_rent: null,
   security_deposit: null,
   paused_at: null,
   ...overrides,

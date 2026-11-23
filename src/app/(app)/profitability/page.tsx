@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -11,8 +12,10 @@ import {
   PROFIT_DATA_START,
   type ProfitCell,
 } from "@/lib/profitability";
-import { deleteLineItem } from "./actions";
+import { deleteLineItem, deleteMonthlyCompanyCost } from "./actions";
 import { LineItemForm } from "./line-item-form";
+import { CompanyCostForm } from "./company-cost-form";
+import { isMissingTable } from "@/lib/profit-costs";
 import { NetProfitChart, RevenueExpenseChart } from "./charts";
 
 export const dynamic = "force-dynamic";
@@ -78,9 +81,30 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
   // All figures come from the shared computation (also behind the Telegram
   // bot's get_profitability), so every consumer always agrees. The load runs
   // alongside the identity check; RLS still guards the reads themselves.
-  const [data] = await Promise.all([
+  type CompanyCostRow = {
+    id: string;
+    month: string;
+    label: string | null;
+    amount: number;
+    source: string;
+  };
+  const [data, companyCostsRes] = await Promise.all([
     loadProfitability(supabase, year, today),
+    // The monthly company costs list under the summary (manual + agent rows).
+    supabase
+      .from("profit_costs")
+      .select("id, month, label, amount, source")
+      .eq("cost_type", "company")
+      .gte("month", `${year}-01`)
+      .lte("month", `${year}-12`)
+      .order("month", { ascending: false })
+      .returns<CompanyCostRow[]>(),
   ]);
+  // Missing table (migration not applied yet) just shows an empty list; any
+  // other read failure errors out, the same as the totals would.
+  if (companyCostsRes.error && !isMissingTable(companyCostsRes.error))
+    throw new Error(`Company costs unavailable: ${companyCostsRes.error.message}`);
+  const companyCosts = companyCostsRes.data ?? [];
   if (!(await hasPermission("profitability"))) notFound();
   const props = data.units;
   const {
@@ -88,6 +112,7 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
     monthlyExpenses,
     monthlyNet,
     expenseSeries,
+    companyItems,
     unitRevenueYear,
     revenueItems,
     expenseItems,
@@ -259,13 +284,25 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                     </td>
                   </tr>
                   {expenseSeries.map((e) => (
-                    <tr key={e.key}>
-                      <td className="py-1.5 text-ink">{e.label}</td>
-                      <td className="py-1.5 text-right tabular-nums text-ink">
-                        {fmtMoney(e.yearly)}
-                      </td>
-                      <td />
-                    </tr>
+                    <Fragment key={e.key}>
+                      <tr>
+                        <td className="py-1.5 text-ink">{e.label}</td>
+                        <td className="py-1.5 text-right tabular-nums text-ink">
+                          {fmtMoney(e.yearly)}
+                        </td>
+                        <td />
+                      </tr>
+                      {e.key === "company" &&
+                        companyItems.map((c) => (
+                          <tr key={`company-${c.label}`}>
+                            <td className="py-1 pl-4 text-xs text-muted">{c.label}</td>
+                            <td className="py-1 text-right text-xs tabular-nums text-muted">
+                              {fmtMoney(c.yearly)}
+                            </td>
+                            <td />
+                          </tr>
+                        ))}
+                    </Fragment>
                   ))}
                   {expenseItems.map((i) => (
                     <tr key={i.id}>
@@ -315,6 +352,58 @@ export default async function ProfitabilityPage({ searchParams }: PageProps) {
                   Add a line item ({year})
                 </p>
                 <LineItemForm year={year} />
+              </div>
+
+              <div className="mt-5 border-t border-stone/40 pt-4">
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+                  Monthly company costs ({year})
+                </p>
+                <p className="mb-2 text-xs text-muted">
+                  Costs not tied to a unit, e.g. each month&apos;s Upwork
+                  total. They count under Company costs in that month.
+                </p>
+                <CompanyCostForm
+                  defaultMonth={
+                    year === currentYear ? today.slice(0, 7) : `${year}-12`
+                  }
+                />
+                {companyCosts.length > 0 && (
+                  <table className="mt-3 w-full text-xs">
+                    <tbody>
+                      {companyCosts.map((c) => (
+                        <tr key={c.id} className="border-t border-stone/30">
+                          <td className="py-1 text-muted tabular-nums">
+                            {MONTHS[Number(c.month.slice(5, 7)) - 1]}
+                          </td>
+                          <td className="py-1 text-ink">
+                            {c.label || "Other"}
+                            {c.source === "agent" && (
+                              <span className="ml-1 text-muted">(agent)</span>
+                            )}
+                          </td>
+                          <td className="py-1 text-right tabular-nums text-ink">
+                            {fmtMoney(Number(c.amount))}
+                          </td>
+                          <td className="w-8 text-right">
+                            {c.source === "manual" && (
+                              <form action={deleteMonthlyCompanyCost}>
+                                <input type="hidden" name="id" value={c.id} />
+                                <button
+                                  type="submit"
+                                  aria-label={`Delete ${c.label || "cost"}`}
+                                  title="Delete cost"
+                                  className="rounded-full px-1.5 text-muted hover:text-red-700"
+                                >
+                                  ×
+                                </button>
+                              </form>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
 

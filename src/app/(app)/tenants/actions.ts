@@ -31,6 +31,7 @@ import {
 } from "@/lib/balance-detail";
 import { updateTenancyRent } from "@/lib/rent-history";
 import { applyMoveOut } from "@/lib/move-out";
+import { transferTenant } from "@/lib/tenancy-transfer";
 import {
   createTenancyForTenant,
   findRoomClash,
@@ -1001,34 +1002,13 @@ export async function startNewTenancy(
 }
 
 // ----- Transfer an active tenant to a different room -----
-// Ends the current tenancy on the transfer date (the tenant's last day in
-// the old room) and starts a new tenancy in the destination, carrying the
-// old ledger's net position across as a settlement/adjustment pair so the
-// tenant owes (or is owed) the same total, just in one place.
+// The transfer itself (prorated last month in the old room, prorated first
+// month in the new one, balance carry, deposit difference) lives in
+// src/lib/tenancy-transfer.ts, shared with the agreement send path.
 
 export type TransferFormState =
   | { error?: string; warning?: string }
   | undefined;
-
-type TransferRoomRel = {
-  room_number: string | null;
-  properties:
-    | { building_name: string | null; street_address: string; unit_number: string }
-    | { building_name: string | null; street_address: string; unit_number: string }[]
-    | null;
-};
-
-const fmtUsd = (n: number) =>
-  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-function transferRoomLabel(room: TransferRoomRel | null): string {
-  if (!room) return "previous room";
-  const p = one(room.properties);
-  const unit = p
-    ? `${p.building_name?.trim() || p.street_address} Apt ${p.unit_number}`
-    : "—";
-  return `${unit} · ${room.room_number ?? "Room"}`;
-}
 
 export async function transferTenancy(
   _prev: TransferFormState,
@@ -1062,10 +1042,6 @@ export async function transferTenancy(
   const new_start_date = new_start_raw || addDaysISO(transfer_date, 1);
   if (!isValid(zIsoDate, new_start_date))
     return { error: "New start date must be YYYY-MM-DD." };
-  if (new_start_date <= transfer_date)
-    return {
-      error: "The new room's start date must be after the transfer date.",
-    };
   const new_monthly_rent = Number(new_rent_str);
   if (!Number.isFinite(new_monthly_rent) || new_monthly_rent <= 0)
     return { error: "Monthly rent must be a number greater than 0." };
@@ -1087,160 +1063,29 @@ export async function transferTenancy(
   )
     return { error: "Security deposit must be a non-negative number." };
 
-  // The active + no-move-out requirement doubles as the double-submit guard:
-  // a second submit finds the old tenancy already ending and aborts.
-  const { data: old } = await supabase
-    .from("tenancies")
-    .select(
-      `id, tenant_id, room_id, start_date, status, move_out_date, security_deposit,
-       rooms(room_number, properties(building_name, street_address, unit_number))`,
-    )
-    .eq("id", tenancy_id)
-    .maybeSingle();
-  if (!old || old.tenant_id !== tenant_id)
-    return { error: "Tenancy not found." };
-  if (old.status !== "active" || old.move_out_date)
-    return {
-      error:
-        "Only an active tenancy without a scheduled move-out can be transferred.",
-    };
-  if (old.room_id === dest_room_id)
-    return {
-      error:
-        "That's the tenant's current room — edit the rent in place instead.",
-    };
-  if (transfer_date < old.start_date)
-    return { error: "Transfer date cannot be before the tenancy start date." };
-
-  const { data: destRoom } = await supabase
-    .from("rooms")
-    .select(
-      "room_number, properties(building_name, street_address, unit_number)",
-    )
-    .eq("id", dest_room_id)
-    .maybeSingle();
-  if (!destRoom) return { error: "Destination room not found." };
-
-  // The deposit already held carries over physically, so the new room never
-  // re-charges it in full: only the DIFFERENCE between the old and new deposit
-  // posts (a top-up charge when it goes up, a credit when it goes down).
-  const old_deposit = Number(old.security_deposit ?? 0);
-  const dest_deposit = new_security_deposit ?? old_deposit;
-  const deposit_delta = Math.round((dest_deposit - old_deposit) * 100) / 100;
-
-  // 1) Create the new tenancy first: the worst partial state is a visible,
-  //    deletable upcoming tenancy — never a tenant with no tenancy. The
-  //    deposit carries physically, so no full deposit charge is posted.
-  const created = await createTenancyForTenant(supabase, {
+  const result = await transferTenant(supabase, {
+    tenancy_id,
     tenant_id,
-    room_id: dest_room_id,
-    start_date: new_start_date,
-    monthly_rent: new_monthly_rent,
-    first_month_rent:
-      first_month_rent === null && !new_start_date.endsWith("-01")
-        ? proratedMonthRemainder(new_start_date, new_monthly_rent)
-        : first_month_rent,
-    security_deposit: dest_deposit,
-    postDepositCharge: false,
+    dest_room_id,
+    transfer_date,
+    new_start_date,
+    new_monthly_rent,
+    first_month_rent,
+    new_security_deposit,
   });
-  if ("error" in created) return { error: created.error };
+  if (result.error !== undefined) return { error: result.error };
 
-  // 2) End the old tenancy (room release, available_from, cleaning record).
-  const ended = await applyMoveOut(supabase, tenancy_id, transfer_date);
-  if (ended.error) {
-    await supabase
-      .from("tenancy_charges")
-      .delete()
-      .eq("tenancy_id", created.tenancy_id);
-    await supabase.from("tenancies").delete().eq("id", created.tenancy_id);
-    if (created.prior_room) {
-      await updateRoomsWithNotification(supabase, dest_room_id, {
-        status: created.prior_room.status,
-        pending_tenant: created.prior_room.pending_tenant,
-        available_from: created.prior_room.available_from,
-      });
-    }
-    return { error: ended.error };
-  }
+  revalidateTransferPaths(tenant_id);
+  return result.warning ? { warning: result.warning } : undefined;
+}
 
-  // 3) Carry the ledger position. Computed after the move-out so rent stops
-  //    accruing at the transfer month; asOf covers scheduled transfers.
-  const today = todayISO();
-  const asOf = transfer_date > today ? transfer_date : today;
-  const ledger = await loadTenancyNetBalance(supabase, tenancy_id, asOf);
-  const netBalance = ledger?.netBalance ?? 0;
-  if (Math.abs(netBalance) > 0.005) {
-    const carryFailed = (detail: string): TransferFormState => ({
-      warning: `Transferred, but the balance carry failed (${detail}). Post a settlement on the old ledger and a matching adjustment on the new one manually.`,
-    });
-    // A debt leaves the old room as a 'settlement' (write-off, not money
-    // received). A CREDIT can't: the tenancy_charges check only allows a
-    // negative amount on an 'adjustment', and a negative adjustment is the
-    // designed debit line that absorbs credit — so the credit case posts
-    // that instead. The receiving side is an adjustment either way.
-    const { data: settlement, error: settleErr } = await supabase
-      .from("tenancy_charges")
-      .insert({
-        tenancy_id,
-        kind: netBalance > 0 ? "settlement" : "adjustment",
-        amount: netBalance,
-        charged_on: transfer_date,
-        note: `Balance carried to ${transferRoomLabel(destRoom)}`,
-      })
-      .select("id")
-      .single();
-    if (settleErr) return carryFailed(settleErr.message);
-    const { error: adjErr } = await supabase.from("tenancy_charges").insert({
-      tenancy_id: created.tenancy_id,
-      kind: "adjustment",
-      amount: -netBalance,
-      charged_on: new_start_date,
-      note: `Balance carried from ${transferRoomLabel(one(old.rooms))}`,
-    });
-    if (adjErr) {
-      // Never leave a half-carry: without the offsetting adjustment the
-      // settlement would silently erase the debt.
-      if (settlement)
-        await supabase
-          .from("tenancy_charges")
-          .delete()
-          .eq("id", settlement.id);
-      return carryFailed(adjErr.message);
-    }
-  }
-
-  // 4) Deposit difference on the NEW ledger, as a 'security_deposit' charge
-  //    either way so the tenant-wide deposit bucket always sums to the deposit
-  //    actually held: positive tops it up, negative reduces it and credits the
-  //    balance. Posted after the carry so the carried balance reflects only
-  //    the old room.
-  if (Math.abs(deposit_delta) > 0.005) {
-    const oldLabel = transferRoomLabel(one(old.rooms));
-    const { error: depositErr } = await supabase
-      .from("tenancy_charges")
-      .insert({
-        tenancy_id: created.tenancy_id,
-        kind: "security_deposit",
-        amount: deposit_delta,
-        charged_on: new_start_date,
-        note:
-          deposit_delta > 0
-            ? `Deposit increase to ${fmtUsd(dest_deposit)} — ${fmtUsd(old_deposit)} carried from ${oldLabel}`
-            : `Deposit reduced to ${fmtUsd(dest_deposit)} — ${fmtUsd(old_deposit)} carried from ${oldLabel}`,
-      });
-    if (depositErr)
-      return {
-        warning: `Transferred, but the deposit difference of ${fmtUsd(Math.abs(deposit_delta))} did not post (${depositErr.message}). Post it on the new ledger manually.`,
-      };
-  }
-
+function revalidateTransferPaths(tenant_id: string) {
   revalidatePath("/tenants");
   revalidatePath(`/tenants/${tenant_id}`);
   revalidatePath("/tenants/history");
   revalidatePath("/inventory");
   revalidatePath("/tenants/new");
   revalidatePath("/properties");
-  return undefined;
 }
 
 // ----- Delete tenant (and their tenancies + payments via cascades) -----
@@ -1690,6 +1535,7 @@ export async function sendBalanceReminders(
     status: string;
     monthly_rent: number;
     first_month_rent: number | null;
+    last_month_rent: number | null;
     security_deposit: number | null;
     start_date: string;
     move_out_date: string | null;
@@ -1715,7 +1561,7 @@ export async function sendBalanceReminders(
   let tenancyQuery = supabase
     .from("tenancies")
     .select(
-      `id, tenant_id, status, monthly_rent, first_month_rent, security_deposit, start_date, move_out_date, paused_at, balance_dismissed_at,
+      `id, tenant_id, status, monthly_rent, first_month_rent, last_month_rent, security_deposit, start_date, move_out_date, paused_at, balance_dismissed_at,
        tenants(full_name, email, phone),
        rooms(properties(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,

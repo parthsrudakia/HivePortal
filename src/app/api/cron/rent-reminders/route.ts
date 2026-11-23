@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
     .from("tenancies")
     .select(
       `id, tenant_id, start_date, move_out_date, paused_at, status,
-       monthly_rent, first_month_rent, security_deposit,
+       monthly_rent, first_month_rent, last_month_rent, security_deposit,
        tenants!inner(id, full_name, email, phone),
        rooms!inner(properties!inner(is_new_york)),
        payments(id, amount, paid_on, payment_type, notes)`,
@@ -195,6 +195,7 @@ export async function GET(req: NextRequest) {
     paused_at: string | null;
     monthly_rent: number | string;
     first_month_rent: number | string | null;
+    last_month_rent: number | string | null;
     security_deposit: number | string | null;
     tenants:
       | { id: string; full_name: string; email: string | null; phone: string | null }

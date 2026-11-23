@@ -19,6 +19,8 @@ import { InlineAmenitiesEdit } from "./amenities-edit";
 import { AmenitiesTags } from "./amenities-tags";
 import { AddInventory, type AddableRoom } from "./add-inventory";
 import { DeleteListingButton } from "./delete-listing";
+import { SalesKpis } from "./sales-kpis";
+import { hasPermission } from "@/lib/section-access";
 import {
   ACTION_BORDER,
   ACTION_TINT,
@@ -106,6 +108,8 @@ type PageProps = {
     sort?: string;
     dir?: string;
     poster?: string;
+    // Sales KPI panel filters (k_acct, k_range, …) — see KPI_PARAMS.
+    [key: string]: string | string[] | undefined;
   }>;
 };
 
@@ -134,6 +138,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
 
   const supabase = await createClient();
   const today = todayStr();
+  const canSeeKpis = await hasPermission("sales_kpis");
 
   // Rooms that aren't currently listed — candidates for "+ Add Inventory".
   // Anything not matching the inventory filter above: reserved/maintenance, or
@@ -382,6 +387,8 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           </a>
         </div>
       </header>
+
+      {canSeeKpis && <SalesKpis params={params} />}
 
       <TabNotepad tab="inventory" />
 
