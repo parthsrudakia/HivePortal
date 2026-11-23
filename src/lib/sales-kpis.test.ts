@@ -27,7 +27,9 @@ import {
   filtersToParams,
   hasKpiParams,
   normalizeFilters,
+  previousBounds,
   rangeBounds,
+  weekdayAverages,
   sameFilters,
   type DayRow,
   type StreamRow,
@@ -166,6 +168,14 @@ describe("aggregateByAccount", () => {
     expect(v.followUpRate).toBe(75);
     expect(v.leadsByAddress).toEqual([{ address: "Epic", leads: 4 }, { address: "85 John", leads: 2 }]);
     expect(v.daily.map((d) => d.leads)).toEqual([3, 1]);
+    expect(v.daily[0]).toMatchObject({ day: "2026-11-01", replies: 6, handoffs: 1, followedUp: 3, neverAnswered: null, firstReplyHours: 2 });
+    // 2026-11-01 is a Sunday, 11-02 a Monday.
+    const wk = weekdayAverages(v.daily);
+    expect(wk[6]).toMatchObject({ label: "Sun", avg: 3, days: 1 });
+    expect(wk[0]).toMatchObject({ label: "Mon", avg: 1 });
+    expect(wk[2].avg).toBeNull();
+    expect(previousBounds({ from: "2026-11-17", to: "2026-11-23" })).toEqual({ from: "2026-11-10", to: "2026-11-16", days: 7 });
+    expect(previousBounds({ from: null, to: null })).toBeNull();
   });
 
   it("combines every account into one overall composite", () => {

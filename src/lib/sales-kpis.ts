@@ -271,6 +271,18 @@ export type StreamRow = {
   last_received_at: string;
 };
 
+/** One day's numbers for an account (or the composite); null = not reported. */
+export type DailyPoint = {
+  day: string;
+  leads: number;
+  replies: number | null;
+  handoffs: number | null;
+  followedUp: number | null;
+  neverAnswered: number | null;
+  /** Leads-weighted across the streams that reported it. */
+  firstReplyHours: number | null;
+};
+
 export type AccountKpis = {
   accountKey: string;
   accountName: string;
@@ -290,7 +302,7 @@ export type AccountKpis = {
   neverAnswered: number | null;
   leadsByAddress: AddressLeads[];
   /** Leads per day, oldest first (only days with data). */
-  daily: { day: string; leads: number }[];
+  daily: DailyPoint[];
   waitingOnUs: (WaitingThread & { platform: string; account: string })[];
   neverAnsweredLeads: (NeverAnsweredLead & { platform: string; account: string })[];
   lastReceivedAt: string | null;
@@ -351,11 +363,28 @@ export function aggregateByAccount(
     let never = 0;
     let neverSeen = false;
     const addr = new Map<string, AddressLeads>();
-    const daily = new Map<string, number>();
+    const daily = new Map<string, DailyPoint & { rw: number; rwt: number }>();
+    const add = (a: number | null, b: number | null) => (b === null ? a : (a ?? 0) + b);
 
     for (const d of ds) {
       leads += d.leads;
-      daily.set(d.day, (daily.get(d.day) ?? 0) + d.leads);
+      let pt = daily.get(d.day);
+      if (!pt)
+        daily.set(
+          d.day,
+          (pt = { day: d.day, leads: 0, replies: null, handoffs: null, followedUp: null, neverAnswered: null, firstReplyHours: null, rw: 0, rwt: 0 }),
+        );
+      pt.leads += d.leads;
+      pt.replies = add(pt.replies, d.replies_sent);
+      pt.handoffs = add(pt.handoffs, d.handoffs);
+      pt.followedUp = add(pt.followedUp, d.followed_up);
+      pt.neverAnswered = add(pt.neverAnswered, d.never_answered);
+      if (d.first_reply_hours !== null) {
+        const w = Math.max(d.leads, 1);
+        pt.rw += Number(d.first_reply_hours) * w;
+        pt.rwt += w;
+        pt.firstReplyHours = Math.round((pt.rw / pt.rwt) * 100) / 100;
+      }
       if (d.first_reply_hours !== null) {
         // A zero-lead day still counts once so a reported time isn't lost.
         const w = Math.max(d.leads, 1);
@@ -434,7 +463,18 @@ export function aggregateByAccount(
       leadsByAddress: [...addr.values()].sort(
         (a, b) => b.leads - a.leads || a.address.localeCompare(b.address),
       ),
-      daily: sortedDays.map((day) => ({ day, leads: daily.get(day)! })),
+      daily: sortedDays.map((day): DailyPoint => {
+        const p = daily.get(day)!;
+        return {
+          day,
+          leads: p.leads,
+          replies: p.replies,
+          handoffs: p.handoffs,
+          followedUp: p.followedUp,
+          neverAnswered: p.neverAnswered,
+          firstReplyHours: p.firstReplyHours,
+        };
+      }),
       waitingOnUs: waiting,
       neverAnsweredLeads: neverLeads,
       lastReceivedAt: lastReceived,
@@ -450,4 +490,39 @@ export function aggregateOverall(
   bounds: { from: string | null; to: string | null },
 ): AccountKpis | null {
   return aggregateByAccount(days, streams, bounds, { combine: true })[0] ?? null;
+}
+
+
+/**
+ * The equally long window right before `bounds`, for "vs previous period"
+ * deltas. Null when the range is open-ended (All time).
+ */
+export function previousBounds(bounds: { from: string | null; to: string | null }) {
+  if (!bounds.from || !bounds.to) return null;
+  const len = Math.round((Date.parse(bounds.to) - Date.parse(bounds.from)) / 86_400_000) + 1;
+  return { from: addDaysISO(bounds.from, -len), to: addDaysISO(bounds.from, -1), days: len };
+}
+
+export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+/** 0 = Monday … 6 = Sunday for a YYYY-MM-DD day. */
+export function weekdayIndex(day: string): number {
+  return (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7;
+}
+
+/** Average leads per weekday over the days that have data, Monday first. */
+export function weekdayAverages(daily: DailyPoint[]) {
+  const sum = Array<number>(7).fill(0);
+  const n = Array<number>(7).fill(0);
+  for (const d of daily) {
+    const i = weekdayIndex(d.day);
+    sum[i] += d.leads;
+    n[i] += 1;
+  }
+  return WEEKDAYS.map((label, i) => ({
+    label,
+    days: n[i],
+    total: sum[i],
+    avg: n[i] > 0 ? Math.round((sum[i] / n[i]) * 10) / 10 : null,
+  }));
 }
