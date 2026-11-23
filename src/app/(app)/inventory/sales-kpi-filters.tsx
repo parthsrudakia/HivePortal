@@ -70,7 +70,7 @@ export function SalesKpiFilters({
 
   return (
     <div
-      className={`mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone/40 ${
+      className={`mt-3 flex flex-wrap items-center gap-2 ${
         navigating ? "opacity-70" : ""
       }`}
     >

@@ -296,9 +296,7 @@ function AccountCard({
 
   return (
     <article
-      className={`rounded-xl bg-white p-4 shadow-sm ring-1 ${
-        overall ? "ring-2 ring-accent/50" : "ring-stone/40"
-      }`}
+      className={`rounded-lg border p-4 ${overall ? "border-2 border-accent/50" : "border-stone/40"}`}
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-lg font-semibold text-ink">
@@ -506,7 +504,7 @@ function TeamTable({ cards }: { cards: AccountKpis[] }) {
   const rows = [...cards].sort((a, b) => b.totalLeads - a.totalLeads);
 
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-stone/40">
+    <div className="rounded-lg border border-stone/40 p-4">
       <h3 className="text-sm font-semibold text-ink">
         Team <span className="font-display text-lg font-normal italic text-accent-text">comparison</span>
       </h3>
@@ -573,8 +571,8 @@ function TeamTable({ cards }: { cards: AccountKpis[] }) {
  */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <details className="group mt-4">
-      <summary className="flex cursor-pointer select-none list-none items-center gap-2 rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-stone/40 transition hover:ring-accent [&::-webkit-details-marker]:hidden">
+    <details className="group mt-4 rounded-xl bg-white shadow-sm ring-1 ring-stone/40">
+      <summary className="flex cursor-pointer select-none list-none items-center gap-2 rounded-xl px-4 py-3 transition hover:bg-cream/60 [&::-webkit-details-marker]:hidden">
         <span
           className="text-xs text-accent-text transition-transform group-open:rotate-90"
           aria-hidden
@@ -587,7 +585,8 @@ function Shell({ children }: { children: React.ReactNode }) {
         <span className="ml-auto text-xs text-muted group-open:hidden">Show</span>
         <span className="ml-auto hidden text-xs text-muted group-open:inline">Hide</span>
       </summary>
-      {children}
+      {/* One card: filters and account sub-cards all live inside it. */}
+      <div className="border-t border-stone/30 px-4 pb-4 pt-1">{children}</div>
     </details>
   );
 }
@@ -595,8 +594,8 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Notice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
   return (
     <p
-      className={`mt-2 rounded-xl bg-white p-4 text-sm shadow-sm ring-1 ${
-        error ? "text-red-800 ring-red-200" : "text-muted ring-stone/40"
+      className={`mt-3 rounded-lg p-3 text-sm ${
+        error ? "border border-red-200 bg-red-50 text-red-800" : "bg-cream text-muted"
       }`}
     >
       {children}
