@@ -123,6 +123,8 @@ export function toDayRows(p: SalesKpiPayload, now = new Date().toISOString()) {
 // ---------------------------------------------------------------- filters
 
 export const RANGES = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
   { key: "7d", label: "Last 7 days" },
   { key: "30d", label: "Last 30 days" },
   { key: "90d", label: "Last 90 days" },
@@ -131,6 +133,13 @@ export const RANGES = [
   { key: "custom", label: "Custom" },
 ] as const;
 export type RangeKey = (typeof RANGES)[number]["key"];
+
+/**
+ * `account` values besides a real account_key: "all" = every account, each
+ * in its own card; OVERALL = "All accounts — Summary", one composite card.
+ */
+export const OVERALL = "_overall";
+export const OVERALL_NAME = "All accounts";
 
 export const KpiFiltersSchema = z.object({
   account: z.string().max(100).default("all"),
@@ -213,6 +222,12 @@ export function sameFilters(a: KpiFilters, b: KpiFilters): boolean {
 /** Inclusive day bounds for a range; null means unbounded. Relative ranges roll with `today`. */
 export function rangeBounds(f: KpiFilters, today: string): { from: string | null; to: string | null } {
   switch (f.range) {
+    case "today":
+      return { from: today, to: today };
+    case "yesterday": {
+      const y = addDaysISO(today, -1);
+      return { from: y, to: y };
+    }
     case "7d":
       return { from: addDaysISO(today, -6), to: today };
     case "30d":
@@ -276,9 +291,11 @@ export type AccountKpis = {
   leadsByAddress: AddressLeads[];
   /** Leads per day, oldest first (only days with data). */
   daily: { day: string; leads: number }[];
-  waitingOnUs: (WaitingThread & { platform: string })[];
-  neverAnsweredLeads: (NeverAnsweredLead & { platform: string })[];
+  waitingOnUs: (WaitingThread & { platform: string; account: string })[];
+  neverAnsweredLeads: (NeverAnsweredLead & { platform: string; account: string })[];
   lastReceivedAt: string | null;
+  /** Only on the composite: leads per account over the range, most first. */
+  byAccount?: { name: string; leads: number }[];
 };
 
 /** jsonb columns arrive untyped; keep only well-formed entries. */
@@ -302,15 +319,17 @@ export function aggregateByAccount(
   days: DayRow[],
   streams: StreamRow[],
   bounds: { from: string | null; to: string | null },
+  opts: { combine?: boolean } = {},
 ): AccountKpis[] {
+  const keyOf = (r: { account_key: string }) => (opts.combine ? OVERALL : r.account_key);
   const byKey = new Map<string, { days: DayRow[]; streams: StreamRow[] }>();
   const slot = (k: string) => {
     let s = byKey.get(k);
     if (!s) byKey.set(k, (s = { days: [], streams: [] }));
     return s;
   };
-  for (const d of days) slot(d.account_key).days.push(d);
-  for (const s of streams) slot(s.account_key).streams.push(s);
+  for (const d of days) slot(keyOf(d)).days.push(d);
+  for (const s of streams) slot(keyOf(s)).streams.push(s);
 
   const inRange = (iso: string | undefined) => {
     if (!iso) return true;
@@ -368,11 +387,11 @@ export function aggregateByAccount(
     }
 
     const waiting = ss
-      .flatMap((s) => parseList(WaitingThreadSchema, s.waiting_on_us).map((w) => ({ ...w, platform: s.platform })))
+      .flatMap((s) => parseList(WaitingThreadSchema, s.waiting_on_us).map((w) => ({ ...w, platform: s.platform, account: s.account_name })))
       .sort((a, b) => b.days_waiting - a.days_waiting);
     const neverLeads = ss
       .flatMap((s) =>
-        parseList(NeverAnsweredLeadSchema, s.never_answered_leads).map((n) => ({ ...n, platform: s.platform })),
+        parseList(NeverAnsweredLeadSchema, s.never_answered_leads).map((n) => ({ ...n, platform: s.platform, account: s.account_name })),
       )
       .filter((n) => inRange(n.received_at));
 
@@ -380,9 +399,24 @@ export function aggregateByAccount(
     const names = [...ds.map((d) => d.account_name), ...ss.map((s) => s.account_name)];
     const lastReceived = ss.map((s) => s.last_received_at).sort().at(-1) ?? null;
 
+    const nameOf = (k: string) =>
+      ss.find((s) => s.account_key === k)?.account_name ?? ds.find((d) => d.account_key === k)?.account_name ?? k;
+    let byAccount: AccountKpis["byAccount"];
+    if (opts.combine) {
+      const leadsBy = new Map<string, number>();
+      for (const s of ss) leadsBy.set(s.account_key, 0);
+      for (const d of ds) leadsBy.set(d.account_key, (leadsBy.get(d.account_key) ?? 0) + d.leads);
+      byAccount = [...leadsBy]
+        .map(([k, leads]) => ({ name: nameOf(k), leads }))
+        .sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
+    }
+
     out.push({
+      byAccount,
       accountKey: key,
-      accountName: ss.find((s) => s.last_received_at === lastReceived)?.account_name ?? names[0] ?? key,
+      accountName: opts.combine
+        ? OVERALL_NAME
+        : ss.find((s) => s.last_received_at === lastReceived)?.account_name ?? names[0] ?? key,
       platforms: [...new Set([...ds.map((d) => d.platform), ...ss.map((s) => s.platform)].filter(Boolean))].sort(),
       agents: [...new Set([...ds.map((d) => d.agent), ...ss.map((s) => s.agent)])].sort(),
       firstDay: sortedDays[0] ?? null,
@@ -407,4 +441,13 @@ export function aggregateByAccount(
     });
   }
   return out.sort((a, b) => a.accountName.localeCompare(b.accountName));
+}
+
+/** The composite of every account in the rows given; null when there are none. */
+export function aggregateOverall(
+  days: DayRow[],
+  streams: StreamRow[],
+  bounds: { from: string | null; to: string | null },
+): AccountKpis | null {
+  return aggregateByAccount(days, streams, bounds, { combine: true })[0] ?? null;
 }

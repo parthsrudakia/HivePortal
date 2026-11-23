@@ -22,6 +22,7 @@ import {
   BUILTIN_FILTERS,
   accountKey,
   aggregateByAccount,
+  aggregateOverall,
   filtersFromParams,
   filtersToParams,
   hasKpiParams,
@@ -126,6 +127,8 @@ describe("filters", () => {
   });
 
   it("computes rolling bounds from today", () => {
+    expect(rangeBounds({ ...BUILTIN_FILTERS, range: "today" }, "2026-11-23")).toEqual({ from: "2026-11-23", to: "2026-11-23" });
+    expect(rangeBounds({ ...BUILTIN_FILTERS, range: "yesterday" }, "2026-11-01")).toEqual({ from: "2026-10-31", to: "2026-10-31" });
     expect(rangeBounds({ ...BUILTIN_FILTERS, range: "7d" }, "2026-11-23")).toEqual({ from: "2026-11-17", to: "2026-11-23" });
     expect(rangeBounds({ ...BUILTIN_FILTERS, range: "ytd" }, "2026-11-23")).toEqual({ from: "2026-01-01", to: "2026-11-23" });
     expect(rangeBounds({ ...BUILTIN_FILTERS, range: "all" }, "2026-11-23")).toEqual({ from: null, to: null });
@@ -163,6 +166,34 @@ describe("aggregateByAccount", () => {
     expect(v.followUpRate).toBe(75);
     expect(v.leadsByAddress).toEqual([{ address: "Epic", leads: 4 }, { address: "85 John", leads: 2 }]);
     expect(v.daily.map((d) => d.leads)).toEqual([3, 1]);
+  });
+
+  it("combines every account into one overall composite", () => {
+    const o = aggregateOverall(
+      [
+        day({ leads: 3, handoffs: 1, first_reply_hours: 2, leads_by_address: [{ address: "Epic", leads: 3 }] }),
+        day({ account_key: "parth", account_name: "Parth", leads: 1, handoffs: 1, first_reply_hours: 6, leads_by_address: [{ address: "Epic", leads: 1 }] }),
+      ],
+      [
+        stream({ waiting_on_us: [{ lead: "Alex", days_waiting: 1 }] }),
+        stream({ account_key: "parth", account_name: "Parth", waiting_on_us: [{ lead: "Sam", days_waiting: 4 }] }),
+        stream({ account_key: "marcus d", account_name: "Marcus D" }),
+      ],
+      { from: null, to: null },
+    )!;
+    expect(o.accountName).toBe("All accounts");
+    expect(o.totalLeads).toBe(4);
+    expect(o.handoffRate).toBe(50);
+    expect(o.firstReplyHours).toBe(3);
+    expect(o.leadsByAddress).toEqual([{ address: "Epic", leads: 4 }]);
+    expect(o.waitingOnUs.map((w) => `${w.lead}/${w.account}`)).toEqual(["Sam/Parth", "Alex/Vineet"]);
+    // Accounts with no leads in range still appear, at zero.
+    expect(o.byAccount).toEqual([
+      { name: "Vineet", leads: 3 },
+      { name: "Parth", leads: 1 },
+      { name: "Marcus D", leads: 0 },
+    ]);
+    expect(aggregateOverall([], [], { from: null, to: null })).toBeNull();
   });
 
   it("narrows never-answered names to the range", () => {

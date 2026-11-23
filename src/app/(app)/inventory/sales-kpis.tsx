@@ -3,7 +3,9 @@ import { getSessionUser } from "@/lib/session";
 import { todayISO } from "@/lib/date";
 import {
   BUILTIN_FILTERS,
+  OVERALL,
   aggregateByAccount,
+  aggregateOverall,
   filtersFromParams,
   hasKpiParams,
   normalizeFilters,
@@ -90,12 +92,26 @@ function weekStart(iso: string) {
 }
 
 function AccountCard({ a }: { a: AccountKpis }) {
+  const overall = !!a.byAccount;
+  // On the composite, say whose thread each row is.
+  const who = (account: string) =>
+    overall ? <span className="text-accent-text"> · {account}</span> : null;
   return (
-    <article className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-stone/40">
+    <article
+      className={`rounded-xl bg-white p-4 shadow-sm ring-1 ${
+        overall ? "ring-2 ring-accent/50" : "ring-stone/40"
+      }`}
+    >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-base font-semibold text-ink">
           {a.accountName}
-          {a.platforms.length > 0 && (
+          {overall && (
+            <span className="font-display text-lg font-normal italic text-accent-text">
+              {" "}
+              · {a.byAccount!.length} account{a.byAccount!.length === 1 ? "" : "s"} combined
+            </span>
+          )}
+          {!overall && a.platforms.length > 0 && (
             <span className="font-display text-lg font-normal italic text-accent-text">
               {" "}
               · {a.platforms.join(", ")}
@@ -131,7 +147,20 @@ function AccountCard({ a }: { a: AccountKpis }) {
 
       <LeadsTrend daily={a.daily} />
 
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
+      <div className={`mt-3 grid gap-3 ${overall ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3"}`}>
+        {overall && (
+          <div>
+            <h4 className="text-xs uppercase tracking-wide text-muted">Leads per account</h4>
+            <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto pr-1 text-sm">
+              {a.byAccount!.map((x) => (
+                <li key={x.name} className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-ink">{x.name}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-accent-text">{x.leads}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div>
           <h4 className="text-xs uppercase tracking-wide text-muted">
             Waiting on us <span className="text-ink">({a.waitingOnUs.length})</span>
@@ -144,6 +173,7 @@ function AccountCard({ a }: { a: AccountKpis }) {
                 <li key={i} className="flex items-baseline justify-between gap-2">
                   <span className="min-w-0 truncate text-ink">
                     {w.lead}
+                    {who(w.account)}
                     {w.address && <span className="text-muted"> · {w.address}</span>}
                   </span>
                   <span
@@ -170,6 +200,7 @@ function AccountCard({ a }: { a: AccountKpis }) {
               {a.neverAnsweredLeads.map((n, i) => (
                 <li key={i} className="truncate text-ink">
                   {n.lead}
+                  {who(n.account)}
                   {n.address && <span className="text-muted"> · {n.address}</span>}
                   {n.received_at && (
                     <span className="text-muted"> · {fmtDay(n.received_at.slice(0, 10))}</span>
@@ -250,8 +281,10 @@ export async function SalesKpis({ params }: { params: Params }) {
   const error = prefError?.message ?? streamError?.message;
   if (error || !allStreams) return <Shell><Notice error>Couldn&apos;t load sales KPIs: {error ?? "no data"}</Notice></Shell>;
 
+  // "all" and OVERALL both span every account; anything else is one account.
+  const oneAccount = filters.account !== "all" && filters.account !== OVERALL;
   const matches = (s: { account_key: string; platform: string; agent: string }) =>
-    (filters.account === "all" || s.account_key === filters.account) &&
+    (!oneAccount || s.account_key === filters.account) &&
     (filters.platform === "all" || s.platform === filters.platform) &&
     (filters.agent === "all" || s.agent === filters.agent);
   const streams = allStreams.filter(matches);
@@ -264,7 +297,7 @@ export async function SalesKpis({ params }: { params: Params }) {
       .order("day")
       .order("id")
       .range(from, from + PAGE - 1);
-    if (filters.account !== "all") q = q.eq("account_key", filters.account);
+    if (oneAccount) q = q.eq("account_key", filters.account);
     if (filters.platform !== "all") q = q.eq("platform", filters.platform);
     if (filters.agent !== "all") q = q.eq("agent", filters.agent);
     if (bounds.from) q = q.gte("day", bounds.from);
@@ -276,12 +309,14 @@ export async function SalesKpis({ params }: { params: Params }) {
     if (data.length < PAGE) break;
   }
 
-  const cards = aggregateByAccount(days, streams, bounds);
+  // Summary = every account combined into one card; "all" = one card per account.
+  const overall = filters.account === OVERALL ? aggregateOverall(days, streams, bounds) : null;
+  const cards = filters.account === OVERALL ? [] : aggregateByAccount(days, streams, bounds);
   const accountOptions = [
     ...new Map(allStreams.map((s) => [s.account_key, { key: s.account_key, name: s.account_name }])).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
   // Keep a saved/URL account that has since vanished selectable, so the select doesn't lie.
-  if (filters.account !== "all" && !accountOptions.some((a) => a.key === filters.account))
+  if (oneAccount && !accountOptions.some((a) => a.key === filters.account))
     accountOptions.push({ key: filters.account, name: filters.account });
 
   return (
@@ -299,13 +334,30 @@ export async function SalesKpis({ params }: { params: Params }) {
             platforms={[...new Set(allStreams.map((s) => s.platform))].sort()}
             agents={[...new Set(allStreams.map((s) => s.agent))].sort()}
           />
-          {cards.length === 0 ? (
+          {!overall && cards.length === 0 ? (
             <Notice>Nothing matches these filters.</Notice>
           ) : (
-            <div className="mt-3 space-y-3">
-              {cards.map((a) => (
-                <AccountCard key={a.accountKey} a={a} />
-              ))}
+            <div className="mt-3 space-y-6">
+              {overall && (
+                <div>
+                  <h3 className="mb-2 text-xs uppercase tracking-wide text-muted">Summary</h3>
+                  <AccountCard a={overall} />
+                </div>
+              )}
+              {cards.length > 0 && (
+                <div>
+                  {overall && (
+                    <h3 className="mb-2 text-xs uppercase tracking-wide text-muted">
+                      By account
+                    </h3>
+                  )}
+                  <div className="space-y-3">
+                    {cards.map((a) => (
+                      <AccountCard key={a.accountKey} a={a} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

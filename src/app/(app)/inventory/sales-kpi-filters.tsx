@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   KPI_PARAMS,
+  OVERALL,
   RANGES,
   filtersToParams,
   sameFilters,
@@ -80,6 +81,7 @@ export function SalesKpiFilters({
         className={selectCls}
       >
         <option value="all">All accounts</option>
+        <option value={OVERALL}>All accounts — Summary</option>
         {accounts.map((a) => (
           <option key={a.key} value={a.key}>
             {a.name}
