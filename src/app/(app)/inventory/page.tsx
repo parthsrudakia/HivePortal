@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { one } from "@/lib/relations";
 import { unitLabel } from "@/lib/unit-label";
 import { todayISO } from "@/lib/date";
-import { TabNotepad } from "../tab-notepad";
 import { CopyListing } from "./copy-listing";
 import { ListingActionSelector } from "./listing-action";
 import {
@@ -382,8 +381,6 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           </a>
         </div>
       </header>
-
-      <TabNotepad tab="inventory" />
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone/40">
         <span className="text-xs uppercase tracking-wide text-muted">

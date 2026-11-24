@@ -66,9 +66,6 @@ Some staff-visible controls (contact Edit, Lease End Date) are refused by the se
 - **Dark mode** toggle lives in the sidebar and the mobile drawer; the default follows the OS.
 - On mobile, tables scroll sideways and the sidebar becomes a drawer with sign-out.
 
-### Shared notepads
-The Rent Tracker, Utilities and Inventory tabs each have one shared **Notes** box. Everyone can read and edit it, the last save wins, it holds up to 20,000 characters, and it shows who last updated it and when. Changes are audited.
-
 ### Feedback while things save
 A honey progress bar and a "Saving…"/"Loading…" pill appear whenever the portal is waiting on the server, the clicked button shows a spinner, and the browser warns before you close the tab mid-save.
 
