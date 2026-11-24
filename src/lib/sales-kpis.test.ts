@@ -27,6 +27,7 @@ import {
   filtersToParams,
   hasKpiParams,
   inventoryResolver,
+  streetBuildings,
   streetName,
   normalizeFilters,
   previousBounds,
@@ -53,15 +54,15 @@ const history = {
   agent: "Grok",
   platform: "ExampleListings",
   days: [
-    { date: "2026-11-01", leads: 3, first_reply_hours: 2, replies_sent: 5, handoffs: 1, followed_up: 2, leads_by_address: [{ address: "Sample Tower", leads: 3 }] },
-    { date: "2026-11-02", leads: 1, first_reply_hours: 6, replies_sent: 3, handoffs: 0, followed_up: 1 },
+    { date: "2026-12-01", leads: 3, first_reply_hours: 2, replies_sent: 5, handoffs: 1, followed_up: 2, leads_by_address: [{ address: "Sample Tower", leads: 3 }] },
+    { date: "2026-12-02", leads: 1, first_reply_hours: 6, replies_sent: 3, handoffs: 0, followed_up: 1 },
   ],
   open: {
     waiting_on_us: [
       { lead: "Alex", days_waiting: 1 },
       { lead: "Sam", days_waiting: 3 },
     ],
-    never_answered_leads: [{ lead: "Jo", received_at: "2026-11-02" }],
+    never_answered_leads: [{ lead: "Jo", received_at: "2026-12-02" }],
   },
 };
 
@@ -82,8 +83,8 @@ describe("POST /api/sales-kpis", () => {
     expect(await res.json()).toMatchObject({
       account_name: "Sample Agent",
       saved_days: 2,
-      first_day: "2026-11-01",
-      last_day: "2026-11-02",
+      first_day: "2026-12-01",
+      last_day: "2026-12-02",
       open_updated: true,
     });
     const days = mocks.upserts.find((u) => u.table === "sales_kpi_days")!;
@@ -97,7 +98,7 @@ describe("POST /api/sales-kpis", () => {
   });
 
   it("leaves open threads untouched on an incremental call without `open`", async () => {
-    await post({ account_name: "Sample Agent", agent: "grok", days: [{ date: "2026-11-03", leads: 2 }] });
+    await post({ account_name: "Sample Agent", agent: "grok", days: [{ date: "2026-12-03", leads: 2 }] });
     const stream = mocks.upserts.find((u) => u.table === "sales_kpi_streams")!;
     expect(stream.rows).not.toHaveProperty("waiting_on_us");
   });
@@ -107,6 +108,10 @@ describe("POST /api/sales-kpis", () => {
     expect((await post(dup)).status).toBe(400);
     expect((await post({ account_name: "A", agent: "grok" })).status).toBe(400);
     expect((await post({ ...history, bogus: 1 })).status).toBe(400);
+    // Measurement starts on KPI_START_DAY; older days are refused.
+    const early = await post({ account_name: "A", agent: "grok", days: [{ date: "2026-11-23", leads: 1 }] });
+    expect(early.status).toBe(400);
+    expect((await early.json()).error).toContain("2026-11-24");
     expect((await post({ ...history, listings: [{ address: "Sample Tower", listed_on: "soon" }] })).status).toBe(400);
     expect(mocks.upserts).toHaveLength(0);
   });
@@ -277,32 +282,69 @@ describe("aggregateByAccount", () => {
     expect(trends[1]).toMatchObject({ date: "2026-11-01", from: 1500, to: 1450, beforeDays: 7, beforePerWeek: 2, afterDays: 14, afterPerWeek: 3.5 });
   });
 
-  it("matches what an ad shows to the real inventory room", () => {
-    const resolve = inventoryResolver([
-      { building_name: null, street_address: "85 Sample St", unit_number: "8E", room_number: "Room 2", ad_urls: ["https://www.example.com/rooms/downtown/103000001"] },
-      { building_name: "Sample Tower", street_address: "628 Example Avenue, Sampleville, NJ 07000", unit_number: "904", room_number: "1", ad_urls: [] },
-      { building_name: "Other Court", street_address: "505 Example Ave, Sampleville, NJ 07000", unit_number: "306", room_number: null, ad_urls: [] },
-    ]);
+  it("groups ads by the street address shown and matches buildings by street name", () => {
+    const resolve = inventoryResolver();
     expect(streetName("628 Example Avenue, Sampleville, NJ 07000")).toBe("example ave");
     expect(streetName("53-55 East 95th Street")).toBe("e 95 st");
-    // 1. Ad number saved on Inventory → the exact room, wherever the number was sent.
-    expect(resolve({ address: "Sample St", ad_ref: "103000001" })).toMatchObject({ address: "85 Sample St", unit: "Apt 8E · Room 2" });
-    expect(resolve({ address: "Downtown (ad 103000001, unit unconfirmed)" })).toMatchObject({ address: "85 Sample St", unit: "Apt 8E · Room 2" });
-    // 2. Unknown ad, but only one building on that street → the building; unit stays the ad.
-    expect(resolve({ address: "Sample Street", ad_ref: "103000009" })).toMatchObject({ address: "85 Sample St", unit: "Ad 103000009" });
-    // 3. Two buildings on the street → never guess.
-    expect(resolve({ address: "Example Ave", ad_ref: "103000009" })).toMatchObject({ address: "Example Ave", unit: "Ad 103000009" });
-    // A building name is kept as it is.
-    expect(resolve({ address: "Sample Tower" })).toEqual({ address: "Sample Tower", unit: undefined });
+    expect(streetName("John F. Kennedy Blvd")).toBe(streetName("3516 JFK Boulevard"));
+    // Same street, however it was spelled or whichever ad it came from → one line, no unit.
+    expect(resolve({ address: "Sample St", ad_ref: "103000001", unit: "Room 2" })).toMatchObject({ address: "Sample St", unit: undefined });
+    expect(resolve({ address: "sample street", ad_ref: "103000009" }).address).toBe("Sample St");
+    expect(resolve({ address: "Example Ave" }).address).toBe("Example Ave");
+
+    const buildingOf = streetBuildings([
+      { building_name: null, street_address: "85 Sample St" },
+      { building_name: "Sample Tower", street_address: "628 Example Avenue, Sampleville, NJ 07000" },
+      { building_name: "Sample Tower", street_address: "628 Example Avenue, Sampleville, NJ 07000" },
+      { building_name: "Other Court", street_address: "505 Example Ave, Sampleville, NJ 07000" },
+    ]);
+    expect(buildingOf("Sample Street")).toBe("85 Sample St");
+    // Two buildings on the street → never guess.
+    expect(buildingOf("Example Ave")).toBeNull();
+    expect(buildingOf("Nowhere Rd")).toBeNull();
   });
 
-  it("keeps only threads waiting 45 days or less", () => {
+  it("counts rejected leads overall and per address", () => {
     const [v] = aggregateByAccount(
+      [
+        day({ day: "2026-11-24", leads: 10, handoffs: 3, rejected: 4, leads_by_address: [
+          { address: "Sample St", leads: 6, handoffs: 2, rejected: 3 },
+          { address: "Example Ave", leads: 4, handoffs: 1, rejected: 1 },
+        ] }),
+        day({ day: "2026-11-25", leads: 5, handoffs: 1, leads_by_address: [{ address: "Sample St", leads: 5, handoffs: 1 }] }),
+      ],
       [],
-      [stream({ waiting_on_us: [{ lead: "Old", days_waiting: 46 }, { lead: "Edge", days_waiting: 45 }, { lead: "New", days_waiting: 1 }] })],
       { from: null, to: null },
     );
-    expect(v.waitingOnUs.map((w) => w.lead)).toEqual(["Edge", "New"]);
+    // The rate only counts days that reported it: 4 of 10, not 4 of 15.
+    expect(v).toMatchObject({ totalLeads: 15, rejected: 4, rejectedRate: 40, handoffs: 4 });
+    // Rejected leads need no reply: 4 handed over out of the 11 left to work.
+    expect(v).toMatchObject({ workableLeads: 11, handoffRate: 36.4 });
+    expect(v.daily.map((d) => d.rejected)).toEqual([4, null]);
+    expect(v.units.map((u) => [u.address, u.leads, u.rejected, u.qualified])).toEqual([
+      ["Sample St", 11, 3, 3],
+      ["Example Ave", 4, 1, 1],
+    ]);
+  });
+
+  it("makes the waiting list follow the date filter", () => {
+    const st = stream({
+      open_as_of: "2026-11-20T12:00:00Z",
+      waiting_on_us: [
+        { lead: "Old", days_waiting: 46 }, // last wrote Oct 5
+        { lead: "Edge", days_waiting: 45 }, // Oct 6
+        { lead: "Mid", days_waiting: 10 }, // Nov 10
+        { lead: "Dated", days_waiting: 3, last_message_at: "2026-11-17T09:00:00-05:00" },
+        { lead: "New", days_waiting: 1 }, // Nov 19
+      ],
+    });
+    const names = (b: { from: string | null; to: string | null }) =>
+      aggregateByAccount([], [st], b)[0].waitingOnUs.map((w) => w.lead);
+    // A range keeps threads whose renter last wrote inside it, however old.
+    expect(names({ from: "2026-11-14", to: "2026-11-20" })).toEqual(["Dated", "New"]);
+    expect(names({ from: "2026-10-01", to: "2026-11-20" })).toEqual(["Old", "Edge", "Mid", "Dated", "New"]);
+    // All time stops at 45 days.
+    expect(names({ from: null, to: null })).toEqual(["Edge", "Mid", "Dated", "New"]);
   });
 
   it("tells accounts apart by name, ignoring case and spacing", () => {

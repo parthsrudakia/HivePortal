@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/session";
 import { todayISO } from "@/lib/date";
-import { one } from "@/lib/relations";
 import { addDaysISO } from "@/lib/date";
 import {
   BUILTIN_FILTERS,
@@ -9,7 +8,6 @@ import {
   OVERALL,
   RANGES,
   TREND_WINDOW_DAYS,
-  WAITING_MAX_DAYS,
   aggregateByAccount,
   aggregateOverall,
   filtersFromParams,
@@ -22,12 +20,13 @@ import {
   rangeBounds,
   resolveDayRow,
   resolveStreamRow,
+  streetBuildings,
   weekdayAverages,
   weekdayIndex,
   type AccountKpis,
   type DayRow,
-  type InventoryRoom,
   type PriceTrend,
+  type UnitDemand,
 } from "@/lib/sales-kpis";
 import { SalesKpiFilters } from "./sales-kpi-filters";
 import { SalesKpiChart } from "./sales-kpi-chart";
@@ -91,6 +90,9 @@ function delta(
   return { text: `${diff > 0 ? "▲" : "▼"} ${body}`, good: diff > 0 === upIsGood };
 }
 
+const CARD = "rounded-xl bg-white shadow-sm ring-1 ring-stone/40";
+
+/** One figure in the summary row: label, big number, then change and context. */
 function Stat({
   label,
   value,
@@ -105,26 +107,26 @@ function Stat({
   alert?: boolean;
 }) {
   return (
-    <div className={`rounded-lg px-3 py-2 ${alert ? "border border-red-200 bg-red-50" : "bg-cream"}`}>
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
-        <span className="text-2xl font-semibold tabular-nums text-ink">{value}</span>
+    <div className="min-w-0 border-l border-stone/40 pl-4 pr-3">
+      <div className="flex items-center gap-1.5 text-sm text-muted">
+        {alert && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-600" aria-hidden />}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className={`mt-1 text-3xl font-semibold tabular-nums ${alert ? "text-red-800" : "text-ink"}`}>{value}</div>
+      <div className="mt-1 min-h-[1rem] text-xs text-muted">
         {change && (
           <span
-            className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
-              change.good === null
-                ? "bg-warm text-muted"
-                : change.good
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
+            className={`font-medium tabular-nums ${
+              change.good === null ? "text-muted" : change.good ? "text-green-800" : "text-red-800"
             }`}
           >
             {change.text}
             <span className="sr-only">{change.good === null ? "" : change.good ? " (better)" : " (worse)"}</span>
           </span>
         )}
+        {change && hint && " · "}
+        {hint}
       </div>
-      {hint && <div className="mt-0.5 text-[11px] text-muted">{hint}</div>}
     </div>
   );
 }
@@ -191,7 +193,7 @@ function DayInsights({ a }: { a: AccountKpis }) {
   const quietest = wk.reduce((m, w) => (w.avg! < m.avg! ? w : m));
   const unanswered = a.daily.filter((d) => (d.neverAnswered ?? 0) > 0).length;
   return (
-    <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div className="grid grid-cols-2 content-start gap-3">
         <Insight label="Best day" value={`${best.leads} leads`} sub={fmtDayLong(best.day)} />
         <Insight label="Slowest day" value={`${slow.leads} leads`} sub={fmtDayLong(slow.day)} />
@@ -227,19 +229,16 @@ function DayTable({ a }: { a: AccountKpis }) {
   const rows = [...a.daily].reverse();
   const cell = "px-2 py-1 text-right tabular-nums";
   return (
-    <details className="mt-4 rounded-lg bg-cream">
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink">
-        Day by day ({rows.length} day{rows.length === 1 ? "" : "s"})
-      </summary>
-      <div className="max-h-80 overflow-auto px-1 pb-2">
+    <div className="mt-5 max-h-80 overflow-auto">
         <table className="w-full min-w-[560px] text-sm">
-          <thead className="sticky top-0 bg-cream text-[11px] uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-muted">
             <tr>
               <th className="px-2 py-1 text-left font-medium">Day</th>
               <th className={`${cell} font-medium`}>Leads</th>
               <th className={`${cell} font-medium`}>First reply</th>
               <th className={`${cell} font-medium`}>Replies</th>
-              <th className={`${cell} font-medium`}>Handoffs</th>
+              <th className={`${cell} font-medium`}>Rejected</th>
+              <th className={`${cell} font-medium`}>Handed over</th>
               <th className={`${cell} font-medium`}>Follow-ups</th>
               <th className={`${cell} font-medium`}>Never answered</th>
             </tr>
@@ -253,16 +252,23 @@ function DayTable({ a }: { a: AccountKpis }) {
                 <td className={`${cell} font-semibold text-ink`}>{d.leads}</td>
                 <td className={`${cell} text-ink`}>{fmtNum(d.firstReplyHours, " h")}</td>
                 <td className={`${cell} text-ink`}>{fmtNum(d.replies)}</td>
+                <td className={`${cell} text-ink`}>{fmtNum(d.rejected)}</td>
                 <td className={`${cell} text-ink`}>
                   {fmtNum(d.handoffs)}
-                  {d.handoffs !== null && d.leads > 0 && (
-                    <span className="text-muted"> · {Math.round((d.handoffs / d.leads) * 100)}%</span>
+                  {d.handoffs !== null && d.leads - (d.rejected ?? 0) > 0 && (
+                    <span className="text-muted">
+                      {" "}
+                      · {Math.round((d.handoffs / (d.leads - (d.rejected ?? 0))) * 100)}%
+                    </span>
                   )}
                 </td>
                 <td className={`${cell} text-ink`}>
                   {fmtNum(d.followedUp)}
-                  {d.followedUp !== null && d.leads > 0 && (
-                    <span className="text-muted"> · {Math.round((d.followedUp / d.leads) * 100)}%</span>
+                  {d.followedUp !== null && d.leads - (d.rejected ?? 0) > 0 && (
+                    <span className="text-muted">
+                      {" "}
+                      · {Math.round((d.followedUp / (d.leads - (d.rejected ?? 0))) * 100)}%
+                    </span>
                   )}
                 </td>
                 <td className={cell}>
@@ -278,205 +284,262 @@ function DayTable({ a }: { a: AccountKpis }) {
             ))}
           </tbody>
         </table>
-      </div>
-    </details>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------- demand per unit
 
 type Trend = PriceTrend & { account: string };
+/** Our building on an ad's street, when exactly one is. */
+type BuildingOf = (address: string) => string | null;
 
 const fmtMoney = (n: number | null) => (n === null ? "—" : `$${n.toLocaleString()}`);
 
-/** Demand per unit and time on market: unit table, unit styles, price-change trend. */
-function Demand({ a, trends }: { a: AccountKpis; trends: Trend[] }) {
+/**
+ * Unit-wise KPIs: one row per street address shown on the ads — leads, leads
+ * per day, qualified leads, and (once the agent sends its listings) price,
+ * listed date, days on market and what the latest price change did to demand.
+ */
+function UnitTable({ a, trends, buildingOf }: { a: AccountKpis; trends: Trend[]; buildingOf: BuildingOf }) {
   const overall = !!a.byAccount;
-  const maxUnit = Math.max(1, ...a.units.map((u) => u.leads));
-  const maxStyle = Math.max(1, ...a.leadsByStyle.map((x) => x.leads));
-  const th = "px-2 py-1 text-right font-medium";
-  const td = "px-2 py-1.5 text-right tabular-nums text-ink";
+  // Agents that send only { address, leads } still get a row per address.
+  const rows: UnitDemand[] =
+    a.units.length > 0
+      ? a.units
+      : a.leadsByAddress.map((x) => ({
+          address: x.address,
+          unit: null,
+          style: null,
+          account: a.accountName,
+          leads: x.leads,
+          qualified: null,
+          rejected: null,
+          leadsPerDay: a.daysWithData > 0 ? Math.round((x.leads / a.daysWithData) * 100) / 100 : null,
+          listedOn: null,
+          deactivatedOn: null,
+          daysOnMarket: null,
+          price: null,
+        }));
+  const max = Math.max(1, ...rows.map((u) => u.leads));
+  // Trends arrive newest first, so the first one per address is its latest change.
+  const latest = new Map<string, Trend>();
+  for (const t of trends) {
+    const k = `${t.account}|${t.address.toLowerCase()}`;
+    if (!latest.has(k)) latest.set(k, t);
+  }
+  const th = "px-3 py-2 text-right font-medium";
+  const td = "px-3 py-3 text-right tabular-nums text-ink";
+  const dash = <span className="text-muted">—</span>;
 
   return (
-    <div className="mt-5 border-t border-stone/30 pt-4">
-      <h4 className="text-sm font-semibold text-ink">
-        Demand per unit{" "}
-        <span className="font-display text-lg font-normal italic text-accent-text">&amp; time on market</span>
-      </h4>
-      {a.units.length === 0 && trends.length === 0 ? (
-        <p className="mt-1 text-sm text-muted">
-          No per-unit detail sent yet. It appears once the agent sends a unit on each address line and the
-          account&apos;s listings.
+    <div>
+      <h4 className="text-xs font-medium uppercase tracking-wide text-muted">Unit-wise KPIs</h4>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">
+          No per-address leads sent by this agent yet. They appear once it sends <code>leads_by_address</code>.
         </p>
       ) : (
-        <>
-          {a.units.length > 0 && (
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm">
-                <thead className="text-[11px] uppercase tracking-wide text-muted">
-                  <tr>
-                    <th className="px-2 py-1 text-left font-medium">Unit</th>
-                    <th className="px-2 py-1 text-left font-medium">Style</th>
-                    <th className={th}>Leads</th>
-                    <th className={th}>Leads / day</th>
-                    <th className={th}>Qualified</th>
-                    <th className={th}>Price</th>
-                    <th className={th}>Listed</th>
-                    <th className={th}>Days on market</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {a.units.map((u) => (
-                    <tr key={`${u.account}|${u.address}|${u.unit}`} className="border-t border-stone/30">
-                      <td className="px-2 py-1.5">
-                        <div className="text-ink">
-                          {u.address}
-                          {u.unit && <span className="text-muted"> · {u.unit}</span>}
-                          {overall && <span className="text-accent-text"> · {u.account}</span>}
-                        </div>
-                        <div className="mt-1 h-1 w-28 rounded-full bg-warm/60" aria-hidden>
-                          <div className="h-1 rounded-full bg-accent" style={{ width: `${(u.leads / maxUnit) * 100}%` }} />
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5 text-ink">{u.style ?? "—"}</td>
-                      <td className={`${td} font-semibold`}>{u.leads}</td>
-                      <td className={td}>{u.leadsPerDay === null ? "—" : u.leadsPerDay.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className={td}>
-                        {u.qualified === null ? "—" : u.qualified}
-                        {u.qualified !== null && u.leads > 0 && (
-                          <span className="text-muted"> ({Math.round((u.qualified / u.leads) * 100)}%)</span>
-                        )}
-                      </td>
-                      <td className={td}>{fmtMoney(u.price)}</td>
-                      <td className={td}>{u.listedOn ? fmtDay(u.listedOn) : "—"}</td>
-                      <td className={td}>
-                        {u.daysOnMarket === null ? (
-                          "—"
-                        ) : (
-                          <>
-                            {u.daysOnMarket}
-                            <span
-                              className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
-                                u.deactivatedOn ? "bg-warm text-muted" : "bg-green-100 text-green-800"
-                              }`}
-                            >
-                              {u.deactivatedOn ? `off ${fmtDay(u.deactivatedOn)}` : "live"}
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[940px] text-sm">
+            <thead className="text-[11px] uppercase tracking-wide text-muted">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Street address on the ad</th>
+                <th className={th}>Leads</th>
+                <th className={th}>Leads / day</th>
+                <th className={th}>Rejected</th>
+                <th className={th}>Handed over</th>
+                <th className={th}>Price</th>
+                <th className={th}>Listed</th>
+                <th className={th}>Days on market</th>
+                <th className={th}>After price change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((u) => {
+                const building = buildingOf(u.address);
+                const t = latest.get(`${u.account}|${u.address.toLowerCase()}`);
+                return (
+                  <tr key={`${u.account}|${u.address}`} className="border-t border-stone/30">
+                    <td className="px-3 py-3">
+                      <div className="whitespace-nowrap">
+                        <span className="font-semibold text-ink">{u.address}</span>
+                        {building && <span className="text-muted"> · {building}</span>}
+                        {overall && <span className="text-accent-text"> · {u.account}</span>}
+                      </div>
+                      <div
+                        className="mt-1.5 h-1 rounded-full bg-accent"
+                        style={{ width: `${Math.max(4, (u.leads / max) * 140)}px` }}
+                        aria-hidden
+                      />
+                    </td>
+                    <td className={`${td} font-semibold`}>{u.leads}</td>
+                    <td className={td}>{u.leadsPerDay === null ? dash : u.leadsPerDay.toFixed(2)}</td>
+                    <td className={td}>{u.rejected === null ? dash : u.rejected}</td>
+                    <td className={td}>
+                      {u.qualified === null ? (
+                        dash
+                      ) : (
+                        <>
+                          {u.qualified}
+                          {u.leads - (u.rejected ?? 0) > 0 && (
+                            <span className="text-muted">
+                              {" "}
+                              ({Math.round((u.qualified / (u.leads - (u.rejected ?? 0))) * 100)}%)
                             </span>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className={td}>{u.price === null ? dash : fmtMoney(u.price)}</td>
+                    <td className={td}>{u.listedOn ? fmtDay(u.listedOn) : dash}</td>
+                    <td className={td}>
+                      {u.daysOnMarket === null ? (
+                        dash
+                      ) : (
+                        <>
+                          {u.daysOnMarket}
+                          <span
+                            className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                              u.deactivatedOn ? "bg-warm text-muted" : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {u.deactivatedOn ? `off ${fmtDay(u.deactivatedOn)}` : "live"}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td className={td}>
+                      {!t ? (
+                        dash
+                      ) : (
+                        <>
+                          <div className="text-xs text-muted">
+                            {t.from !== null && `${fmtMoney(t.from)} → `}
+                            {fmtMoney(t.to)} · {fmtDay(t.date)}
+                          </div>
+                          <div>
+                            {fmtNum(t.beforePerWeek)} → <span className="font-semibold">{fmtNum(t.afterPerWeek)}</span>
+                            <span className="text-xs text-muted"> leads / wk</span>
+                          </div>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {a.units.every((u) => u.listedOn === null) && (
+            <p className="mt-2 text-xs text-muted">
+              Price, listed date, days on market and the price-change effect fill in once the agent sends its
+              listings.
+            </p>
           )}
-
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div>
-              <h5 className="text-xs uppercase tracking-wide text-muted">Leads by unit style</h5>
-              {a.leadsByStyle.length === 0 ? (
-                <p className="mt-1 text-sm text-muted">No unit styles sent.</p>
-              ) : (
-                <ul className="mt-1 space-y-1.5 text-sm">
-                  {a.leadsByStyle.map((x) => (
-                    <li key={x.style}>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="min-w-0 truncate text-ink">{x.style}</span>
-                        <span className="shrink-0 font-semibold tabular-nums text-ink">{x.leads}</span>
-                      </div>
-                      <div className="mt-0.5 h-1 rounded-full bg-warm/60" aria-hidden>
-                        <div className="h-1 rounded-full bg-accent" style={{ width: `${(x.leads / maxStyle) * 100}%` }} />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="md:col-span-2">
-              <h5 className="text-xs uppercase tracking-wide text-muted">Demand after a price change</h5>
-              {trends.length === 0 ? (
-                <p className="mt-1 text-sm text-muted">No price changes logged.</p>
-              ) : (
-                <div className="mt-1 overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead className="text-[11px] uppercase tracking-wide text-muted">
-                      <tr>
-                        <th className="px-2 py-1 text-left font-medium">Unit</th>
-                        <th className={th}>Changed</th>
-                        <th className={th}>Price</th>
-                        <th className={th}>Leads / wk before</th>
-                        <th className={th}>Leads / wk after</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trends.map((t, i) => {
-                        const diff =
-                          t.beforePerWeek !== null && t.afterPerWeek !== null ? t.afterPerWeek - t.beforePerWeek : null;
-                        return (
-                          <tr key={i} className="border-t border-stone/30">
-                            <td className="px-2 py-1.5 text-ink">
-                              {t.address}
-                              {t.unit && <span className="text-muted"> · {t.unit}</span>}
-                              {overall && <span className="text-accent-text"> · {t.account}</span>}
-                            </td>
-                            <td className={td}>{fmtDay(t.date)}</td>
-                            <td className={td}>
-                              {t.from !== null && <span className="text-muted">{fmtMoney(t.from)} → </span>}
-                              {fmtMoney(t.to)}
-                            </td>
-                            <td className={td}>
-                              {fmtNum(t.beforePerWeek)}
-                              <span className="text-muted"> ({t.beforeDays}d)</span>
-                            </td>
-                            <td className={td}>
-                              {fmtNum(t.afterPerWeek)}
-                              <span className="text-muted"> ({t.afterDays}d)</span>
-                              {diff !== null && Math.abs(diff) >= 0.05 && (
-                                <span
-                                  className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
-                                    diff > 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                                  }`}
-                                >
-                                  {diff > 0 ? "▲" : "▼"} {fmtNum(Math.abs(Math.round(diff * 10) / 10))}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="mt-1 text-[11px] text-muted">
-                    Up to {TREND_WINDOW_DAYS} days each side of the change; the days actually counted are in
-                    brackets, so judge a short &quot;after&quot; with care.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------- account card
+// ---------------------------------------------------------------- account view
 
+const ROW_ICONS = {
+  calendar: (
+    <>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </>
+  ),
+  list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  mail: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-10 6L2 7" />
+    </>
+  ),
+  bars: <path d="M6 20v-6M12 20V4M18 20v-10" />,
+  home: (
+    <>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+    </>
+  ),
+} as const;
+
+/** A supporting table: one closed row that opens to show the detail. */
+function Row({
+  icon,
+  title,
+  sub,
+  count,
+  children,
+}: {
+  icon: keyof typeof ROW_ICONS;
+  title: string;
+  sub: string;
+  count: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group/row border-t border-stone/30">
+      <summary className="flex cursor-pointer select-none list-none items-center gap-3 py-3 transition hover:text-accent-text [&::-webkit-details-marker]:hidden">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cream text-ink">
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            {ROW_ICONS[icon]}
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-ink">{title}</span>
+          <span className="block truncate text-sm text-muted">{sub}</span>
+        </span>
+        <span className="shrink-0 text-sm tabular-nums text-muted">{count}</span>
+        <span className="shrink-0 text-muted transition-transform group-open/row:rotate-90" aria-hidden>
+          ›
+        </span>
+      </summary>
+      <div className="pb-5 pt-1">{children}</div>
+    </details>
+  );
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/**
+ * One account (or the summary of all) as one card: every KPI in a row on
+ * top, the per-day graph, the unit-wise table, then the lists (waiting on
+ * us, never answered, day by day), each closed until opened.
+ */
 function AccountCard({
   a,
   prev,
-  compare,
   bounds,
   trends,
+  buildingOf,
 }: {
   a: AccountKpis;
   prev: AccountKpis | undefined;
-  /** e.g. "previous 7 days"; null when the range has no previous period. */
-  compare: string | null;
   bounds: Bounds;
   trends: Trend[];
+  buildingOf: BuildingOf;
 }) {
   const overall = !!a.byAccount;
   // On the summary, say whose thread each row is.
@@ -485,23 +548,20 @@ function AccountCard({
   // Only compare against a previous period that actually has data.
   const p = prev && prev.daysWithData > 0 ? prev : undefined;
   const oldestWait = a.waitingOnUs[0]?.days_waiting ?? null;
-  const maxAddr = Math.max(1, ...a.leadsByAddress.map((x) => x.leads));
 
   return (
-    <article
-      className={`rounded-lg border p-4 ${overall ? "border-2 border-accent/50" : "border-stone/40"}`}
-    >
+    <section className={`${CARD} p-6 ${overall ? "ring-2 ring-accent/50" : ""}`}>
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-lg font-semibold text-ink">
+        <h3 className="text-xl font-semibold text-ink">
           {a.accountName}
           {overall && (
-            <span className="font-display text-xl font-normal italic text-accent-text">
+            <span className="font-display text-2xl font-normal italic text-accent-text">
               {" "}
               · {a.byAccount!.length} account{a.byAccount!.length === 1 ? "" : "s"} combined
             </span>
           )}
           {!overall && a.platforms.length > 0 && (
-            <span className="font-display text-xl font-normal italic text-accent-text">
+            <span className="font-display text-2xl font-normal italic text-accent-text">
               {" "}
               · {a.platforms.join(", ")}
             </span>
@@ -517,240 +577,150 @@ function AccountCard({
         </p>
       </header>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-        <Stat
-          label="Leads received"
-          value={fmtNum(a.totalLeads)}
-          hint={leadsPerDay(a) !== null ? `${fmtNum(leadsPerDay(a))} per day` : undefined}
-          change={delta(a.totalLeads, p?.totalLeads, "pct", true)}
-        />
-        <Stat
-          label="First reply"
-          value={fmtNum(a.firstReplyHours, " h")}
-          hint="average wait"
-          change={delta(a.firstReplyHours, p?.firstReplyHours, "abs", false, " h")}
-        />
-        <Stat
-          label="Replies / day"
-          value={fmtNum(a.repliesPerDay)}
-          change={delta(a.repliesPerDay, p?.repliesPerDay, "pct", true)}
-        />
-        <Stat
-          label="Handoff rate"
-          value={fmtNum(a.handoffRate, "%")}
-          hint={a.handoffs !== null ? `${a.handoffs} handed to Vinny` : "Handed to Vinny"}
-          change={delta(a.handoffRate, p?.handoffRate, "pts", true)}
-        />
-        <Stat
-          label="Follow-up rate"
-          value={fmtNum(a.followUpRate, "%")}
-          hint={a.followedUp !== null ? `${a.followedUp} followed up` : undefined}
-          change={delta(a.followUpRate, p?.followUpRate, "pts", true)}
-        />
-        <Stat
-          label="Never answered"
-          value={fmtNum(a.neverAnswered)}
-          hint={
-            a.neverAnswered !== null && a.totalLeads > 0
-              ? `${Math.round((a.neverAnswered / a.totalLeads) * 100)}% of leads`
-              : undefined
-          }
-          change={delta(a.neverAnswered, p?.neverAnswered, "abs", false)}
-          alert={(a.neverAnswered ?? 0) > 0}
-        />
-        <Stat
-          label="Waiting on us now"
-          value={fmtNum(a.waitingOnUs.length)}
-          hint={oldestWait !== null ? `oldest ${fmtNum(oldestWait)} days · last ${WAITING_MAX_DAYS} days` : `none in the last ${WAITING_MAX_DAYS} days`}
-          alert={(oldestWait ?? 0) >= 2}
-        />
+      {/* Every KPI, one row. Each figure carries a left rule; the first column's is clipped away. */}
+      <div className="mt-5 overflow-hidden">
+        <div className="-ml-[17px] grid grid-cols-2 gap-y-5 sm:grid-cols-4 xl:grid-cols-8">
+          <Stat
+            label="Leads received"
+            value={fmtNum(a.totalLeads)}
+            hint={leadsPerDay(a) !== null ? `${fmtNum(leadsPerDay(a))} per day` : undefined}
+            change={delta(a.totalLeads, p?.totalLeads, "pct", true)}
+          />
+          <Stat
+            label="First reply"
+            value={fmtNum(a.firstReplyHours, " h")}
+            hint={a.firstReplyHours === null ? "not reported" : "average wait"}
+            change={delta(a.firstReplyHours, p?.firstReplyHours, "abs", false, " h")}
+          />
+          <Stat
+            label="Replies / day"
+            value={fmtNum(a.repliesPerDay)}
+            change={delta(a.repliesPerDay, p?.repliesPerDay, "pct", true)}
+          />
+          <Stat
+            label="Rejected"
+            value={fmtNum(a.rejected)}
+            hint={a.rejected !== null ? `${fmtNum(a.workableLeads)} left to work` : "after vetting"}
+            change={delta(a.rejected, p?.rejected, "abs", false)}
+          />
+          <Stat
+            label="Handed over"
+            value={fmtNum(a.handoffRate, "%")}
+            hint={a.handoffs !== null ? `${a.handoffs} of ${fmtNum(a.workableLeads)} to work` : "sent Vinny's number"}
+            change={delta(a.handoffRate, p?.handoffRate, "pts", true)}
+          />
+          <Stat
+            label="Follow-up rate"
+            value={fmtNum(a.followUpRate, "%")}
+            hint={a.followedUp !== null ? `${a.followedUp} of ${fmtNum(a.workableLeads)} to work` : undefined}
+            change={delta(a.followUpRate, p?.followUpRate, "pts", true)}
+          />
+          <Stat
+            label="Never answered"
+            value={fmtNum(a.neverAnswered)}
+            hint={
+              a.neverAnswered !== null && a.workableLeads > 0
+                ? `${Math.round((a.neverAnswered / a.workableLeads) * 100)}% of leads to work`
+                : undefined
+            }
+            change={delta(a.neverAnswered, p?.neverAnswered, "abs", false)}
+            alert={(a.neverAnswered ?? 0) > 0}
+          />
+          <Stat
+            label="Waiting on us"
+            value={fmtNum(a.waitingOnUs.length)}
+            hint={oldestWait !== null ? `oldest ${fmtNum(oldestWait)} days` : "all caught up"}
+            alert={(oldestWait ?? 0) >= 2}
+          />
+        </div>
       </div>
-      {compare && (
-        <p className="mt-1.5 text-[11px] text-muted">
-          {p
-            ? `▲▼ change vs the ${compare}. Green = better, red = worse.`
-            : `No data in the ${compare} to compare against.`}
-        </p>
-      )}
 
-      {/* Tiles first; the chart, day views and lead lists open on demand. */}
-      <details className="group/more mt-3">
-        <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1.5 rounded-full border border-stone bg-white px-3 py-1 text-xs font-medium text-ink shadow-sm transition hover:border-accent hover:text-accent-text [&::-webkit-details-marker]:hidden">
-          <span className="group-open/more:hidden">Details</span>
-          <span className="hidden group-open/more:inline">Hide details</span>
-          <span className="text-accent-text transition-transform group-open/more:rotate-180" aria-hidden>
-            ▼
-          </span>
-        </summary>
+      {/* The graph */}
+      <div className="mt-6 border-t border-stone/30 pt-6">
+        {a.daily.length === 0 ? (
+          <>
+            <h4 className="text-lg font-semibold text-ink">Lead volume</h4>
+            <p className="mt-1 text-sm text-muted">No days in this range.</p>
+          </>
+        ) : (
+          <SalesKpiChart daily={a.daily} from={bounds.from} to={bounds.to} />
+        )}
+      </div>
 
-      <SalesKpiChart daily={a.daily} from={bounds.from} to={bounds.to} />
-      <DayInsights a={a} />
-      <DayTable a={a} />
+      {/* Unit-wise KPIs */}
+      <div className="mt-6 border-t border-stone/30 pt-6">
+        <UnitTable a={a} trends={trends} buildingOf={buildingOf} />
+      </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
-        <div>
-          <h4 className="text-xs uppercase tracking-wide text-muted">
-            Waiting on us <span className="text-ink">({a.waitingOnUs.length})</span>
-          </h4>
+      {/* Lists, closed until needed */}
+      <div className="mt-6">
+        <Row
+          icon="list"
+          title="Waiting on us"
+          sub="Renters who last wrote in these dates and have no reply, longest wait first"
+          count={plural(a.waitingOnUs.length, "lead")}
+        >
           {a.waitingOnUs.length === 0 ? (
-            <p className="mt-1 text-sm text-muted">Nobody waiting.</p>
+            <p className="text-sm text-muted">Nobody waiting.</p>
           ) : (
-            <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto pr-1 text-sm">
+            <ul className="max-h-96 divide-y divide-stone/30 overflow-y-auto pr-1">
               {a.waitingOnUs.map((w, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-ink">
-                    {w.lead}
-                    {who(w.account)}
-                    {w.address && <span className="text-muted"> · {w.address}</span>}
+                <li key={i} className="flex items-center gap-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cream text-xs font-semibold text-ink">
+                    {initials(w.lead)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold text-ink">
+                      {w.lead}
+                      {who(w.account)}
+                    </span>
+                    <span className="block truncate text-sm text-muted">{w.address ?? "No ad on the thread"}</span>
                   </span>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
-                      w.days_waiting >= 2 ? "bg-red-100 text-red-800" : "bg-warm text-ink"
+                    className={`shrink-0 text-sm font-medium tabular-nums ${
+                      w.days_waiting >= 2 ? "text-red-800" : "text-accent-text"
                     }`}
                   >
-                    {fmtNum(w.days_waiting)}d
+                    {fmtNum(w.days_waiting)}d waiting
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Row>
 
-        <div>
-          <h4 className="text-xs uppercase tracking-wide text-muted">
-            Never answered <span className="text-ink">({a.neverAnsweredLeads.length})</span>
-          </h4>
-          {a.neverAnsweredLeads.length === 0 ? (
-            <p className="mt-1 text-sm text-muted">No names sent.</p>
+        <Row
+          icon="calendar"
+          title="Day by day"
+          sub="Every day's numbers, best and slowest days, and the weekday pattern"
+          count={plural(a.daily.length, "day")}
+        >
+          {a.daily.length === 0 ? (
+            <p className="text-sm text-muted">No days in this range.</p>
           ) : (
-            <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto pr-1 text-sm">
-              {a.neverAnsweredLeads.map((n, i) => (
-                <li key={i} className="truncate text-ink">
-                  {n.lead}
-                  {who(n.account)}
-                  {n.address && <span className="text-muted"> · {n.address}</span>}
-                  {n.received_at && (
-                    <span className="text-muted"> · {fmtDay(n.received_at.slice(0, 10))}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              <DayInsights a={a} />
+              <DayTable a={a} />
+            </>
           )}
-        </div>
-
-        <div>
-          <h4 className="text-xs uppercase tracking-wide text-muted">Leads per address</h4>
-          {a.leadsByAddress.length === 0 ? (
-            <p className="mt-1 text-sm text-muted">No breakdown sent.</p>
-          ) : (
-            <ul className="mt-1 max-h-48 space-y-1.5 overflow-y-auto pr-1 text-sm">
-              {a.leadsByAddress.map((x) => (
-                <li key={x.address}>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-ink">{x.address}</span>
-                    <span className="shrink-0 font-semibold tabular-nums text-ink">{x.leads}</span>
-                  </div>
-                  <div className="mt-0.5 h-1 rounded-full bg-warm/60" aria-hidden>
-                    <div
-                      className="h-1 rounded-full bg-accent"
-                      style={{ width: `${(x.leads / maxAddr) * 100}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        </Row>
       </div>
-      <Demand a={a} trends={trends} />
-      </details>
-    </article>
-  );
-}
-
-// ---------------------------------------------------------------- team comparison
-
-/** Side-by-side accounts. */
-function TeamTable({ cards }: { cards: AccountKpis[] }) {
-  const cols: {
-    label: string;
-    get: (a: AccountKpis) => number | null;
-    suffix?: string;
-  }[] = [
-    { label: "Leads", get: (a) => a.totalLeads },
-    { label: "Leads / day", get: leadsPerDay },
-    { label: "First reply", get: (a) => a.firstReplyHours, suffix: " h" },
-    { label: "Replies / day", get: (a) => a.repliesPerDay },
-    { label: "Handoff rate", get: (a) => a.handoffRate, suffix: "%" },
-    { label: "Follow-up rate", get: (a) => a.followUpRate, suffix: "%" },
-    { label: "Never answered", get: (a) => a.neverAnswered },
-    { label: "Waiting now", get: (a) => a.waitingOnUs.length },
-  ];
-  const maxLeads = Math.max(1, ...cards.map((a) => a.totalLeads));
-  const rows = [...cards].sort((a, b) => b.totalLeads - a.totalLeads);
-
-  return (
-    <div className="rounded-lg border border-stone/40 p-4">
-      <h3 className="text-sm font-semibold text-ink">
-        Team <span className="font-display text-lg font-normal italic text-accent-text">comparison</span>
-      </h3>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="text-[11px] uppercase tracking-wide text-muted">
-            <tr>
-              <th className="px-2 py-1 text-left font-medium">Account</th>
-              {cols.map((c) => (
-                <th key={c.label} className="px-2 py-1 text-right font-medium">
-                  {c.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((a) => (
-              <tr key={a.accountKey} className="border-t border-stone/30">
-                <td className="px-2 py-1.5">
-                  <div className="font-medium text-ink">{a.accountName}</div>
-                  <div className="mt-1 h-1 w-28 rounded-full bg-warm/60" aria-hidden>
-                    <div
-                      className="h-1 rounded-full bg-accent"
-                      style={{ width: `${(a.totalLeads / maxLeads) * 100}%` }}
-                    />
-                  </div>
-                </td>
-                {cols.map((c) => (
-                  <td key={c.label} className="px-2 py-1.5 text-right tabular-nums text-ink">
-                    {fmtNum(c.get(a), c.suffix)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-2 text-[11px] text-muted">
-        The bar under each name is its share of the top account&apos;s leads.
-      </p>
-    </div>
+    </section>
   );
 }
 
 // ---------------------------------------------------------------- shell
 
-/** One card: filters and account sub-cards all live inside it. */
+/** The page body: each block below is its own card on the page background. */
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="mt-6 rounded-xl bg-white px-4 pb-4 pt-1 shadow-sm ring-1 ring-stone/40">
-      {children}
-    </section>
-  );
+  return <div className="mt-6">{children}</div>;
 }
 
 function Notice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
   return (
     <p
-      className={`mt-3 rounded-lg p-3 text-sm ${
-        error ? "border border-red-200 bg-red-50 text-red-800" : "bg-cream text-muted"
+      className={`rounded-xl p-4 text-sm shadow-sm ring-1 ${
+        error ? "bg-red-50 text-red-800 ring-red-200" : "bg-white text-muted ring-stone/40"
       }`}
     >
       {children}
@@ -790,29 +760,19 @@ export async function SalesKpis({ params }: { params: Params }) {
   if (error || !allStreams)
     return <Shell><Notice error>Couldn&apos;t load sales KPIs: {error ?? "no data"}</Notice></Shell>;
 
-  // Ads hide the building and unit numbers, so agents send the street name
-  // and the ad number; the ad links saved on Inventory name the real room.
-  const { data: adRows, error: adError } = await supabase
-    .from("room_ads")
-    .select("url, rooms!inner(room_number, properties!inner(building_name, street_address, unit_number))");
+  // Ads show a street address but not the building or unit, so the street
+  // address is the record; our buildings are matched to it by street name.
   const { data: propRows, error: propError } = await supabase
     .from("properties")
-    .select("building_name, street_address, unit_number");
-  if (adError || propError || !adRows || !propRows)
+    .select("building_name, street_address");
+  if (propError || !propRows)
     return (
       <Shell>
-        <Notice error>Couldn&apos;t load inventory to match addresses: {(adError ?? propError)?.message ?? "no data"}</Notice>
+        <Notice error>Couldn&apos;t load buildings to match addresses: {propError?.message ?? "no data"}</Notice>
       </Shell>
     );
-  const inventory: InventoryRoom[] = [
-    ...propRows.map((p) => ({ ...p, room_number: null, ad_urls: [] })),
-    ...adRows.flatMap((a) => {
-      const room = one(a.rooms);
-      const prop = room && one(room.properties);
-      return room && prop ? [{ ...prop, room_number: room.room_number, ad_urls: [a.url] }] : [];
-    }),
-  ];
-  const resolve = inventoryResolver(inventory);
+  const resolve = inventoryResolver();
+  const buildingOf = streetBuildings(propRows);
 
   // "all" and OVERALL both span every account; anything else is one account.
   const oneAccount = filters.account !== "all" && filters.account !== OVERALL;
@@ -828,7 +788,7 @@ export async function SalesKpis({ params }: { params: Params }) {
   for (let from = 0; ; from += PAGE) {
     let q = supabase
       .from("sales_kpi_days")
-      .select("account_key, account_name, platform, agent, day, leads, first_reply_hours, replies_sent, handoffs, followed_up, never_answered, leads_by_address")
+      .select("account_key, account_name, platform, agent, day, leads, first_reply_hours, replies_sent, handoffs, followed_up, never_answered, rejected, leads_by_address")
       .order("day")
       .order("id")
       .range(from, from + PAGE - 1);
@@ -895,14 +855,6 @@ export async function SalesKpis({ params }: { params: Params }) {
     prevBounds && summary ? (aggregateOverall(prevDays, [], prevBounds) ?? undefined) : undefined;
 
   const rangeLabel = RANGES.find((r) => r.key === filters.range)?.label ?? "";
-  const compare = !prevBounds
-    ? null
-    : filters.range === "today"
-      ? "day before"
-      : filters.range === "yesterday"
-        ? "day before that"
-        : `previous ${prevBounds.days} day${prevBounds.days === 1 ? "" : "s"} (${fmtDay(prevBounds.from)} – ${fmtDay(prevBounds.to)})`;
-
   const accountOptions = [
     ...new Map(allStreams.map((s) => [s.account_key, { key: s.account_key, name: s.account_name }])).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
@@ -918,6 +870,7 @@ export async function SalesKpis({ params }: { params: Params }) {
         </Notice>
       ) : (
         <>
+          <div className={`${CARD} px-4 pb-3 pt-1`}>
           <SalesKpiFilters
             filters={filters}
             savedDefault={savedDefault}
@@ -934,23 +887,25 @@ export async function SalesKpis({ params }: { params: Params }) {
               </>
             )}
           </p>
+          </div>
           {cards.length === 0 ? (
-            <Notice>Nothing matches these filters.</Notice>
+            <div className="mt-4">
+              <Notice>Nothing matches these filters.</Notice>
+            </div>
           ) : (
-            <div className="mt-3 space-y-3">
+            <div className="mt-6 space-y-6">
               {overall && (
-                <AccountCard a={overall} prev={prevOverall} compare={compare} bounds={bounds} trends={allTrends} />
+                <AccountCard a={overall} prev={prevOverall} bounds={bounds} trends={allTrends} buildingOf={buildingOf} />
               )}
-              {!oneAccount && cards.length > 1 && <TeamTable cards={cards} />}
               {!summary &&
                 cards.map((a) => (
                   <AccountCard
                     key={a.accountKey}
                     a={a}
                     prev={prevCards.get(a.accountKey)}
-                    compare={compare}
                     bounds={bounds}
                     trends={trendsByAccount.get(a.accountKey) ?? []}
+                    buildingOf={buildingOf}
                   />
                 ))}
             </div>

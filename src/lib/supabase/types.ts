@@ -2036,6 +2036,7 @@ export type Database = {
           leads_by_address: Json
           never_answered: number | null
           platform: string
+          rejected: number | null
           replies_sent: number | null
           updated_at: string
         }
@@ -2052,6 +2053,7 @@ export type Database = {
           leads_by_address?: Json
           never_answered?: number | null
           platform?: string
+          rejected?: number | null
           replies_sent?: number | null
           updated_at?: string
         }
@@ -2068,6 +2070,7 @@ export type Database = {
           leads_by_address?: Json
           never_answered?: number | null
           platform?: string
+          rejected?: number | null
           replies_sent?: number | null
           updated_at?: string
         }

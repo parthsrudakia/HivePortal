@@ -27,7 +27,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { requireBearer } from "@/lib/api-auth";
-import { SalesKpiPayloadSchema, accountKey, streamOf, toDayRows } from "@/lib/sales-kpis";
+import { KPI_START_DAY, SalesKpiPayloadSchema, accountKey, streamOf, toDayRows } from "@/lib/sales-kpis";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +62,11 @@ export async function POST(req: Request) {
     });
 
   const payload = parsed.data;
+  const tooEarly = (payload.days ?? []).filter((d) => d.date < KPI_START_DAY).map((d) => d.date);
+  if (tooEarly.length > 0)
+    return fail(400, `KPIs are measured from ${KPI_START_DAY}. Remove earlier days; nothing was saved.`, {
+      issues: tooEarly.slice(0, 20).map((date) => ({ path: "days.date", message: `${date} is before ${KPI_START_DAY}` })),
+    });
   const sb = admin();
   const now = new Date().toISOString();
   const stream = streamOf(payload);

@@ -57,6 +57,7 @@ export const AddressLeadsSchema = z.object({
   unit_style: text(60).optional(),
   leads: count,
   handoffs: count.optional(),
+  rejected: count.optional(),
 });
 
 export const PriceChangeSchema = z.object({
@@ -87,6 +88,7 @@ export const KpiDaySchema = z
     handoffs: count.optional(),
     followed_up: count.optional(),
     never_answered: count.optional(),
+    rejected: count.optional(),
     leads_by_address: z.array(AddressLeadsSchema).max(200).optional(),
   })
   .strict();
@@ -116,6 +118,12 @@ export const SalesKpiPayloadSchema = z
     (p) => new Set((p.days ?? []).map((d) => d.date)).size === (p.days ?? []).length,
     { message: "each date may appear only once", path: ["days"] },
   );
+
+/**
+ * Measurement starts here: the team dropped all earlier history and counts
+ * leads from this day on. The API refuses days before it.
+ */
+export const KPI_START_DAY = "2026-11-24";
 
 export type SalesKpiPayload = z.infer<typeof SalesKpiPayloadSchema>;
 export type WaitingThread = z.infer<typeof WaitingThreadSchema>;
@@ -154,6 +162,7 @@ export function toDayRows(p: SalesKpiPayload, now = new Date().toISOString()) {
     handoffs: d.handoffs ?? null,
     followed_up: d.followed_up ?? null,
     never_answered: d.never_answered ?? null,
+    rejected: d.rejected ?? null,
     leads_by_address: d.leads_by_address ?? [],
     updated_at: now,
   }));
@@ -296,6 +305,8 @@ export type DayRow = {
   handoffs: number | null;
   followed_up: number | null;
   never_answered: number | null;
+  /** Optional so older callers and tests need not set it. */
+  rejected?: number | null;
   leads_by_address: unknown;
 };
 
@@ -322,6 +333,8 @@ export type UnitDemand = {
   leads: number;
   /** Qualified = given Vinny's number; null when the agent didn't split handoffs by unit. */
   qualified: number | null;
+  /** Labelled "Rejected"; null when the agent didn't split it by address. */
+  rejected: number | null;
   /** Leads ÷ days the unit was listed inside the range (or days with data when no listing was sent). */
   leadsPerDay: number | null;
   listedOn: string | null;
@@ -339,6 +352,7 @@ export type DailyPoint = {
   handoffs: number | null;
   followedUp: number | null;
   neverAnswered: number | null;
+  rejected: number | null;
   /** Leads-weighted across the streams that reported it. */
   firstReplyHours: number | null;
 };
@@ -360,6 +374,11 @@ export type AccountKpis = {
   followedUp: number | null;
   followUpRate: number | null;
   neverAnswered: number | null;
+  /** Leads labelled "Rejected" after vetting; null when the agent didn't report it. */
+  rejected: number | null;
+  rejectedRate: number | null;
+  /** Leads left to work once the rejected ones are set aside (= all leads when none are reported). */
+  workableLeads: number;
   leadsByAddress: { address: string; leads: number }[];
   /** Per-unit demand, most leads first; empty when no unit detail or listings were sent. */
   units: UnitDemand[];
@@ -374,7 +393,7 @@ export type AccountKpis = {
   byAccount?: { name: string; leads: number }[];
 };
 
-/** "Waiting on us" stops at threads this old: past it the lead is gone, not waiting. */
+/** With no start date chosen, "Waiting on us" stops at threads this old: past it the lead is gone, not waiting. */
 export const WAITING_MAX_DAYS = 45;
 
 /** jsonb columns arrive untyped; keep only well-formed entries. */
@@ -437,6 +456,8 @@ export function aggregateByAccount(
     let followLeads = 0;
     let never = 0;
     let neverSeen = false;
+    let rejected = 0;
+    let rejectedLeads = 0;
     const addr = new Map<string, { address: string; leads: number }>();
     const units = new Map<string, UnitDemand & { detailed: boolean }>();
     const styles = new Map<string, { style: string; leads: number }>();
@@ -453,6 +474,7 @@ export function aggregateByAccount(
             account,
             leads: 0,
             qualified: null,
+            rejected: null,
             leadsPerDay: null,
             listedOn: null,
             deactivatedOn: null,
@@ -472,9 +494,14 @@ export function aggregateByAccount(
       if (!pt)
         daily.set(
           d.day,
-          (pt = { day: d.day, leads: 0, replies: null, handoffs: null, followedUp: null, neverAnswered: null, firstReplyHours: null, rw: 0, rwt: 0 }),
+          (pt = { day: d.day, leads: 0, replies: null, handoffs: null, followedUp: null, neverAnswered: null, rejected: null, firstReplyHours: null, rw: 0, rwt: 0 }),
         );
       pt.leads += d.leads;
+      pt.rejected = add(pt.rejected, d.rejected ?? null);
+      if (d.rejected !== null && d.rejected !== undefined) {
+        rejected += d.rejected;
+        rejectedLeads += d.leads;
+      }
       pt.replies = add(pt.replies, d.replies_sent);
       pt.handoffs = add(pt.handoffs, d.handoffs);
       pt.followedUp = add(pt.followedUp, d.followed_up);
@@ -495,13 +522,15 @@ export function aggregateByAccount(
         replies += d.replies_sent;
         repliesDays += 1;
       }
+      // Rejected leads need no reply, so rates are out of the leads left to work.
+      const workable = Math.max(0, d.leads - (d.rejected ?? 0));
       if (d.handoffs !== null) {
         handoffs += d.handoffs;
-        handoffLeads += d.leads;
+        handoffLeads += workable;
       }
       if (d.followed_up !== null) {
         followed += d.followed_up;
-        followLeads += d.leads;
+        followLeads += workable;
       }
       if (d.never_answered !== null) {
         never += d.never_answered;
@@ -518,6 +547,7 @@ export function aggregateByAccount(
         if (a.unit || a.unit_style || a.handoffs !== undefined) u.detailed = true;
         if (a.unit_style) u.style = a.unit_style.trim();
         if (a.handoffs !== undefined) u.qualified = (u.qualified ?? 0) + a.handoffs;
+        if (a.rejected !== undefined) u.rejected = (u.rejected ?? 0) + a.rejected;
         if (a.unit_style) {
           const sk = a.unit_style.trim().toLowerCase();
           const st = styles.get(sk);
@@ -563,8 +593,24 @@ export function aggregateByAccount(
     const showUnits = anyListing || [...units.values()].some((u) => u.detailed);
 
     const waiting = ss
-      .flatMap((s) => parseList(WaitingThreadSchema, s.waiting_on_us).map((w) => ({ ...w, platform: s.platform, account: s.account_name })))
-      .filter((w) => w.days_waiting <= WAITING_MAX_DAYS)
+      .flatMap((s) =>
+        parseList(WaitingThreadSchema, s.waiting_on_us).map((w) => ({
+          ...w,
+          platform: s.platform,
+          account: s.account_name,
+          // The day the renter last wrote: sent, or worked back from the wait.
+          since:
+            w.last_message_at?.slice(0, 10) ??
+            (s.open_as_of ? addDaysISO(s.open_as_of.slice(0, 10), -Math.floor(w.days_waiting)) : undefined),
+        })),
+      )
+      // Follows the date filter (by the day the renter last wrote); with no
+      // start date ("All time") it stops at WAITING_MAX_DAYS instead.
+      .filter((w) => (bounds.from ? inRange(w.since) : w.days_waiting <= WAITING_MAX_DAYS && inRange(w.since)))
+      .map(({ since, ...w }) => {
+        void since;
+        return w;
+      })
       .sort((a, b) => b.days_waiting - a.days_waiting);
     const neverLeads = ss
       .flatMap((s) =>
@@ -609,6 +655,9 @@ export function aggregateByAccount(
       // Per-day counts and the named list measure the same thing; an agent
       // that sent only some days undercounts per day, so take the larger.
       neverAnswered: neverSeen ? Math.max(never, neverLeads.length) : neverLeads.length > 0 ? neverLeads.length : null,
+      rejected: rejectedLeads > 0 || rejected > 0 ? rejected : null,
+      rejectedRate: pct(rejected, rejectedLeads),
+      workableLeads: Math.max(0, leads - rejected),
       leadsByAddress: [...addr.values()].sort(
         (a, b) => b.leads - a.leads || a.address.localeCompare(b.address),
       ),
@@ -636,6 +685,7 @@ export function aggregateByAccount(
           handoffs: p.handoffs,
           followedUp: p.followedUp,
           neverAnswered: p.neverAnswered,
+          rejected: p.rejected,
           firstReplyHours: p.firstReplyHours,
         };
       }),
@@ -693,13 +743,10 @@ export function weekdayAverages(daily: DailyPoint[]) {
 
 // ---------------------------------------------------------------- matching to inventory
 
-/** A room as Inventory knows it, with the ad links saved on it. */
+/** A building as the portal knows it. */
 export type InventoryRoom = {
   building_name: string | null;
   street_address: string;
-  unit_number: string;
-  room_number: string | null;
-  ad_urls: string[];
 };
 
 /** The ad number inside an ad URL or any text that mentions one ("ad 103252360"). */
@@ -726,7 +773,9 @@ export function streetName(address: string): string {
     .split(/\s+/)
     .filter(Boolean)
     .map((w) => STREET_WORDS[w] ?? w.replace(/^(\d+)(st|nd|rd|th)$/, "$1"))
-    .join(" ");
+    .join(" ")
+    // One street, two common spellings.
+    .replace(/\bjohn f kennedy\b/, "jfk");
 }
 
 const buildingLabel = (r: InventoryRoom) => r.building_name?.trim() || r.street_address.split(",")[0].trim();
@@ -734,41 +783,36 @@ const buildingLabel = (r: InventoryRoom) => r.building_name?.trim() || r.street_
 type Place = { address: string; unit?: string; ad_ref?: string };
 
 /**
- * Turns what an agent could see in an ad into the real unit. Ads hide the
- * building and unit numbers and keep only the street name, so:
- *   1. an ad number that is saved against a room on Inventory is an exact match
- *      → the building's name and "Apt N · Room N";
- *   2. otherwise a street name that only one building sits on names the
- *      building, and the unit stays as the agent sent it;
- *   3. otherwise the entry is kept as sent (an ad number shows as "Ad N").
- * Never guesses between two candidates.
+ * Ads show a street address but hide the building and unit numbers, so the
+ * street address on the ad is the record: every ad on the same street is one
+ * line, however each was spelled ("Summit Avenue" = "Summit Ave"). The line
+ * is named the way it was first written, and no unit is kept.
  */
-export function inventoryResolver(rooms: InventoryRoom[]) {
-  const byAd = new Map<string, { address: string; unit: string }>();
-  const byStreet = new Map<string, Set<string>>();
-  const known = new Set<string>();
-  for (const r of rooms) {
-    const address = buildingLabel(r);
-    const room = r.room_number?.replace(/^room\s+/i, "").trim();
-    const unit = `Apt ${r.unit_number}${room ? ` · Room ${room}` : ""}`;
-    for (const url of r.ad_urls) {
-      const n = adNumber(url);
-      if (n) byAd.set(n, { address, unit });
-    }
-    known.add(address.toLowerCase());
-    const st = streetName(r.street_address);
-    if (st) byStreet.set(st, (byStreet.get(st) ?? new Set()).add(address));
-  }
-
+export function inventoryResolver() {
+  const labels = new Map<string, string>();
   return function resolve<T extends Place>(p: T): T {
-    const ref = adNumber(p.ad_ref, p.unit, p.address);
-    const hit = ref ? byAd.get(ref) : undefined;
-    if (hit) return { ...p, address: hit.address, unit: hit.unit };
+    const sent = p.address.trim();
+    const key = streetName(sent) || sent.toLowerCase();
+    let label = labels.get(key);
+    if (!label) labels.set(key, (label = sent));
+    return { ...p, address: label, unit: undefined };
+  };
+}
 
-    const unit = p.unit ?? (ref ? `Ad ${ref}` : undefined);
-    if (known.has(p.address.trim().toLowerCase())) return { ...p, unit };
-    const onStreet = byStreet.get(streetName(p.address));
-    return { ...p, address: onStreet?.size === 1 ? [...onStreet][0] : p.address, unit };
+/**
+ * For the record: which of our buildings an ad's street address belongs to,
+ * matched by street name alone. Null when no building, or more than one,
+ * sits on that street — it never guesses between two.
+ */
+export function streetBuildings(rooms: InventoryRoom[]) {
+  const byStreet = new Map<string, Set<string>>();
+  for (const r of rooms) {
+    const st = streetName(r.street_address);
+    if (st) byStreet.set(st, (byStreet.get(st) ?? new Set()).add(buildingLabel(r)));
+  }
+  return (address: string): string | null => {
+    const hit = byStreet.get(streetName(address));
+    return hit?.size === 1 ? [...hit][0] : null;
   };
 }
 
@@ -782,10 +826,8 @@ export function resolveDayRow<T extends { leads_by_address: unknown }>(
 
 export function resolveStreamRow<T extends StreamRow>(s: T, resolve: ReturnType<typeof inventoryResolver>): T {
   const loose = <X extends { address?: string; ad_ref?: string }>(x: X): X => {
-    if (!x.address && !x.ad_ref) return x;
-    const r: Place = resolve<Place>({ address: x.address ?? "Unknown", ad_ref: x.ad_ref });
-    // These rows show one line of text: fold the unit into it.
-    return { ...x, address: r.unit ? `${r.address} · ${r.unit}` : r.address };
+    if (!x.address) return x;
+    return { ...x, address: resolve<Place>({ address: x.address }).address };
   };
   return {
     ...s,
@@ -900,31 +942,31 @@ export const KPI_DICTIONARY = [
       {
         name: "Handoff rate",
         meaning:
-          "Share of leads handed to Vinny by sending them his phone number: of the leads received in the chosen dates, how many were given the number.",
+          "Share of leads handed over to Vinny by sending them his phone number. Counted out of the leads left to work, i.e. leads received in the chosen dates minus the rejected ones.",
+      },
+      {
+        name: "Rejected leads",
+        meaning:
+          "Leads the team labelled \"Rejected\" on SpareRoom after vetting: unqualified renters who do not need to be reached out to. They still count in total leads, but are set aside for everything else: the handoff and follow-up rates are out of the leads left to work, and rejected leads never show in waiting on us or never answered.",
       },
       {
         name: "Follow-up rate",
         meaning:
-          "Share of leads we wrote to again after they went quiet on our last message: of the leads received in the chosen dates, how many got at least one follow-up.",
+          "Share of leads we wrote to again after they went quiet on our last message: of the leads received in the chosen dates, how many got at least one follow-up. Counted out of the leads left to work (rejected ones set aside).",
       },
       {
         name: "Waiting on us",
         meaning:
-          "Threads where the renter wrote last and we haven't answered, with how many days each has waited. These are warm leads going cold. Only threads waiting 45 days or less are shown.",
+          "Threads where the renter wrote last and we haven't answered, with how many days each has waited. Rejected leads are left out. These are warm leads going cold. The list follows the chosen dates, by the day the renter last wrote; on All time it stops at 45 days.",
       },
       {
         name: "Never answered",
-        meaning: "Leads received in the chosen dates who have had no reply from us at all.",
+        meaning: "Leads received in the chosen dates who have had no reply from us at all. Rejected leads are left out.",
       },
       {
         name: "Leads per address",
         meaning:
-          "Leads for each building, e.g. 5 leads to Epic, 2 leads to 85 John. Our ads show only the street name, so the portal finds the real building and unit from the ad number, using the ad links saved on Inventory.",
-      },
-      {
-        name: "Leads by unit style",
-        meaning:
-          "Leads grouped by the kind of unit advertised (for example private room, studio, 2-bed), across all addresses.",
+          "Leads for each street address shown on the ad, e.g. 5 leads to John St. Ads on the same street are counted together. Where only one of our buildings is on that street, the building is noted beside it.",
       },
     ],
   },
@@ -934,16 +976,21 @@ export const KPI_DICTIONARY = [
     items: [
       {
         name: "Leads per unit",
-        meaning: "Leads for one exact unit or room (address + unit) in the chosen dates.",
+        meaning: "Leads for one street address in the chosen dates. Our ads don't show the unit, so ads on the same street are one line.",
       },
       {
         name: "Leads per day",
         meaning:
-          "A unit's leads divided by the days it was listed inside the chosen dates. Lets a unit listed for 5 days be compared with one listed for 30.",
+          "An address's leads divided by the days it was listed inside the chosen dates. Lets an ad listed for 5 days be compared with one listed for 30.",
       },
       {
-        name: "Qualified leads per unit",
-        meaning: "Leads for that unit who were sent Vinny's number.",
+        name: "Handed over leads per unit",
+        meaning:
+          "Leads for that street address who were sent Vinny's number (also called qualified leads). The percentage beside it is out of that address's leads left to work.",
+      },
+      {
+        name: "Rejected leads per unit",
+        meaning: "Leads for that street address the team labelled \"Rejected\".",
       },
       {
         name: "Days on market",
@@ -953,7 +1000,7 @@ export const KPI_DICTIONARY = [
       {
         name: "Demand trend after a change",
         meaning:
-          "For every logged price change: leads per week in the 4 weeks before it against the 4 weeks after it, for that unit.",
+          "For every logged price change: leads per week in the 4 weeks before it against the 4 weeks after it, for that street address.",
       },
     ],
   },

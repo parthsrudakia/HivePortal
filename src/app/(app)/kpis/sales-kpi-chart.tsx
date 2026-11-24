@@ -6,6 +6,7 @@ import { WEEKDAYS, weekdayIndex, type DailyPoint } from "@/lib/sales-kpis";
 const METRICS = [
   { key: "leads", label: "Leads", unit: "" },
   { key: "replies", label: "Replies sent", unit: "" },
+  { key: "rejected", label: "Rejected", unit: "" },
   { key: "handoffs", label: "Handoffs", unit: "" },
   { key: "followedUp", label: "Follow-ups", unit: "" },
   { key: "neverAnswered", label: "Never answered", unit: "" },
@@ -60,13 +61,14 @@ function weekBuckets(daily: DailyPoint[]): Bucket[] {
     if (!w)
       weeks.set(
         start,
-        (w = { day: start, leads: 0, replies: null, handoffs: null, followedUp: null, neverAnswered: null, firstReplyHours: null, rw: 0, rwt: 0 }),
+        (w = { day: start, leads: 0, replies: null, handoffs: null, followedUp: null, neverAnswered: null, rejected: null, firstReplyHours: null, rw: 0, rwt: 0 }),
       );
     w.leads += d.leads;
     w.replies = sumNullable(w.replies, d.replies);
     w.handoffs = sumNullable(w.handoffs, d.handoffs);
     w.followedUp = sumNullable(w.followedUp, d.followedUp);
     w.neverAnswered = sumNullable(w.neverAnswered, d.neverAnswered);
+    w.rejected = sumNullable(w.rejected, d.rejected);
     if (d.firstReplyHours !== null) {
       const wt = Math.max(d.leads, 1);
       w.rw += d.firstReplyHours * wt;
@@ -136,8 +138,8 @@ export function SalesKpiChart({
   const avg = present.length > 0 ? present.reduce((a, b) => a + b, 0) / present.length : null;
   const peak = present.length > 0 ? Math.max(...present) : null;
 
-  // Value on every cap while the bars are wide enough; otherwise just the peak.
-  const labelAll = buckets.length <= 31;
+  // A number on every bar; past a month of bars they shrink to fit.
+  const dense = buckets.length > 31;
   const tickEvery = Math.ceil(buckets.length / 16);
   const hovered = active !== null ? buckets[active] : null;
   // An average over one or two days says nothing the bars don't.
@@ -145,17 +147,20 @@ export function SalesKpiChart({
   const PLOT = 150; // px
 
   return (
-    <div className="mt-4 rounded-lg bg-cream p-3">
+    <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-ink">
-          {current.label} per {weekly ? "week" : "day"}
+        <div>
+          <h4 className="text-lg font-semibold text-ink">Lead volume</h4>
+          <p className="mt-1 text-sm text-muted">
+            {current.label} per {weekly ? "week" : "day"}
           {avg !== null && (
-            <span className="ml-2 text-xs font-normal text-muted">
+            <span className="ml-2">
               avg {num(avg)}
               {current.unit} · peak {num(peak!)}
               {current.unit}
             </span>
           )}
+          </p>
         </div>
         <div className="inline-flex flex-wrap gap-1 rounded-full bg-warm/60 p-0.5" role="group" aria-label="Chart metric">
           {available.map((m) => (
@@ -174,7 +179,7 @@ export function SalesKpiChart({
         </div>
       </div>
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex gap-2">
         {/* y axis */}
         <div
           className="relative w-7 shrink-0 text-right text-[10px] tabular-nums text-muted"
@@ -215,7 +220,7 @@ export function SalesKpiChart({
               {buckets.map((b, i) => {
                 const v = values[i];
                 const isActive = active === i;
-                const showLabel = v !== null && (labelAll || v === peak);
+                const showLabel = v !== null;
                 return (
                   <button
                     key={b.key}
@@ -237,7 +242,11 @@ export function SalesKpiChart({
                     ) : (
                       <>
                         {showLabel && (
-                          <span className="relative z-10 mb-0.5 rounded-sm bg-cream px-0.5 text-[11px] font-semibold leading-none tabular-nums text-ink">
+                          <span
+                            className={`relative z-10 mb-0.5 rounded-sm bg-white font-semibold leading-none tabular-nums text-ink ${
+                              dense ? "text-[9px]" : "px-0.5 text-[11px]"
+                            } ${dense && v !== peak ? "font-medium" : ""}`}
+                          >
                             {num(v)}
                           </span>
                         )}

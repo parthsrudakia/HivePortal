@@ -91,8 +91,9 @@ export function SalesKpisApiDocs() {
             ["days[].replies_sent", "replies we sent that day", ""],
             ["days[].handoffs", "of that day's leads, how many were handed to Vinny by sharing his number", ""],
             ["days[].followed_up", "of that day's leads, how many got a follow-up", ""],
+            ["days[].rejected", "of that day's leads, how many the team has labelled Rejected after vetting", ""],
             ["days[].never_answered", "of that day's leads, how many have had no reply from us", ""],
-            ["days[].leads_by_address", "that day's leads per unit: [{ address, unit?, unit_style?, leads, handoffs? }] — address is the building, unit the exact unit or room, unit_style the kind of unit, handoffs that unit's leads given Vinny's number (qualified leads)", ""],
+            ["days[].leads_by_address", "that day's leads per unit: [{ address, ad_ref?, leads, handoffs?, rejected? }] — address is the building, unit the exact unit or room, unit_style the kind of unit, handoffs that unit's leads given Vinny's number (qualified leads)", ""],
             ["listings", "right now: every ad the account runs or ran — [{ address, unit?, unit_style?, listed_on, deactivated_on?, price?, price_changes? }]. listed_on = date last listed; deactivated_on = date taken down (leave out while live)", ""],
             ["listings[].price_changes", "every price change with its date: [{ date, from?, to, note? }]. The portal compares leads per week before and after each", ""],
             ["open.waiting_on_us", "right now: threads where the renter wrote last and we haven't answered — [{ lead, days_waiting, address?, last_message_at? }]", ""],
@@ -104,7 +105,8 @@ export function SalesKpisApiDocs() {
           <li>
             Send at least one of <Code>days</Code>, <Code>open</Code> or{" "}
             <Code>listings</Code>.
-            Unknown fields are rejected and nothing is saved.
+            Unknown fields are rejected and nothing is saved. Days before
+            the measurement start date are refused with a <Code>400</Code>.
           </li>
           <li>
             Send counts, not rates: the portal works out handoff and follow-up
@@ -119,13 +121,10 @@ export function SalesKpisApiDocs() {
           </li>
           <li>
             When the ad hides the building or unit number, send the street
-            name as <Code>address</Code> and the listing site&apos;s ad number
-            as <Code>ad_ref</Code> (on <Code>leads_by_address</Code>,{" "}
-            <Code>listings</Code> and the <Code>open</Code> lists). The portal
-            matches the ad number to the real unit from the ad links saved on
-            Inventory; an ad it can&apos;t find stays under the street name.
-            Use the same <Code>address</Code> + <Code>ad_ref</Code> (or{" "}
-            <Code>unit</Code>) for an ad everywhere.
+            address the ad shows as <Code>address</Code> and the listing
+            site&apos;s ad number as <Code>ad_ref</Code>. The portal groups by
+            the street address — ads on the same street are one line — and
+            keeps the ad number only for reference.
           </li>
         </ul>
         <p>
