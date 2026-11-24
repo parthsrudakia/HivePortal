@@ -30,6 +30,7 @@ import {
 } from "@/lib/sales-kpis";
 import { SalesKpiFilters } from "./sales-kpi-filters";
 import { SalesKpiChart } from "./sales-kpi-chart";
+import { KpiTabs } from "./kpi-tabs";
 
 const NY = "America/New_York";
 const PAGE = 1000;
@@ -90,33 +91,28 @@ function delta(
   return { text: `${diff > 0 ? "▲" : "▼"} ${body}`, good: diff > 0 === upIsGood };
 }
 
-const CARD = "rounded-xl bg-white shadow-sm ring-1 ring-stone/40";
+const CARD = "rounded-2xl bg-white shadow-sm ring-1 ring-stone/40";
 
-/** One figure in the summary row: label, big number, then change and context. */
+/** One figure in the summary row: quiet label, big number, then change and context. */
 function Stat({
   label,
   value,
   hint,
   change,
-  alert = false,
 }: {
   label: string;
   value: string;
   hint?: string;
   change?: Delta;
-  alert?: boolean;
 }) {
   return (
-    <div className="min-w-0 border-l border-stone/40 pl-4 pr-3">
-      <div className="flex items-center gap-1.5 text-sm text-muted">
-        {alert && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-600" aria-hidden />}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className={`mt-1 text-3xl font-semibold tabular-nums ${alert ? "text-red-800" : "text-ink"}`}>{value}</div>
-      <div className="mt-1 min-h-[1rem] text-xs text-muted">
+    <div className="min-w-0 border-l border-stone/40 pl-5 pr-4">
+      <div className="truncate text-sm text-muted">{label}</div>
+      <div className="mt-1.5 text-4xl font-semibold leading-none tracking-tight tabular-nums text-ink">{value}</div>
+      <div className="mt-2 min-h-[1.25rem] truncate text-sm text-muted">
         {change && (
           <span
-            className={`font-medium tabular-nums ${
+            className={`mr-1.5 font-medium tabular-nums ${
               change.good === null ? "text-muted" : change.good ? "text-green-800" : "text-red-800"
             }`}
           >
@@ -124,7 +120,6 @@ function Stat({
             <span className="sr-only">{change.good === null ? "" : change.good ? " (better)" : " (worse)"}</span>
           </span>
         )}
-        {change && hint && " · "}
         {hint}
       </div>
     </div>
@@ -334,13 +329,12 @@ function UnitTable({ a, trends, buildingOf }: { a: AccountKpis; trends: Trend[];
 
   return (
     <div>
-      <h4 className="text-xs font-medium uppercase tracking-wide text-muted">Unit-wise KPIs</h4>
       {rows.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">
+        <p className="text-sm text-muted">
           No per-address leads sent by this agent yet. They appear once it sends <code>leads_by_address</code>.
         </p>
       ) : (
-        <div className="mt-2 overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[940px] text-sm">
             <thead className="text-[11px] uppercase tracking-wide text-muted">
               <tr>
@@ -444,75 +438,6 @@ function UnitTable({ a, trends, buildingOf }: { a: AccountKpis; trends: Trend[];
 
 // ---------------------------------------------------------------- account view
 
-const ROW_ICONS = {
-  calendar: (
-    <>
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4M8 2v4M3 10h18" />
-    </>
-  ),
-  list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
-  mail: (
-    <>
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="m22 7-10 6L2 7" />
-    </>
-  ),
-  bars: <path d="M6 20v-6M12 20V4M18 20v-10" />,
-  home: (
-    <>
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V21h14V9.5" />
-    </>
-  ),
-} as const;
-
-/** A supporting table: one closed row that opens to show the detail. */
-function Row({
-  icon,
-  title,
-  sub,
-  count,
-  children,
-}: {
-  icon: keyof typeof ROW_ICONS;
-  title: string;
-  sub: string;
-  count: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <details className="group/row border-t border-stone/30">
-      <summary className="flex cursor-pointer select-none list-none items-center gap-3 py-3 transition hover:text-accent-text [&::-webkit-details-marker]:hidden">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cream text-ink">
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            {ROW_ICONS[icon]}
-          </svg>
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-semibold text-ink">{title}</span>
-          <span className="block truncate text-sm text-muted">{sub}</span>
-        </span>
-        <span className="shrink-0 text-sm tabular-nums text-muted">{count}</span>
-        <span className="shrink-0 text-muted transition-transform group-open/row:rotate-90" aria-hidden>
-          ›
-        </span>
-      </summary>
-      <div className="pb-5 pt-1">{children}</div>
-    </details>
-  );
-}
-
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -521,12 +446,10 @@ const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join("");
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-
 /**
- * One account (or the summary of all) as one card: every KPI in a row on
- * top, the per-day graph, the unit-wise table, then the lists (waiting on
- * us, never answered, day by day), each closed until opened.
+ * One account (or the summary of all) as one card: the name, every KPI as a
+ * big figure (four to a row), then one view at a time behind tabs: the
+ * per-day graph, the reply queue (waiting on us), units, and day by day.
  */
 function AccountCard({
   a,
@@ -544,42 +467,38 @@ function AccountCard({
   const overall = !!a.byAccount;
   // On the summary, say whose thread each row is.
   const who = (account: string) =>
-    overall ? <span className="text-accent-text"> · {account}</span> : null;
+    overall ? <span className="font-normal text-accent-text"> · {account}</span> : null;
   // Only compare against a previous period that actually has data.
   const p = prev && prev.daysWithData > 0 ? prev : undefined;
   const oldestWait = a.waitingOnUs[0]?.days_waiting ?? null;
+  const source = [
+    overall
+      ? `${a.byAccount!.length} account${a.byAccount!.length === 1 ? "" : "s"} combined`
+      : a.platforms.join(", "),
+    a.agents.length > 0 ? `via ${a.agents.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const unitCount = a.units.length > 0 ? a.units.length : a.leadsByAddress.length;
 
   return (
-    <section className={`${CARD} p-6 ${overall ? "ring-2 ring-accent/50" : ""}`}>
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-xl font-semibold text-ink">
-          {a.accountName}
-          {overall && (
-            <span className="font-display text-2xl font-normal italic text-accent-text">
-              {" "}
-              · {a.byAccount!.length} account{a.byAccount!.length === 1 ? "" : "s"} combined
-            </span>
-          )}
-          {!overall && a.platforms.length > 0 && (
-            <span className="font-display text-2xl font-normal italic text-accent-text">
-              {" "}
-              · {a.platforms.join(", ")}
-            </span>
-          )}
-        </h3>
-        <p className="text-xs text-muted">
+    <section className={`${CARD} p-6 sm:p-7 ${overall ? "ring-2 ring-accent/50" : ""}`}>
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1">
+        <div className="min-w-0">
+          <h3 className="text-xl font-semibold tracking-tight text-ink">{a.accountName}</h3>
+          {source && <p className="mt-1.5 text-sm text-muted">{source}</p>}
+        </div>
+        <p className="pt-1 text-xs text-muted">
           {a.firstDay && a.lastDay
-            ? `Data ${fmtDayYear(a.firstDay)} – ${fmtDayYear(a.lastDay)} · ${a.daysWithData} day${a.daysWithData === 1 ? "" : "s"}`
+            ? `${fmtDayYear(a.firstDay)} – ${fmtDayYear(a.lastDay)} · ${a.daysWithData} day${a.daysWithData === 1 ? "" : "s"}`
             : "No days in this range"}
-          {" · via "}
-          {a.agents.join(", ")}
           {a.lastReceivedAt && <> · updated {fmtUpdated(a.lastReceivedAt)}</>}
         </p>
       </header>
 
-      {/* Every KPI, one row. Each figure carries a left rule; the first column's is clipped away. */}
-      <div className="mt-5 overflow-hidden">
-        <div className="-ml-[17px] grid grid-cols-2 gap-y-5 sm:grid-cols-4 xl:grid-cols-8">
+      {/* Every KPI, four to a row. Each figure carries a left rule; the first column's is clipped away. */}
+      <div className="mt-6 overflow-hidden">
+        <div className="-ml-[21px] grid grid-cols-2 gap-y-7 lg:grid-cols-4">
           <Stat
             label="Leads received"
             value={fmtNum(a.totalLeads)}
@@ -587,33 +506,10 @@ function AccountCard({
             change={delta(a.totalLeads, p?.totalLeads, "pct", true)}
           />
           <Stat
-            label="First reply"
-            value={fmtNum(a.firstReplyHours, " h")}
-            hint={a.firstReplyHours === null ? "not reported" : "average wait"}
-            change={delta(a.firstReplyHours, p?.firstReplyHours, "abs", false, " h")}
-          />
-          <Stat
-            label="Replies / day"
-            value={fmtNum(a.repliesPerDay)}
-            change={delta(a.repliesPerDay, p?.repliesPerDay, "pct", true)}
-          />
-          <Stat
-            label="Rejected"
-            value={fmtNum(a.rejected)}
-            hint={a.rejected !== null ? `${fmtNum(a.workableLeads)} left to work` : "after vetting"}
-            change={delta(a.rejected, p?.rejected, "abs", false)}
-          />
-          <Stat
-            label="Handed over"
-            value={fmtNum(a.handoffRate, "%")}
-            hint={a.handoffs !== null ? `${a.handoffs} of ${fmtNum(a.workableLeads)} to work` : "sent Vinny's number"}
+            label="Handoff rate"
+            value={fmtNum(a.handoffRate === null ? null : Math.round(a.handoffRate), "%")}
+            hint={a.handoffs !== null ? `${a.handoffs} sent to Vinny` : "sent Vinny's number"}
             change={delta(a.handoffRate, p?.handoffRate, "pts", true)}
-          />
-          <Stat
-            label="Follow-up rate"
-            value={fmtNum(a.followUpRate, "%")}
-            hint={a.followedUp !== null ? `${a.followedUp} of ${fmtNum(a.workableLeads)} to work` : undefined}
-            change={delta(a.followUpRate, p?.followUpRate, "pts", true)}
           />
           <Stat
             label="Never answered"
@@ -624,86 +520,113 @@ function AccountCard({
                 : undefined
             }
             change={delta(a.neverAnswered, p?.neverAnswered, "abs", false)}
-            alert={(a.neverAnswered ?? 0) > 0}
           />
           <Stat
             label="Waiting on us"
             value={fmtNum(a.waitingOnUs.length)}
             hint={oldestWait !== null ? `oldest ${fmtNum(oldestWait)} days` : "all caught up"}
-            alert={(oldestWait ?? 0) >= 2}
+          />
+          <Stat
+            label="First reply"
+            value={fmtNum(a.firstReplyHours, " h")}
+            hint={a.firstReplyHours === null ? "not reported" : "average wait"}
+            change={delta(a.firstReplyHours, p?.firstReplyHours, "abs", false, " h")}
+          />
+          <Stat
+            label="Replies / day"
+            value={fmtNum(a.repliesPerDay)}
+            hint={a.repliesPerDay === null ? "not reported" : "messages sent"}
+            change={delta(a.repliesPerDay, p?.repliesPerDay, "pct", true)}
+          />
+          <Stat
+            label="Rejected"
+            value={fmtNum(a.rejected)}
+            hint={a.rejected !== null ? `${fmtNum(a.workableLeads)} left to work` : "after vetting"}
+            change={delta(a.rejected, p?.rejected, "abs", false)}
+          />
+          <Stat
+            label="Follow-up rate"
+            value={fmtNum(a.followUpRate === null ? null : Math.round(a.followUpRate), "%")}
+            hint={a.followedUp !== null ? `${a.followedUp} of ${fmtNum(a.workableLeads)} to work` : undefined}
+            change={delta(a.followUpRate, p?.followUpRate, "pts", true)}
           />
         </div>
       </div>
 
-      {/* The graph */}
-      <div className="mt-6 border-t border-stone/30 pt-6">
-        {a.daily.length === 0 ? (
-          <>
-            <h4 className="text-lg font-semibold text-ink">Lead volume</h4>
-            <p className="mt-1 text-sm text-muted">No days in this range.</p>
-          </>
-        ) : (
-          <SalesKpiChart daily={a.daily} from={bounds.from} to={bounds.to} />
-        )}
-      </div>
-
-      {/* Unit-wise KPIs */}
-      <div className="mt-6 border-t border-stone/30 pt-6">
-        <UnitTable a={a} trends={trends} buildingOf={buildingOf} />
-      </div>
-
-      {/* Lists, closed until needed */}
-      <div className="mt-6">
-        <Row
-          icon="list"
-          title="Waiting on us"
-          sub="Renters who last wrote in these dates and have no reply, longest wait first"
-          count={plural(a.waitingOnUs.length, "lead")}
-        >
-          {a.waitingOnUs.length === 0 ? (
-            <p className="text-sm text-muted">Nobody waiting.</p>
-          ) : (
-            <ul className="max-h-96 divide-y divide-stone/30 overflow-y-auto pr-1">
-              {a.waitingOnUs.map((w, i) => (
-                <li key={i} className="flex items-center gap-3 py-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cream text-xs font-semibold text-ink">
-                    {initials(w.lead)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold text-ink">
-                      {w.lead}
-                      {who(w.account)}
-                    </span>
-                    <span className="block truncate text-sm text-muted">{w.address ?? "No ad on the thread"}</span>
-                  </span>
-                  <span
-                    className={`shrink-0 text-sm font-medium tabular-nums ${
-                      w.days_waiting >= 2 ? "text-red-800" : "text-accent-text"
-                    }`}
-                  >
-                    {fmtNum(w.days_waiting)}d waiting
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Row>
-
-        <Row
-          icon="calendar"
-          title="Day by day"
-          sub="Every day's numbers, best and slowest days, and the weekday pattern"
-          count={plural(a.daily.length, "day")}
-        >
-          {a.daily.length === 0 ? (
-            <p className="text-sm text-muted">No days in this range.</p>
-          ) : (
-            <>
-              <DayInsights a={a} />
-              <DayTable a={a} />
-            </>
-          )}
-        </Row>
+      <div className="mt-7 border-t border-stone/40 pt-5">
+        <KpiTabs
+          tabs={[
+            {
+              key: "volume",
+              label: "Lead volume",
+              content:
+                a.daily.length === 0 ? (
+                  <p className="text-sm text-muted">No days in this range.</p>
+                ) : (
+                  <SalesKpiChart daily={a.daily} from={bounds.from} to={bounds.to} />
+                ),
+            },
+            {
+              key: "queue",
+              label: "Reply queue",
+              count: a.waitingOnUs.length,
+              content:
+                a.waitingOnUs.length === 0 ? (
+                  <p className="text-sm text-muted">Nobody waiting.</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted">
+                      Renters who last wrote in these dates and have no reply, longest wait first.
+                    </p>
+                    <ul className="mt-2 max-h-96 divide-y divide-stone/30 overflow-y-auto pr-1">
+                      {a.waitingOnUs.map((w, i) => (
+                        <li key={i} className="flex items-center gap-3 py-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cream text-xs font-semibold text-ink">
+                            {initials(w.lead)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-ink">
+                              {w.lead}
+                              {who(w.account)}
+                            </span>
+                            <span className="block truncate text-sm text-muted">
+                              {w.address ?? "No ad on the thread"}
+                            </span>
+                          </span>
+                          <span
+                            className={`shrink-0 text-sm font-medium tabular-nums ${
+                              w.days_waiting >= 2 ? "text-red-800" : "text-accent-text"
+                            }`}
+                          >
+                            {fmtNum(w.days_waiting)}d waiting
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ),
+            },
+            {
+              key: "units",
+              label: "Units",
+              count: unitCount,
+              content: <UnitTable a={a} trends={trends} buildingOf={buildingOf} />,
+            },
+            {
+              key: "days",
+              label: "Day by day",
+              content:
+                a.daily.length === 0 ? (
+                  <p className="text-sm text-muted">No days in this range.</p>
+                ) : (
+                  <>
+                    <DayInsights a={a} />
+                    <DayTable a={a} />
+                  </>
+                ),
+            },
+          ]}
+        />
       </div>
     </section>
   );
@@ -870,7 +793,7 @@ export async function SalesKpis({ params }: { params: Params }) {
         </Notice>
       ) : (
         <>
-          <div className={`${CARD} px-4 pb-3 pt-1`}>
+          <div className={`${CARD} px-5 pb-4 pt-2`}>
           <SalesKpiFilters
             filters={filters}
             savedDefault={savedDefault}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { WEEKDAYS, weekdayIndex, type DailyPoint } from "@/lib/sales-kpis";
+import { weekdayIndex, type DailyPoint } from "@/lib/sales-kpis";
 
 const METRICS = [
   { key: "leads", label: "Leads", unit: "" },
@@ -18,8 +18,7 @@ type Bucket = {
   key: string;
   /** Tooltip heading, e.g. "Mon, Nov 17" or "Week of Nov 17". */
   title: string;
-  /** Axis label lines. */
-  top: string;
+  /** Axis label. */
   bottom: string;
   point: DailyPoint | null;
 };
@@ -44,8 +43,7 @@ function dayBuckets(daily: DailyPoint[], from: string, to: string): Bucket[] {
     out.push({
       key: day,
       title: fmt(day, { weekday: "short", month: "short", day: "numeric" }),
-      top: WEEKDAYS[weekdayIndex(day)][0],
-      bottom: fmt(day, { month: "numeric", day: "numeric" }),
+      bottom: fmt(day, { month: "short", day: "numeric" }),
       point: byDay.get(day) ?? null,
     });
   }
@@ -81,8 +79,7 @@ function weekBuckets(daily: DailyPoint[]): Bucket[] {
     .map((w) => ({
       key: w.day,
       title: `Week of ${fmt(w.day, { month: "short", day: "numeric" })}`,
-      top: "",
-      bottom: fmt(w.day, { month: "numeric", day: "numeric" }),
+      bottom: fmt(w.day, { month: "short", day: "numeric" }),
       point: w,
     }));
 }
@@ -91,14 +88,14 @@ function weekBuckets(daily: DailyPoint[]): Bucket[] {
 function niceMax(max: number) {
   if (max <= 4) return 4;
   const pow = 10 ** Math.floor(Math.log10(max));
-  for (const m of [1, 2, 4, 5, 10]) if (m * pow >= max) return m * pow;
+  for (const m of [1, 2, 3, 4, 5, 10]) if (m * pow >= max) return m * pow;
   return 10 * pow;
 }
 
 /**
  * Per-day performance chart for one account (or the summary): one bar per
- * day with its value on the cap, a metric switcher, an average line, and a
- * hover/focus card with that day's full numbers. Long ranges roll up to
+ * day, the tallest one numbered, a metric switcher, and a hover/focus card
+ * with that day's full numbers. Long ranges roll up to
  * weeks. Days with nothing reported show as gaps rather than zeros.
  */
 export function SalesKpiChart({
@@ -138,51 +135,51 @@ export function SalesKpiChart({
   const avg = present.length > 0 ? present.reduce((a, b) => a + b, 0) / present.length : null;
   const peak = present.length > 0 ? Math.max(...present) : null;
 
-  // A number on every bar; past a month of bars they shrink to fit.
-  const dense = buckets.length > 31;
-  const tickEvery = Math.ceil(buckets.length / 16);
+  // About six date labels along the bottom, however many bars there are.
+  const tickEvery = Math.max(1, Math.ceil(buckets.length / 6));
   const hovered = active !== null ? buckets[active] : null;
-  // An average over one or two days says nothing the bars don't.
-  const showAvg = avg !== null && avg > 0 && present.length >= 3;
-  const PLOT = 150; // px
+  // Only the tallest bar carries its number (the first, on a tie); the rest are on hover.
+  const peakIndex = peak !== null && peak > 0 ? values.indexOf(peak) : -1;
+  const PLOT = 132; // px
+  const HEAD = 18; // room above the tallest bar for its number
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h4 className="text-lg font-semibold text-ink">Lead volume</h4>
-          <p className="mt-1 text-sm text-muted">
-            {current.label} per {weekly ? "week" : "day"}
+        <p className="text-sm text-muted">
+          {current.label} per {weekly ? "week" : "day"}
           {avg !== null && (
-            <span className="ml-2">
-              avg {num(avg)}
+            <span className="tabular-nums">
+              {" "}
+              · avg {num(avg)}
               {current.unit} · peak {num(peak!)}
               {current.unit}
             </span>
           )}
-          </p>
-        </div>
-        <div className="inline-flex flex-wrap gap-1 rounded-full bg-warm/60 p-0.5" role="group" aria-label="Chart metric">
-          {available.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => setMetric(m.key)}
-              aria-pressed={current.key === m.key}
-              className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                current.key === m.key ? "bg-ink text-white shadow-sm" : "text-ink hover:bg-warm"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        </p>
+        {available.length > 1 && (
+          <div className="-mr-2 flex flex-wrap" role="group" aria-label="Chart metric">
+            {available.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => setMetric(m.key)}
+                aria-pressed={current.key === m.key}
+                className={`rounded-full px-2 py-1 text-xs transition ${
+                  current.key === m.key ? "font-semibold text-ink" : "text-muted hover:text-ink"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-5 flex gap-3">
         {/* y axis */}
         <div
-          className="relative w-7 shrink-0 text-right text-[10px] tabular-nums text-muted"
+          className="relative w-6 shrink-0 text-right text-[11px] tabular-nums text-muted"
           style={{ height: PLOT }}
           aria-hidden
         >
@@ -203,24 +200,11 @@ export function SalesKpiChart({
                 aria-hidden
               />
             ))}
-            {showAvg && (
-              <div
-                className="pointer-events-none absolute inset-x-0 border-t border-dashed border-accent-dark/60"
-                style={{ top: PLOT - (avg! / max) * (PLOT - 16) }}
-                aria-hidden
-              >
-                <span className="absolute right-0 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 py-px text-[10px] font-medium tabular-nums text-ink shadow-sm ring-1 ring-stone/30">
-                  avg {num(avg!)}
-                  {current.unit}
-                </span>
-              </div>
-            )}
 
             <div className="absolute inset-0 flex items-end">
               {buckets.map((b, i) => {
                 const v = values[i];
                 const isActive = active === i;
-                const showLabel = v !== null;
                 return (
                   <button
                     key={b.key}
@@ -229,32 +213,22 @@ export function SalesKpiChart({
                     onFocus={() => setActive(i)}
                     onBlur={() => setActive(null)}
                     aria-label={`${b.title}: ${v === null ? "no data" : `${num(v)}${current.unit} ${current.label.toLowerCase()}`}`}
-                    className="group relative flex h-full min-w-0 flex-1 cursor-default flex-col items-center justify-end px-px outline-none"
+                    className="group relative flex h-full min-w-0 flex-1 cursor-default flex-col items-center justify-end outline-none"
                   >
-                    {isActive && (
-                      <span
-                        className="absolute inset-y-0 left-1/2 w-full max-w-[40px] -translate-x-1/2 rounded-md bg-ink/5"
-                        aria-hidden
-                      />
-                    )}
                     {v === null ? (
-                      <span className="relative z-10 mb-1 h-1 w-1 rounded-full bg-stone/60" aria-hidden />
+                      <span className="mb-1 h-1 w-1 rounded-full bg-stone/60" aria-hidden />
                     ) : (
                       <>
-                        {showLabel && (
-                          <span
-                            className={`relative z-10 mb-0.5 rounded-sm bg-white font-semibold leading-none tabular-nums text-ink ${
-                              dense ? "text-[9px]" : "px-0.5 text-[11px]"
-                            } ${dense && v !== peak ? "font-medium" : ""}`}
-                          >
+                        {(i === peakIndex || isActive) && (
+                          <span className="mb-1 text-xs font-semibold leading-none tabular-nums text-ink">
                             {num(v)}
                           </span>
                         )}
                         <span
-                          className={`relative z-10 w-full max-w-[24px] rounded-t-[4px] transition-colors ${
+                          className={`w-[60%] max-w-[30px] rounded-t-[3px] transition-colors ${
                             isActive ? "bg-accent-dark" : "bg-accent"
                           }`}
-                          style={{ height: v === 0 ? 2 : `${Math.max(2, (v / max) * (PLOT - 16))}px` }}
+                          style={{ height: v === 0 ? 2 : `${Math.max(2, (v / max) * (PLOT - HEAD))}px` }}
                           aria-hidden
                         />
                       </>
@@ -265,17 +239,12 @@ export function SalesKpiChart({
             </div>
           </div>
 
-          {/* x axis */}
-          <div className="mt-1 flex text-[10px] leading-tight text-muted" aria-hidden>
+          {/* x axis: a date under every few bars, centred on its bar */}
+          <div className="mt-2 flex h-4 text-[11px] leading-none text-muted" aria-hidden>
             {buckets.map((b, i) => (
-              <div key={b.key} className="min-w-0 flex-1 text-center">
+              <div key={b.key} className="relative min-w-0 flex-1">
                 {i % tickEvery === 0 && (
-                  <>
-                    {b.top && (
-                      <div className={weekdayIndex(b.key) >= 5 ? "font-semibold text-ink" : ""}>{b.top}</div>
-                    )}
-                    <div className="whitespace-nowrap tabular-nums">{b.bottom}</div>
-                  </>
+                  <span className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap tabular-nums">{b.bottom}</span>
                 )}
               </div>
             ))}
@@ -283,7 +252,7 @@ export function SalesKpiChart({
 
           {hovered && (
             <div
-              className="pointer-events-none absolute top-0 z-20 w-44 rounded-lg bg-white p-2 text-xs shadow-lg ring-1 ring-stone/40"
+              className="pointer-events-none absolute top-0 z-20 w-44 rounded-lg bg-white p-2.5 text-xs shadow-lg ring-1 ring-stone/40"
               // Sit beside the hovered bar, on whichever side has room, so it never covers it.
               style={
                 active! < buckets.length / 2
@@ -312,7 +281,6 @@ export function SalesKpiChart({
           )}
         </div>
       </div>
-
     </div>
   );
 }
