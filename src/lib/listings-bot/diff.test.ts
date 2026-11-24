@@ -4,6 +4,7 @@ import {
   diffInventory,
   formatOpenActions,
   isEmptyDiff,
+  onlyRooms,
   type InvRoom,
 } from "./diff";
 
@@ -52,6 +53,20 @@ describe("diffInventory", () => {
       "Total rent: $1,450 → <b>$1,500</b>",
       "Base rent: $1,300 → <b>$1,350</b>",
     ]);
+  });
+});
+
+describe("onlyRooms", () => {
+  it("keeps just the rooms that have an ad", () => {
+    const d = diffInventory(asMap([room(), room({ id: "gone" }), room({ id: "gone-no-ad" })]), [
+      room({ rent: { base: 1350, services: 150, total: 1500 } }),
+      room({ id: "new" }),
+    ]);
+    const withAds = onlyRooms(d, new Set(["room-1", "gone"]));
+    expect(withAds.added).toEqual([]);
+    expect(withAds.changed.map((c) => c.room.id)).toEqual(["room-1"]);
+    expect(withAds.removed.map((r) => r.id)).toEqual(["gone"]);
+    expect(isEmptyDiff(onlyRooms(d, new Set()))).toBe(true);
   });
 });
 

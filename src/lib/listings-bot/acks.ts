@@ -1,9 +1,12 @@
 /**
  * Ad-update acknowledgements for the listings bot.
  *
- * Every inventory-change post in the team group is a task. Each team member
- * on the reminder list (`remind`, added by @username; admins never) acknowledges it by reacting — any emoji — to the change
- * post, or to a reminder that covers it. Until everyone has, the bot posts
+ * Only rooms with an ad up are announced, and every such change post in the
+ * team group is a task. It waits on the people who posted those ads — the
+ * reminder-list members (`remind`, added by @username; admins never) whose
+ * linked portal names (`poster_names`) are on the ads. Each acknowledges it
+ * by reacting — any emoji — to the change post, or to a reminder that covers
+ * it. Until everyone has, the bot posts
  * ONE combined reminder for all open tasks every 2 hours, only between 8 AM
  * and 6 PM Eastern (picking up again at 8 AM the next day), tagging just the
  * people who haven't reacted yet. A reaction from a bot admin closes the
@@ -40,10 +43,12 @@ export type Member = {
   remind: boolean;
   active: boolean;
   joined_at: string | null;
+  /** Portal names this person's ads are saved under (room_ads.posted_by). */
+  poster_names: string[];
 };
 
 export const MEMBER_COLUMNS =
-  "id, user_id, first_name, last_name, username, remind, active, joined_at";
+  "id, user_id, first_name, last_name, username, remind, active, joined_at, poster_names";
 
 /** Eastern wall-clock "HH:MM" of an instant. */
 export function etClock(at: Date): string {
@@ -122,15 +127,57 @@ function portalLine(): string {
     : "Check the portal for what changed and update your ads to match.";
 }
 
+/** How ad posters are compared: the portal name, trimmed, case-insensitive. */
+export function posterKey(name: string | null | undefined): string {
+  return (name ?? "").trim().toLowerCase();
+}
+
+const UNRECORDED_POSTER = "someone not recorded";
+
+/**
+ * Turn the posters of the affected ads into who is asked to confirm. A poster
+ * is asked when their portal name is linked to someone on the reminder list
+ * who is in the group and not an admin. Every other poster (nobody linked,
+ * off the list, left the group, an admin, or no name on the ad) is only
+ * named in the post — never guessed at, never waited on.
+ */
+export function resolvePosters(
+  posters: (string | null)[],
+  members: Member[],
+  admins: Set<number>,
+): { asked: Member[]; others: string[] } {
+  const asked = new Map<number, Member>();
+  const others = new Map<string, string>();
+  for (const raw of posters) {
+    const key = posterKey(raw);
+    const ask = key
+      ? members.filter(
+          (m) =>
+            m.remind &&
+            m.active &&
+            !(m.user_id !== null && admins.has(Number(m.user_id))) &&
+            m.poster_names.some((p) => posterKey(p) === key),
+        )
+      : [];
+    if (ask.length > 0) for (const m of ask) asked.set(m.id, m);
+    else others.set(key, raw?.trim() || UNRECORDED_POSTER);
+  }
+  return { asked: [...asked.values()], others: [...others.values()] };
+}
+
 /**
  * The group post for an inventory change. Deliberately says only THAT the
- * inventory changed — the details live in the portal — and tags everyone
- * being asked to act.
+ * inventory changed — the details live in the portal — and tags the people
+ * whose ads are affected. Posters who can't be tagged (`others`) are named.
  */
-export function formatChangeNotice(members: Member[]): string {
+export function formatChangeNotice(members: Member[], others: string[] = []): string {
+  const head = `📋 <b>Inventory updated</b>\n${portalLine()}\n\n`;
+  const named = `ads posted by ${others.map(escapeHtml).join(", ")}.`;
+  if (members.length === 0 && others.length > 0) return `${head}Affected: ${named}`;
   return (
-    `📋 <b>Inventory updated</b>\n${portalLine()}\n\n` +
-    confirmCallout(members, "once your ads are updated")
+    head +
+    confirmCallout(members, "once your ads are updated") +
+    (others.length > 0 ? `\nAlso affected: ${named}` : "")
   );
 }
 
@@ -192,14 +239,20 @@ export function formatNag(tasks: OpenTask[]): string {
   );
 }
 
+/** Whether a task waits on this member (no assignee list = the whole list). */
+function assignedTo(task: { assignee_ids?: number[] | null }, memberId: number): boolean {
+  return !task.assignee_ids || task.assignee_ids.some((id) => Number(id) === Number(memberId));
+}
+
 /** Who still owes a reaction on a task. */
 export function pendingFor(
-  task: { id: number; created_at: string },
+  task: { id: number; created_at: string; assignee_ids?: number[] | null },
   members: Member[],
   acked: Set<string>,
 ): Member[] {
   return members.filter(
     (m) =>
+      assignedTo(task, m.id) &&
       // Joined after the change was posted: not asked about it.
       !(m.joined_at && m.joined_at > task.created_at) &&
       !(m.user_id !== null && acked.has(`${task.id}:${m.user_id}`)),
@@ -328,6 +381,44 @@ export async function setRemind(
   return "added";
 }
 
+export type PosterLinkResult =
+  | { status: "linked" | "unlinked" | "not_found" }
+  | { status: "taken"; by: string };
+
+/**
+ * Link an @username to the portal name their ads are saved under (null
+ * clears every link). One portal name belongs to one person.
+ */
+export async function setPosterLink(
+  db: BotDb,
+  username: string,
+  posterName: string | null,
+): Promise<PosterLinkResult> {
+  const members = await allMembers(db);
+  const me = members.find((m) => m.username?.toLowerCase() === username.toLowerCase());
+  if (!me) return { status: "not_found" };
+  const save = async (poster_names: string[]) => {
+    const { error } = await db
+      .from("listing_bot_members")
+      .update({ poster_names, updated_at: new Date().toISOString() })
+      .eq("id", me.id);
+    if (error) throw new Error(error.message);
+  };
+  if (posterName === null) {
+    await save([]);
+    return { status: "unlinked" };
+  }
+  const key = posterKey(posterName);
+  const owner = members.find(
+    (m) => m.id !== me.id && m.poster_names.some((p) => posterKey(p) === key),
+  );
+  if (owner) return { status: "taken", by: displayName(owner) };
+  if (!me.poster_names.some((p) => posterKey(p) === key)) {
+    await save([...me.poster_names, posterName.trim()]);
+  }
+  return { status: "linked" };
+}
+
 async function nagNextAt(db: BotDb): Promise<string | null> {
   const { data, error } = await db
     .from("listing_bot_state")
@@ -348,7 +439,12 @@ export async function recordTask(
   chatId: number,
   lines: string[],
   messageIds: number[],
-  opts: { kind?: TaskKind; reminderId?: number } = {},
+  opts: {
+    kind?: TaskKind;
+    reminderId?: number;
+    /** Member ids the task waits on; null/omitted = the whole reminder list. */
+    assigneeIds?: number[] | null;
+  } = {},
 ): Promise<void> {
   const now = new Date();
   const kind = opts.kind ?? "inventory";
@@ -366,6 +462,7 @@ export async function recordTask(
       lines,
       kind,
       reminder_id: opts.reminderId ?? null,
+      assignee_ids: opts.assigneeIds ?? null,
       created_at: now.toISOString(),
     })
     .select("id")
@@ -463,13 +560,14 @@ export async function recordTextConfirmation(
     const sentAt = new Date(msg.date * 1000).toISOString();
     const { data, error } = await db
       .from("listing_bot_tasks")
-      .select("id")
+      .select("id, assignee_ids")
       .eq("chat_id", chatId)
       .is("done_at", null)
       .lte("created_at", sentAt)
-      .returns<{ id: number }[]>();
+      .returns<{ id: number; assignee_ids: number[] | null }[]>();
     if (error) throw new Error(`tasks read failed: ${error.message}`);
-    taskIds = (data ?? []).map((t) => t.id);
+    // Only what they were asked about — not changes to other people's ads.
+    taskIds = (data ?? []).filter((t) => assignedTo(t, me.id)).map((t) => t.id);
   }
   if (taskIds.length === 0) return 0;
 
@@ -543,11 +641,19 @@ export async function recordReaction(
 export async function openTasks(db: BotDb, chatId: number): Promise<OpenTask[]> {
   const { data: tasks, error } = await db
     .from("listing_bot_tasks")
-    .select("id, kind, lines, created_at")
+    .select("id, kind, lines, created_at, assignee_ids")
     .eq("chat_id", chatId)
     .is("done_at", null)
     .order("created_at", { ascending: true })
-    .returns<{ id: number; kind: TaskKind; lines: string[]; created_at: string }[]>();
+    .returns<
+      {
+        id: number;
+        kind: TaskKind;
+        lines: string[];
+        created_at: string;
+        assignee_ids: number[] | null;
+      }[]
+    >();
   if (error) throw new Error(`tasks read failed: ${error.message}`);
   if (!tasks || tasks.length === 0) return [];
 

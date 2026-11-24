@@ -909,6 +909,7 @@ export type Database = {
           id: number
           joined_at: string | null
           last_name: string | null
+          poster_names: string[]
           remind: boolean
           updated_at: string
           user_id: number | null
@@ -921,6 +922,7 @@ export type Database = {
           id?: number
           joined_at?: string | null
           last_name?: string | null
+          poster_names?: string[]
           remind?: boolean
           updated_at?: string
           user_id?: number | null
@@ -933,6 +935,7 @@ export type Database = {
           id?: number
           joined_at?: string | null
           last_name?: string | null
+          poster_names?: string[]
           remind?: boolean
           updated_at?: string
           user_id?: number | null
@@ -1058,6 +1061,7 @@ export type Database = {
           group_title: string | null
           id: boolean
           nag_next_at: string | null
+          paused_at: string | null
           processing_at: string | null
           seeded_at: string | null
           updated_at: string
@@ -1068,6 +1072,7 @@ export type Database = {
           group_title?: string | null
           id?: boolean
           nag_next_at?: string | null
+          paused_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
@@ -1078,6 +1083,7 @@ export type Database = {
           group_title?: string | null
           id?: boolean
           nag_next_at?: string | null
+          paused_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
@@ -1086,6 +1092,7 @@ export type Database = {
       }
       listing_bot_tasks: {
         Row: {
+          assignee_ids: number[] | null
           chat_id: number
           created_at: string
           done_at: string | null
@@ -1096,6 +1103,7 @@ export type Database = {
           reminder_id: number | null
         }
         Insert: {
+          assignee_ids?: number[] | null
           chat_id: number
           created_at?: string
           done_at?: string | null
@@ -1106,6 +1114,7 @@ export type Database = {
           reminder_id?: number | null
         }
         Update: {
+          assignee_ids?: number[] | null
           chat_id?: number
           created_at?: string
           done_at?: string | null

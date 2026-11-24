@@ -177,6 +177,15 @@ export function diffInventory(
   return diff;
 }
 
+/** The part of a diff that concerns the given rooms. */
+export function onlyRooms(d: InventoryDiff, roomIds: Set<string>): InventoryDiff {
+  return {
+    added: d.added.filter((r) => roomIds.has(r.id)),
+    removed: d.removed.filter((r) => roomIds.has(r.id)),
+    changed: d.changed.filter((c) => roomIds.has(c.room.id)),
+  };
+}
+
 export function isEmptyDiff(d: InventoryDiff): boolean {
   return d.added.length + d.removed.length + d.changed.length === 0;
 }
