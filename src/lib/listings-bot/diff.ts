@@ -147,7 +147,9 @@ export function describeChanges(prev: InvRoom, curr: InvRoom): string[] {
   if (prev.facebook_ads !== curr.facebook_ads) {
     arrow("Facebook ads", onOff(prev.facebook_ads), onOff(curr.facebook_ads));
   }
-  if (prev.listing_action !== curr.listing_action) {
+  // A flag cleared back to "No action" asks nothing of the team: it is what
+  // someone does once the ads already match.
+  if (prev.listing_action !== curr.listing_action && curr.listing_action !== "no_action") {
     arrow(
       "Listing action",
       LISTING_ACTION_LABELS[prev.listing_action] ?? prev.listing_action,

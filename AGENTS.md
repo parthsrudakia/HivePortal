@@ -65,6 +65,7 @@ Internal operations portal for Hive co-living: tenants & rent, properties/rooms,
 - **Reads** in Server Components via `createClient()` from `@/lib/supabase/server` (respects RLS via the user's cookie session). **Privileged/background** work (cron, Telegram, email logging) uses the service-role key with `createClient` from `@supabase/supabase-js` directly.
 - **Mutations** are server actions in `actions.ts`, then `revalidatePath()`.
 - Mutate rooms through `updateRoomsWithNotification()` (`src/lib/notifications.ts`), not raw `rooms.update()` — it fires room-change notifications and logs events.
+- A price (`base_rent`/`bundle_fee`) or `available_from` change on a room that is in inventory before and after the write flags it `listing_action = 'update_price_or_date'` (yellow row) automatically — DB trigger `rooms_flag_price_date_change`, so every write path behaves the same. Only rooms on `no_action` are flagged (Delete/Boost/Priority are kept); it sends no room-change email. The listings bot does not announce a flag being cleared back to `no_action`.
 - Dates: server is ET (see `instrumentation.ts`); for date-only "today" math use `todayISO()` from `@/lib/date`, not `toISOString()`.
 - `one()` from `@/lib/relations` normalizes PostgREST joins that come back as object-or-array.
 - The generated types cover every table — never use `as any` on a Supabase query. After adding a migration, run `npm run db:types` so new tables/columns are typed.

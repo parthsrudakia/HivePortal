@@ -102,6 +102,12 @@ describe("describeChanges", () => {
     ]);
   });
 
+  it("ignores a listing action cleared back to No action", () => {
+    expect(
+      describeChanges(room({ listing_action: "update_price_or_date" }), room()),
+    ).toEqual([]);
+  });
+
   it("ignores amenity reordering", () => {
     const a = room({
       amenities: { has_private_bathroom: false, has_ac: true, unit: ["A", "B"], building: [] },
