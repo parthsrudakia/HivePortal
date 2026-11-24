@@ -38,7 +38,7 @@ describe("ledger reads never degrade to empty data", () => {
     expect(rows).toEqual([{ id: 1 }]);
   });
 
-  it("retries once, then succeeds on a transient failure", async () => {
+  it("retries, then succeeds on a transient failure", async () => {
     const run = vi
       .fn()
       .mockResolvedValueOnce(fail("504 gateway timeout"))
@@ -46,6 +46,14 @@ describe("ledger reads never degrade to empty data", () => {
     const rows = await ledgerRows("charges", run);
     expect(rows).toEqual([{ id: 1 }]);
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes three attempts before giving up, and names the read in the digest", async () => {
+    const run = vi.fn().mockResolvedValue(fail("fetch failed"));
+    const err = await ledgerRows("charges", run).catch((e) => e);
+    expect(err).toBeInstanceOf(LedgerDataError);
+    expect(err.digest).toBe("LEDGER_DATA:charges");
+    expect(run).toHaveBeenCalledTimes(3);
   });
 
   it("throws LedgerDataError instead of returning [] when the read keeps failing", async () => {
