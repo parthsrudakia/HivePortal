@@ -6,7 +6,7 @@
  *     in plain language, ask about inventory. The only place Claude runs;
  *     every change is confirmed by a code-built receipt (see agent.ts).
  *   Team group (linked by the admin sending /setgroup in it): the bot posts
- *     inventory changes + reminders there (see src/lib/listings-bot/run.ts).
+ *     inventory changes on rooms with an ad up + reminders there (see src/lib/listings-bot/run.ts).
  *     No model output ever reaches the group: everything posted there is
  *     rendered by code straight from the database.
  *
@@ -36,6 +36,7 @@ import {
   openTasks,
   recordReaction,
   recordTextConfirmation,
+  setPosterLink,
   setRemind,
   upsertMember,
 } from "@/lib/listings-bot/acks";
@@ -43,6 +44,7 @@ import { runBotTurn, type Turn } from "@/lib/listings-bot/agent";
 import { describeSchedule } from "@/lib/listings-bot/schedule";
 import {
   adminIds,
+  adPosterCounts,
   botDb,
   botSend,
   botToken,
@@ -110,7 +112,7 @@ async function loadHistory(db: BotDb, chatId: number): Promise<Turn[]> {
 
 const ADMIN_HELP =
   "Hi — I'm the Hive listings bot.\n\n" +
-  "In the team group I post every inventory change so the listing ads get updated, plus any reminders you set up here.\n\n" +
+  "In the team group I post inventory changes on rooms that have an ad up, so those ads get updated, plus any reminders you set up here.\n\n" +
   "<b>Setup:</b> add me to the team group, then send /setgroup there.\n\n" +
   "<b>Then just tell me what you want, e.g.</b>\n" +
   "• Remind the team every Monday at 10am to refresh the Facebook listings, and make them confirm\n" +
@@ -120,9 +122,11 @@ const ADMIN_HELP =
   "• Tell the team now that the Journal Square prices changed\n" +
   "• What's available under $1,500?\n\n" +
   "After any change I add a <b>Confirmed by the system</b> block showing exactly what was saved. If that block isn't there, nothing was changed.\n\n" +
-  "<b>Ad-update reactions:</b> every inventory change I post tags the people on the reminder list and asks them to react once their ads are updated; I re-tag whoever hasn't every 2 hours (8 AM – 6 PM ET).\n" +
-  "/team — who is on the reminder list\n" +
+  "<b>Ad-update reactions:</b> a change post tags only the people on the reminder list who posted an ad on a changed room and asks them to react once their ads are updated; I re-tag whoever hasn't every 2 hours (8 AM – 6 PM ET). A room with no ad is not announced.\n" +
+  "/team — who is on the reminder list, and the portal name their ads are under\n" +
   "/add @username · /remove @username — change the reminder list\n" +
+  "/link @username Portal Name — the name their ads are saved under in the portal (needed before they are tagged)\n" +
+  "/unlink @username — clear it\n" +
   "/pending — changes still waiting on reactions, and who from\n\n" +
   "/reminders — list reminders\n" +
   "/status — which group I post to\n" +
@@ -168,7 +172,8 @@ async function replyWithAgent(
 
 async function teamMessage(db: BotDb): Promise<string> {
   const admins = adminIds();
-  const listed = (await allMembers(db)).filter((m) => m.remind);
+  const members = await allMembers(db);
+  const listed = members.filter((m) => m.remind);
   if (listed.length === 0) {
     return "Nobody is on the reminder list. Add someone with /add @username.";
   }
@@ -182,11 +187,56 @@ async function teamMessage(db: BotDb): Promise<string> {
             ? " — <i>reactions count once they post or react in the group</i>"
             : "";
     const who = m.username ? `@${escapeHtml(m.username)}` : escapeHtml(displayName(m));
-    return `• ${who}${note}`;
+    const ads =
+      m.poster_names.length > 0
+        ? ` — ads as ${m.poster_names.map((p) => `<b>${escapeHtml(p)}</b>`).join(", ")}`
+        : " — <i>no portal name linked, so never tagged for an inventory change</i>";
+    return `• ${who}${ads}${note}`;
   });
+  // Poster names on live ads that lead to nobody: those ads are only named
+  // in a change post, with no one tagged for them.
+  const linked = new Set(
+    members.flatMap((m) => m.poster_names.map((p) => p.trim().toLowerCase())),
+  );
+  const loose = (await adPosterCounts(db)).filter((p) => !linked.has(p.name.toLowerCase()));
   return (
     `<b>Reminder list (${listed.length})</b>\n${rows.join("\n")}\n\n` +
-    "/add @username · /remove @username"
+    (loose.length > 0
+      ? `<b>Live ads with nobody linked:</b> ${loose.map((p) => `${escapeHtml(p.name)} (${p.count})`).join(", ")}\n\n`
+      : "") +
+    "/add @username · /remove @username\n/link @username Portal Name · /unlink @username"
+  );
+}
+
+async function linkMessage(
+  db: BotDb,
+  link: boolean,
+  rawUsername: string,
+  rawName: string | undefined,
+): Promise<string> {
+  const username = normalizeUsername(rawUsername);
+  const name = rawName?.trim();
+  if (!username || (link && !name)) {
+    return "Usage: /link @username Portal Name · /unlink @username";
+  }
+  const result = await setPosterLink(db, username, link ? name! : null);
+  const who = `@${escapeHtml(username)}`;
+  if (result.status === "not_found") {
+    return `${who} isn't someone I know yet — /add them first.`;
+  }
+  if (result.status === "taken") {
+    return `<b>${escapeHtml(name!)}</b> is already linked to ${escapeHtml(result.by)}. Nothing changed.`;
+  }
+  if (result.status === "unlinked") {
+    return `${who} has no portal name linked now, so they won't be tagged for inventory changes.`;
+  }
+  const count =
+    (await adPosterCounts(db)).find((p) => p.name.toLowerCase() === name!.toLowerCase())?.count ?? 0;
+  return (
+    `${who} is now tagged for changes to rooms with an ad posted as <b>${escapeHtml(name!)}</b>.\n` +
+    (count > 0
+      ? `${count} live ad${count === 1 ? " is" : "s are"} saved under that name right now.`
+      : "⚠️ No ad on a room in inventory is saved under that name right now — check the spelling against the Inventory page (/team lists the names in use).")
   );
 }
 
@@ -194,7 +244,7 @@ async function pendingMessage(db: BotDb): Promise<string> {
   const state = await getState(db);
   if (!state.group_chat_id) return "No team group is linked yet.";
   const open = await openTasks(db, state.group_chat_id);
-  if (open.length === 0) return "✅ Everyone has reacted to every inventory change.";
+  if (open.length === 0) return "✅ Everyone asked has reacted to every inventory change.";
   return open
     .map(
       (t) =>
@@ -264,6 +314,11 @@ async function handlePrivate(db: BotDb, msg: TgMessage, text: string) {
     await botSend(chatId, lines.join("\n") || "Usage: /add @username");
     return;
   }
+  const linkCmd = text.match(/^\/(link|unlink)(?:@\w+)?\s+(\S+)(?:\s+(.+))?$/i);
+  if (linkCmd) {
+    await botSend(chatId, await linkMessage(db, linkCmd[1].toLowerCase() === "link", linkCmd[2], linkCmd[3]));
+    return;
+  }
   if (text === "/pending") {
     await botSend(chatId, await pendingMessage(db));
     return;
@@ -314,7 +369,7 @@ async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
     await setGroup(db, chatId, msg.chat.title ?? null);
     await botSend(
       chatId,
-      "👋 I'm set up for this group. I'll post here whenever the inventory changes — a new room, a price or date change, a room coming off the market — so the listing ads can be updated, along with scheduled reminders.",
+      "👋 I'm set up for this group. I'll post here whenever a room with an ad up changes — a price or date change, a room coming off the market — and tag whoever posted the ad so it can be updated, along with scheduled reminders.",
     );
     return;
   }
@@ -325,7 +380,7 @@ async function handleGroup(db: BotDb, msg: TgMessage, text: string) {
   if (command === "/help" || command === "/start") {
     await botSend(
       chatId,
-      "I post inventory changes and reminders here. Once your ads match a change, react to that post.",
+      "I post inventory changes on rooms with an ad up, and reminders. If you're tagged, react to that post once your ads match.",
     );
   }
 }

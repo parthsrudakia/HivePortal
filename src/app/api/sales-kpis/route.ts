@@ -11,7 +11,9 @@
  * corrected days — a day re-sent for the same account + platform + agent
  * replaces the stored one. `open` (threads waiting on us, leads never
  * answered) is "right now" state and replaces the previous `open` for that
- * account + platform + agent; omit it to leave it unchanged.
+ * account + platform + agent; omit it to leave it unchanged. `listings` (the
+ * account's ads: last listed / deactivated dates and price changes) works the
+ * same way.
  *
  * Auth: static bearer token `SALES_KPIS_API_KEY` — its own key, so agents
  * holding it can't read tenant PII or anything else. Writes go through the
@@ -25,7 +27,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { requireBearer } from "@/lib/api-auth";
-import { SalesKpiPayloadSchema, accountKey, streamOf, toDayRows } from "@/lib/sales-kpis";
+import { KPI_START_DAY, SalesKpiPayloadSchema, accountKey, streamOf, toDayRows } from "@/lib/sales-kpis";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,11 @@ export async function POST(req: Request) {
     });
 
   const payload = parsed.data;
+  const tooEarly = (payload.days ?? []).filter((d) => d.date < KPI_START_DAY).map((d) => d.date);
+  if (tooEarly.length > 0)
+    return fail(400, `KPIs are measured from ${KPI_START_DAY}. Remove earlier days; nothing was saved.`, {
+      issues: tooEarly.slice(0, 20).map((date) => ({ path: "days.date", message: `${date} is before ${KPI_START_DAY}` })),
+    });
   const sb = admin();
   const now = new Date().toISOString();
   const stream = streamOf(payload);
@@ -89,13 +96,14 @@ export async function POST(req: Request) {
             open_as_of: payload.open.as_of ?? now,
           }
         : {}),
+      ...(payload.listings ? { listings: payload.listings, listings_as_of: now } : {}),
     },
     { onConflict: "account_key,platform,agent" },
   );
   if (streamError)
     return fail(500, `Failed to save account: ${streamError.message}`, { saved_days: dayRows.length });
 
-  revalidatePath("/inventory");
+  revalidatePath("/kpis");
   const sortedDays = dayRows.map((d) => d.day).sort();
   return NextResponse.json({
     account_name: stream.account_name,
@@ -105,6 +113,7 @@ export async function POST(req: Request) {
     first_day: sortedDays[0] ?? null,
     last_day: sortedDays.at(-1) ?? null,
     open_updated: !!payload.open,
+    listings_saved: payload.listings?.length ?? null,
   });
 }
 
@@ -116,7 +125,7 @@ export async function GET(req: Request) {
   const sb = admin();
   let q = sb
     .from("sales_kpi_streams")
-    .select("account_key, account_name, platform, agent, open_as_of, last_received_at")
+    .select("account_key, account_name, platform, agent, open_as_of, listings_as_of, last_received_at")
     .order("account_key");
   if (account) q = q.eq("account_key", accountKey(account));
   const { data: streams, error } = await q;
@@ -140,6 +149,7 @@ export async function GET(req: Request) {
       agent: s.agent,
       last_day: last?.day ?? null,
       open_as_of: s.open_as_of,
+      listings_as_of: s.listings_as_of,
       last_received_at: s.last_received_at,
     });
   }

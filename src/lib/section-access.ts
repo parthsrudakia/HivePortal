@@ -64,9 +64,9 @@ export const PORTAL_PERMISSIONS = [
   },
   {
     key: "sales_kpis",
-    label: "Sales KPIs",
+    label: "KPIs",
     description:
-      "Lead-handling KPIs from the sales agents, shown at the top of Inventory.",
+      "The KPIs module in the sidebar: lead-handling KPIs from the sales agents.",
   },
   {
     key: "assistant",

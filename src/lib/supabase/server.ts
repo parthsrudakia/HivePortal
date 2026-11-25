@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { Database } from "./types";
+import { retryFetch } from "./retry-fetch";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -10,6 +11,8 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Reads that fail in transit are retried; writes never are.
+      global: { fetch: retryFetch },
       cookies: {
         getAll() {
           return cookieStore.getAll();

@@ -1019,6 +1019,7 @@ export type Database = {
           id: number
           joined_at: string | null
           last_name: string | null
+          poster_names: string[]
           remind: boolean
           updated_at: string
           user_id: number | null
@@ -1031,6 +1032,7 @@ export type Database = {
           id?: number
           joined_at?: string | null
           last_name?: string | null
+          poster_names?: string[]
           remind?: boolean
           updated_at?: string
           user_id?: number | null
@@ -1043,6 +1045,7 @@ export type Database = {
           id?: number
           joined_at?: string | null
           last_name?: string | null
+          poster_names?: string[]
           remind?: boolean
           updated_at?: string
           user_id?: number | null
@@ -1168,6 +1171,7 @@ export type Database = {
           group_title: string | null
           id: boolean
           nag_next_at: string | null
+          paused_at: string | null
           processing_at: string | null
           seeded_at: string | null
           updated_at: string
@@ -1178,6 +1182,7 @@ export type Database = {
           group_title?: string | null
           id?: boolean
           nag_next_at?: string | null
+          paused_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
@@ -1188,6 +1193,7 @@ export type Database = {
           group_title?: string | null
           id?: boolean
           nag_next_at?: string | null
+          paused_at?: string | null
           processing_at?: string | null
           seeded_at?: string | null
           updated_at?: string
@@ -1196,6 +1202,7 @@ export type Database = {
       }
       listing_bot_tasks: {
         Row: {
+          assignee_ids: number[] | null
           chat_id: number
           created_at: string
           done_at: string | null
@@ -1206,6 +1213,7 @@ export type Database = {
           reminder_id: number | null
         }
         Insert: {
+          assignee_ids?: number[] | null
           chat_id: number
           created_at?: string
           done_at?: string | null
@@ -1216,6 +1224,7 @@ export type Database = {
           reminder_id?: number | null
         }
         Update: {
+          assignee_ids?: number[] | null
           chat_id?: number
           created_at?: string
           done_at?: string | null
@@ -2137,6 +2146,7 @@ export type Database = {
           leads_by_address: Json
           never_answered: number | null
           platform: string
+          rejected: number | null
           replies_sent: number | null
           updated_at: string
         }
@@ -2153,6 +2163,7 @@ export type Database = {
           leads_by_address?: Json
           never_answered?: number | null
           platform?: string
+          rejected?: number | null
           replies_sent?: number | null
           updated_at?: string
         }
@@ -2169,6 +2180,7 @@ export type Database = {
           leads_by_address?: Json
           never_answered?: number | null
           platform?: string
+          rejected?: number | null
           replies_sent?: number | null
           updated_at?: string
         }
@@ -2199,6 +2211,8 @@ export type Database = {
           agent: string
           id: string
           last_received_at: string
+          listings: Json
+          listings_as_of: string | null
           never_answered_leads: Json
           open_as_of: string | null
           platform: string
@@ -2210,6 +2224,8 @@ export type Database = {
           agent: string
           id?: string
           last_received_at?: string
+          listings?: Json
+          listings_as_of?: string | null
           never_answered_leads?: Json
           open_as_of?: string | null
           platform?: string
@@ -2221,6 +2237,8 @@ export type Database = {
           agent?: string
           id?: string
           last_received_at?: string
+          listings?: Json
+          listings_as_of?: string | null
           never_answered_leads?: Json
           open_as_of?: string | null
           platform?: string

@@ -1,6 +1,7 @@
 /**
- * Listings bot background pass: post inventory changes to the team group and
- * fire due reminders. Called by /api/cron/listings-bot (pinged by pg_cron
+ * Listings bot background pass: post inventory changes on rooms that have an
+ * ad up to the team group (tagging whoever posted the ads) and fire due
+ * reminders. Called by /api/cron/listings-bot (pinged by pg_cron
  * when something is due) and by the daily ops cron as a safety net — a room
  * can also enter/leave inventory just because the date rolled over.
  */
@@ -12,23 +13,28 @@ import {
   formatOpenActions,
   escapeHtml,
   isEmptyDiff,
+  onlyRooms,
   type InvRoom,
 } from "./diff";
 import { nextRun } from "./schedule";
 import {
+  allMembers,
   formatChangeNotice,
   processAdNags,
   confirmCallout,
   recordTask,
+  resolvePosters,
   taskLines,
   trackedMembers,
   type Member,
 } from "./acks";
 import {
+  adminIds,
   botDb,
   botPost,
   botSend,
   botToken,
+  fetchAdPosters,
   fetchInventory,
   getState,
   REMINDER_COLUMNS,
@@ -41,7 +47,7 @@ const LOCK_STALE_MS = 5 * 60 * 1000;
 const SEND_RETRY_MS = 13 * 60 * 1000;
 
 export type ChangeResult =
-  | { status: "busy" | "seeded" | "no_changes" | "no_group" | "send_failed" }
+  | { status: "busy" | "seeded" | "no_changes" | "no_ads" | "no_group" | "send_failed" }
   | { status: "posted"; added: number; changed: number; removed: number };
 
 async function saveSnapshot(db: BotDb, rooms: InvRoom[], removedIds: string[]) {
@@ -120,16 +126,39 @@ export async function processInventoryChanges(db: BotDb): Promise<ChangeResult> 
       return { status: "no_group" };
     }
 
-    // Tag everyone who must react once their ads match. A roster failure
-    // must never hold up the change post itself.
-    let team: Member[] = [];
+    // Only rooms with an ad up concern the team. A change to a room nobody
+    // has advertised is taken into the baseline without a post.
+    const adPosters = await fetchAdPosters(db, [
+      ...diff.added.map((r) => r.id),
+      ...diff.changed.map((c) => c.room.id),
+      ...removedIds,
+    ]);
+    const adDiff = onlyRooms(diff, new Set(adPosters.keys()));
+    if (isEmptyDiff(adDiff)) {
+      await saveSnapshot(db, curr, removedIds);
+      await clearDirty(db, state.dirty_at);
+      return { status: "no_ads" };
+    }
+
+    // Tag — and wait on — only the people who posted those ads. A roster
+    // failure must never hold up the change post itself: it then goes out
+    // untagged and the follow-ups fall back to the whole reminder list.
+    let asked: Member[] | null = null;
+    let others: string[] = [];
     try {
-      team = await trackedMembers(db);
+      ({ asked, others } = resolvePosters(
+        [...adPosters.values()].flat(),
+        await allMembers(db),
+        adminIds(),
+      ));
     } catch (e) {
       console.error("Listings bot roster read failed:", e);
     }
     // The post only says that something changed; details are in the portal.
-    const messageIds = await botPost(state.group_chat_id, formatChangeNotice(team));
+    const messageIds = await botPost(
+      state.group_chat_id,
+      formatChangeNotice(asked ?? [], others),
+    );
     if (!messageIds) {
       // Keep the old snapshot so the same diff is retried, but back off.
       await db
@@ -142,15 +171,17 @@ export async function processInventoryChanges(db: BotDb): Promise<ChangeResult> 
     await saveSnapshot(db, curr, removedIds);
     await clearDirty(db, state.dirty_at);
     try {
-      await recordTask(db, state.group_chat_id, taskLines(diff), messageIds);
+      await recordTask(db, state.group_chat_id, taskLines(adDiff), messageIds, {
+        assigneeIds: asked ? asked.map((m) => m.id) : null,
+      });
     } catch (e) {
       console.error("Listings bot task record failed:", e);
     }
     return {
       status: "posted",
-      added: diff.added.length,
-      changed: diff.changed.length,
-      removed: diff.removed.length,
+      added: adDiff.added.length,
+      changed: adDiff.changed.length,
+      removed: adDiff.removed.length,
     };
   } finally {
     await db
@@ -296,6 +327,12 @@ export async function processDueReminders(
 /** One full pass. Never throws — each half reports its own error. */
 export async function runListingsBot(db: BotDb = botDb()) {
   if (!botToken()) return { skipped: "LISTINGS_BOT_TOKEN is not configured" };
+  // Pause switch (listing_bot_state.paused_at): post nothing at all. If the
+  // state can't be read, fall through — each half reports its own error.
+  const paused = await getState(db)
+    .then((s) => s.paused_at)
+    .catch(() => null);
+  if (paused) return { as_of: todayISO(), paused_since: paused };
   const changes = await processInventoryChanges(db).catch((e) => ({
     status: "error" as const,
     error: e instanceof Error ? e.message : String(e),

@@ -16,6 +16,7 @@ import {
   LoginRemindersSlot,
   MobileUserInfo,
   ProfitabilityNavLink,
+  KpisNavLink,
   CredentialsNavLink,
   ProjectsBadge,
   UserIdentity,
@@ -50,6 +51,10 @@ function mobileNav(items: NavItem[]) {
             iconClassName="shrink-0 text-accent"
           />
           <ProfitabilityNavLink
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+            iconClassName="shrink-0 text-accent"
+          />
+          <KpisNavLink
             className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
             iconClassName="shrink-0 text-accent"
           />
@@ -165,6 +170,10 @@ export default function AppLayout({
               iconClassName="shrink-0 text-accent"
             />
             <ProfitabilityNavLink
+              className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
+              iconClassName="shrink-0 text-accent"
+            />
+            <KpisNavLink
               className="sidebar-item flex items-center gap-2.5 rounded-lg px-3 py-2 text-ink transition hover:bg-warm hover:text-ink"
               iconClassName="shrink-0 text-accent"
             />

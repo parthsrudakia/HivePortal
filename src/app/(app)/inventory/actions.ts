@@ -11,8 +11,7 @@ import {
   normalizeBuildingAmenities,
 } from "@/lib/amenities";
 import { todayISO } from "@/lib/date";
-import { assertSection, hasPermission } from "@/lib/section-access";
-import { normalizeFilters } from "@/lib/sales-kpis";
+import { assertSection } from "@/lib/section-access";
 import { freshListingFacebookAds } from "@/lib/facebook-ads";
 
 // Accept only http(s) web links for ad / photo URLs: a scheme, a host with a
@@ -486,31 +485,5 @@ export async function setRoomAvailableFrom(
   revalidatePath("/inventory");
   revalidatePath("/tenants/new");
   revalidatePath(`/inventory/${roomId}`);
-  return { ok: true };
-}
-
-/**
- * Save the KPI panel's current filters as this user's default — applied
- * whenever /inventory loads without KPI filters in the URL.
- */
-export async function saveSalesKpiDefaults(
-  raw: unknown,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  await assertSection("inventory");
-  if (!(await hasPermission("sales_kpis")))
-    return { ok: false, error: "You don't have access to Sales KPIs." };
-  const user = await getSessionUser();
-  if (!user) return { ok: false, error: "Not signed in." };
-
-  const filters = normalizeFilters(raw);
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("sales_kpi_prefs")
-    .upsert(
-      { user_id: user.id, filters, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" },
-    );
-  if (error) return { ok: false, error: `Couldn't save default: ${error.message}` };
-  revalidatePath("/inventory");
   return { ok: true };
 }

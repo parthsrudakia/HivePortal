@@ -19,7 +19,6 @@ import {
   type RoomStatus,
   type UpcomingMoveOutRow,
 } from "./upcoming-moveouts";
-import { TabNotepad } from "../tab-notepad";
 import {
   TenantsExplorer,
   type TrackerRow,
@@ -584,10 +583,6 @@ export default function TenantsPage() {
           </Link>
         </div>
       </header>
-
-      <Suspense fallback={null}>
-        <TabNotepad tab="tenants" />
-      </Suspense>
 
       <Suspense
         fallback={

@@ -28,16 +28,27 @@ type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 // `data ?? []` turned a transient 504 on the charges query into "this tenant
 // has no charges", and every balance on the page understated what was owed.
 // Every ledger read now goes through `ledgerRows`/`allLedgerRows`: a failed
-// query is retried once (reads are idempotent), and if it still fails the
+// query is retried twice (reads are idempotent), and if it still fails the
 // whole render throws a LedgerDataError so the page shows an error instead
 // of a wrong number. Full-table reads page through with an exact count so a
 // PostgREST row cap can never truncate the ledger either.
 // ---------------------------------------------------------------------------
 
+/** Prefix of the digest the error page uses to recognise a ledger failure. */
+export const LEDGER_DIGEST_PREFIX = "LEDGER_DATA:";
+
 export class LedgerDataError extends Error {
+  /**
+   * Next keeps a digest that is already set and hands it to the error
+   * boundary (the message itself is stripped in production), so the page can
+   * tell "the ledger didn't load" from any other crash and name the read.
+   */
+  readonly digest: string;
+
   constructor(what: string, reason: string) {
     super(`Ledger data unavailable (${what}): ${reason}`);
     this.name = "LedgerDataError";
+    this.digest = `${LEDGER_DIGEST_PREFIX}${what}`;
   }
 }
 
@@ -47,9 +58,8 @@ type RowsResult<T> = {
   count?: number | null;
 };
 
-/** Retry once after a short pause; ledger reads are idempotent GETs. */
-const LEDGER_FETCH_ATTEMPTS = 2;
-const LEDGER_RETRY_DELAY_MS = 300;
+/** Pauses before each retry; ledger reads are idempotent GETs. */
+const LEDGER_RETRY_DELAYS_MS = [300, 900];
 /** Page size for full-table ledger reads (PostgREST default max-rows). */
 const LEDGER_PAGE_SIZE = 1000;
 
@@ -68,7 +78,7 @@ async function attemptRows<T>(
 
 /**
  * Run a ledger read that must succeed. Returns the rows, or throws a
- * LedgerDataError after one retry — never an empty array in place of data.
+ * LedgerDataError after two retries — never an empty array in place of data.
  */
 export async function ledgerRows<T>(
   what: string,
@@ -82,12 +92,12 @@ async function ledgerRowsCounted<T>(
   run: () => PromiseLike<RowsResult<T>>,
 ): Promise<{ rows: T[]; count: number | null }> {
   let failure = "unknown error";
-  for (let attempt = 1; attempt <= LEDGER_FETCH_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt <= LEDGER_RETRY_DELAYS_MS.length; attempt++) {
     const result = await attemptRows(run);
     if ("rows" in result) return result;
     failure = result.failure;
-    if (attempt < LEDGER_FETCH_ATTEMPTS) {
-      await new Promise((r) => setTimeout(r, LEDGER_RETRY_DELAY_MS));
+    if (attempt < LEDGER_RETRY_DELAYS_MS.length) {
+      await new Promise((r) => setTimeout(r, LEDGER_RETRY_DELAYS_MS[attempt]));
     }
   }
   throw new LedgerDataError(what, failure);

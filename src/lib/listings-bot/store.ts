@@ -80,12 +80,14 @@ export type BotState = {
   dirty_at: string | null;
   processing_at: string | null;
   seeded_at: string | null;
+  /** Set = paused: the background pass posts nothing until it is null again. */
+  paused_at: string | null;
 };
 
 export async function getState(db: BotDb): Promise<BotState> {
   const { data, error } = await db
     .from("listing_bot_state")
-    .select("group_chat_id, group_title, dirty_at, processing_at, seeded_at")
+    .select("group_chat_id, group_title, dirty_at, processing_at, seeded_at, paused_at")
     .eq("id", true)
     .single<BotState>();
   if (error || !data) {
@@ -130,7 +132,61 @@ export async function fetchInventory(db: BotDb): Promise<InvRoom[]> {
   ).map(serializeRoom);
 }
 
-export type ReminderInclude = "none" | "open_actions" | "inventory";
+const AD_READ_CHUNK = 100;
+
+/**
+ * Who posted the ads saved on each of these rooms, as the portal recorded it
+ * (display name, else email; null = not recorded). A room with no ad is
+ * absent from the map. Throws when the read fails — a failed read must never
+ * look like "no ads", or a change would be dropped silently.
+ */
+export async function fetchAdPosters(
+  db: BotDb,
+  roomIds: string[],
+): Promise<Map<string, (string | null)[]>> {
+  const byRoom = new Map<string, (string | null)[]>();
+  for (let i = 0; i < roomIds.length; i += AD_READ_CHUNK) {
+    const { data, error } = await db
+      .from("room_ads")
+      .select("room_id, posted_by")
+      .in("room_id", roomIds.slice(i, i + AD_READ_CHUNK))
+      .returns<{ room_id: string; posted_by: string | null }[]>();
+    if (error) throw new Error(`ads read failed: ${error.message}`);
+    for (const ad of data ?? []) {
+      const list = byRoom.get(ad.room_id) ?? [];
+      list.push(ad.posted_by);
+      byRoom.set(ad.room_id, list);
+    }
+  }
+  return byRoom;
+}
+
+/**
+ * Every poster name on an ad of a room currently in inventory, with how many
+ * such ads carry it. Ad rows left on rooms that have since been filled are
+ * ignored — they stay in room_ads until the room's next vacancy cycle.
+ */
+export async function adPosterCounts(
+  db: BotDb,
+): Promise<{ name: string; count: number }[]> {
+  const live = await fetchInventory(db);
+  const posters = await fetchAdPosters(
+    db,
+    live.map((r) => r.id),
+  );
+  const byKey = new Map<string, { name: string; count: number }>();
+  for (const raw of [...posters.values()].flat()) {
+    const name = raw?.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const row = byKey.get(key) ?? { name, count: 0 };
+    row.count++;
+    byKey.set(key, row);
+  }
+  return [...byKey.values()].sort((a, b) => b.count - a.count);
+}
+
+export type ReminderInclude ="none" | "open_actions" | "inventory";
 
 export type ReminderRow = {
   id: number;

@@ -6,6 +6,7 @@ import {
   isConfirmation,
   mention,
   pendingFor,
+  resolvePosters,
   type Member,
 } from "./acks";
 
@@ -20,6 +21,7 @@ const member = (over: Partial<Member>): Member => ({
   remind: true,
   active: true,
   joined_at: null,
+  poster_names: [],
   ...over,
 });
 
@@ -79,7 +81,60 @@ describe("formatChangeNotice", () => {
   });
 });
 
+describe("resolvePosters", () => {
+  const gianV = member({ id: 1, user_id: 100, username: "gian", poster_names: ["Gian V"] });
+  const graceC = member({ id: 2, user_id: 200, first_name: "Grace", poster_names: ["Mary Grace Consuelo"] });
+  const none = new Set<number>();
+
+  it("asks only the people whose portal name is on an affected ad", () => {
+    expect(resolvePosters(["gian v ", "Gian V"], [gianV, graceC], none)).toEqual({
+      asked: [gianV],
+      others: [],
+    });
+  });
+
+  it("names a poster nobody is linked to instead of guessing", () => {
+    expect(resolvePosters(["Gian V", "Shanewaz Pranty", null], [gianV, graceC], none)).toEqual({
+      asked: [gianV],
+      others: ["Shanewaz Pranty", "someone not recorded"],
+    });
+  });
+
+  it("never asks an admin, someone off the list or someone who left", () => {
+    const off = member({ id: 3, user_id: 300, remind: false, poster_names: ["Off List"] });
+    const left = member({ id: 4, user_id: 400, active: false, poster_names: ["Left Group"] });
+    expect(
+      resolvePosters(["Gian V", "Off List", "Left Group"], [gianV, off, left], new Set([100])),
+    ).toEqual({ asked: [], others: ["Gian V", "Off List", "Left Group"] });
+  });
+});
+
+describe("formatChangeNotice with untaggable posters", () => {
+  it("names them after the tagged people", () => {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    expect(formatChangeNotice([gian], ["Shanewaz <P>"])).toBe(
+      "📋 <b>Inventory updated</b>\nCheck the portal for what changed and update your ads to match.\n\n" +
+        "👉 @gian — react or reply “done” once your ads are updated.\n" +
+        "Also affected: ads posted by Shanewaz &lt;P&gt;.",
+    );
+  });
+  it("asks nobody to confirm when no poster can be tagged", () => {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    expect(formatChangeNotice([], ["Shanewaz Pranty", "Parth"])).toBe(
+      "📋 <b>Inventory updated</b>\nCheck the portal for what changed and update your ads to match.\n\n" +
+        "Affected: ads posted by Shanewaz Pranty, Parth.",
+    );
+  });
+});
+
 describe("pendingFor", () => {
+  it("waits only on the people a change was assigned to", () => {
+    const t = { id: 7, created_at: "2026-11-18T15:00:00.000Z" };
+    expect(pendingFor({ ...t, assignee_ids: [2] }, [gian, grace, mary], new Set())).toEqual([grace]);
+    expect(pendingFor({ ...t, assignee_ids: [] }, [gian, grace], new Set())).toEqual([]);
+    expect(pendingFor({ ...t, assignee_ids: null }, [gian, grace], new Set())).toEqual([gian, grace]);
+  });
+
   it("keeps a listed teammate pending until their user id is known", () => {
     const listed = member({ id: 9, user_id: null, username: "graceconsuelo" });
     expect(pendingFor({ id: 7, created_at: "" }, [listed], new Set(["7:null"]))).toEqual([listed]);
